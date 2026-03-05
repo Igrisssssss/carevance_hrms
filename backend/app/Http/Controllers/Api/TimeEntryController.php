@@ -1,0 +1,260 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\TimeEntry;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
+
+class TimeEntryController extends Controller
+{
+    public function index(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['data' => []]);
+        }
+
+        $timeEntries = TimeEntry::with('task', 'project')
+            ->where('user_id', $user->id)
+            ->when($request->timer_slot, fn (Builder $q, string $slot) => $q->where('timer_slot', $slot))
+            ->when($request->project_id, fn (Builder $q, string $projectId) => $q->where('project_id', $projectId))
+            ->when($request->task_id, fn (Builder $q, string $taskId) => $q->where('task_id', $taskId))
+            ->when($request->start_date, fn (Builder $q, string $start) => $q->whereDate('start_time', '>=', $start))
+            ->when($request->end_date, fn (Builder $q, string $end) => $q->whereDate('start_time', '<=', $end))
+            ->orderBy('start_time', 'desc')
+            ->paginate((int) $request->get('per_page', 15));
+
+        return response()->json($timeEntries);
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'description' => 'nullable|string',
+            'project_id' => 'nullable|exists:projects,id',
+            'task_id' => 'nullable|exists:tasks,id',
+            'start_time' => 'required|date',
+            'end_time' => 'nullable|date|after:start_time',
+            'duration' => 'nullable|integer|min:0',
+            'billable' => 'nullable|boolean',
+            'timer_slot' => 'nullable|in:primary,secondary',
+        ]);
+
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $timeEntry = TimeEntry::create([
+            'description' => $request->description,
+            'project_id' => $request->project_id,
+            'task_id' => $request->task_id,
+            'start_time' => $request->start_time,
+            'end_time' => $request->end_time,
+            'duration' => $request->duration ?? 0,
+            'billable' => $request->billable ?? true,
+            'user_id' => $user->id,
+            'timer_slot' => $request->get('timer_slot', 'primary'),
+        ]);
+
+        return response()->json($timeEntry, 201);
+    }
+
+    public function show(TimeEntry $timeEntry)
+    {
+        if (!$this->canAccessTimeEntry($timeEntry)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $timeEntry->load('task', 'project');
+        return response()->json($timeEntry);
+    }
+
+    public function update(Request $request, TimeEntry $timeEntry)
+    {
+        if (!$this->canAccessTimeEntry($timeEntry)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $request->validate([
+            'description' => 'nullable|string',
+            'project_id' => 'nullable|exists:projects,id',
+            'task_id' => 'nullable|exists:tasks,id',
+            'start_time' => 'nullable|date',
+            'end_time' => 'nullable|date|after:start_time',
+            'duration' => 'nullable|integer|min:0',
+            'billable' => 'nullable|boolean',
+            'timer_slot' => 'nullable|in:primary,secondary',
+        ]);
+
+        $timeEntry->update($request->only([
+            'description', 'project_id', 'task_id', 
+            'start_time', 'end_time', 'duration', 'billable', 'timer_slot'
+        ]));
+
+        return response()->json($timeEntry);
+    }
+
+    public function destroy(TimeEntry $timeEntry)
+    {
+        if (!$this->canAccessTimeEntry($timeEntry)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $timeEntry->delete();
+
+        return response()->json(['message' => 'Time entry deleted']);
+    }
+
+    public function start(Request $request)
+    {
+        $request->validate([
+            'description' => 'nullable|string',
+            'project_id' => 'nullable|exists:projects,id',
+            'task_id' => 'nullable|exists:tasks,id',
+            'timer_slot' => 'nullable|in:primary,secondary',
+        ]);
+
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+        $slot = $request->get('timer_slot', 'primary');
+
+        $runningQuery = TimeEntry::where('user_id', $user->id)->whereNull('end_time');
+        if ($slot !== 'primary') {
+            $runningQuery->where('timer_slot', $slot);
+        }
+
+        $runningEntries = $runningQuery->orderByDesc('start_time')->get();
+        foreach ($runningEntries as $running) {
+            $durationSeconds = max(
+                0,
+                now()->getTimestamp() - Carbon::parse($running->start_time)->getTimestamp()
+            );
+
+            $running->update([
+                'end_time' => now(),
+                'duration' => (int) $durationSeconds,
+            ]);
+        }
+
+        $timeEntry = TimeEntry::create([
+            'description' => $request->description,
+            'project_id' => $request->project_id,
+            'task_id' => $request->task_id,
+            'start_time' => now(),
+            'user_id' => $user->id,
+            'timer_slot' => $slot,
+        ]);
+
+        return response()->json($timeEntry, 201);
+    }
+
+    public function stop(Request $request)
+    {
+        $request->validate([
+            'timer_slot' => 'nullable|in:primary,secondary',
+        ]);
+
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+        $slot = $request->get('timer_slot', 'primary');
+
+        $timeEntry = TimeEntry::where('user_id', $user->id)
+            ->where('timer_slot', $slot)
+            ->whereNull('end_time')
+            ->orderByDesc('start_time')
+            ->first();
+
+        if (!$timeEntry && $slot === 'primary') {
+            $timeEntry = TimeEntry::where('user_id', $user->id)
+                ->whereNull('end_time')
+                ->orderByDesc('start_time')
+                ->first();
+        }
+
+        if (!$timeEntry) {
+            return response()->json(['message' => 'No running timer found'], 404);
+        }
+
+        $durationSeconds = max(
+            0,
+            now()->getTimestamp() - Carbon::parse($timeEntry->start_time)->getTimestamp()
+        );
+
+        $timeEntry->update([
+            'end_time' => now(),
+            'duration' => (int) $durationSeconds,
+        ]);
+
+        return response()->json($timeEntry);
+    }
+
+    public function active(Request $request)
+    {
+        $request->validate([
+            'timer_slot' => 'nullable|in:primary,secondary',
+        ]);
+
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(null);
+        }
+        $slot = $request->get('timer_slot', 'primary');
+
+        $timeEntry = TimeEntry::where('user_id', $user->id)
+            ->where('timer_slot', $slot)
+            ->whereNull('end_time')
+            ->with('task', 'project')
+            ->orderByDesc('start_time')
+            ->first();
+
+        if ($timeEntry) {
+            $durationSeconds = max(
+                0,
+                now()->getTimestamp() - Carbon::parse($timeEntry->start_time)->getTimestamp()
+            );
+            $timeEntry->duration = (int) $durationSeconds;
+        }
+
+        return response()->json($timeEntry);
+    }
+
+    public function today(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'time_entries' => [],
+                'total_duration' => 0,
+            ]);
+        }
+
+        $today = now()->startOfDay();
+        
+        $timeEntries = TimeEntry::with('task', 'project')
+            ->where('user_id', $user->id)
+            ->where('start_time', '>=', $today)
+            ->orderBy('start_time', 'desc')
+            ->get();
+
+        $totalDuration = $timeEntries->sum('duration');
+
+        return response()->json([
+            'time_entries' => $timeEntries,
+            'total_duration' => $totalDuration,
+        ]);
+    }
+
+    private function canAccessTimeEntry(TimeEntry $timeEntry): bool
+    {
+        $user = request()->user();
+        return $user && $timeEntry->user_id === $user->id;
+    }
+}
