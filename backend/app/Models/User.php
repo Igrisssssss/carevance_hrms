@@ -70,6 +70,7 @@ class User extends Authenticatable
         'role',
         'organization_id',
         'avatar',
+        'settings',
         'last_seen_at',
     ];
 
@@ -93,6 +94,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'settings' => 'array',
             'last_seen_at' => 'datetime',
         ];
     }

@@ -126,7 +126,7 @@ export default function Layout() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-transparent">
       {/* Mobile sidebar */}
       <div className={`fixed inset-0 z-40 lg:hidden ${sidebarOpen ? 'block' : 'hidden'}`}>
         <div className="fixed inset-0 bg-gray-600 bg-opacity-75" onClick={() => setSidebarOpen(false)} />
@@ -143,7 +143,7 @@ export default function Layout() {
       </div>
 
       {/* Desktop sidebar */}
-      <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-50 lg:block lg:w-64 lg:bg-white lg:border-r lg:border-gray-200">
+      <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-50 lg:block lg:w-64 lg:bg-white/85 lg:backdrop-blur-xl lg:border-r lg:border-gray-200/70 shadow-sm">
         <SidebarContent 
           navigation={navigation} 
           location={location} 
@@ -156,7 +156,7 @@ export default function Layout() {
       {/* Main content */}
       <div className="lg:pl-64">
         {/* Top header */}
-        <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 py-3 sm:px-6 lg:px-8">
+        <div className="sticky top-0 z-30 bg-white/85 backdrop-blur-xl border-b border-gray-200/70 px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <button
               type="button"
@@ -172,7 +172,7 @@ export default function Layout() {
               <div className="relative" ref={notificationsRef}>
                 <button
                   onClick={() => setNotificationsOpen((prev) => !prev)}
-                  className="relative p-2 rounded-lg border border-gray-200 hover:bg-gray-50"
+                  className="relative p-2 rounded-lg border border-gray-200 hover:bg-gray-50 shadow-sm"
                 >
                   <Bell className="h-5 w-5 text-gray-600" />
                   {unreadNotifications > 0 && (
@@ -236,7 +236,7 @@ export default function Layout() {
         </div>
 
         {/* Page content */}
-        <main className="px-4 sm:px-6 lg:px-8 py-8">
+        <main className="px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
           <Outlet />
         </main>
       </div>
@@ -248,9 +248,9 @@ function SidebarContent({ navigation, location, unreadSenders, onLogout, onClose
   return (
     <div className="flex h-full flex-col">
       {/* Logo */}
-      <div className="flex h-16 items-center justify-between px-4 border-b border-gray-200">
+      <div className="flex h-16 items-center justify-between px-4 border-b border-gray-200/70 bg-gradient-to-r from-white to-blue-50/40">
         <Link to="/dashboard" className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-primary-600 flex items-center justify-center">
+          <div className="h-8 w-8 rounded-lg bg-primary-600 flex items-center justify-center shadow-md shadow-primary-600/25">
             <Clock className="h-5 w-5 text-white" />
           </div>
           <span className="text-xl font-bold text-gray-900">TimeTrack</span>
@@ -271,10 +271,10 @@ function SidebarContent({ navigation, location, unreadSenders, onLogout, onClose
               <li key={item.name}>
                 <Link
                   to={item.href}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                     isActive
-                      ? 'bg-primary-50 text-primary-600'
-                      : 'text-gray-700 hover:bg-gray-100'
+                      ? 'bg-primary-50 text-primary-700 shadow-sm'
+                      : 'text-gray-700 hover:bg-gray-100 hover:translate-x-0.5'
                   }`}
                   onClick={onClose}
                 >

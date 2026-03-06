@@ -1,15 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --primary: #3B82F6;
-  --primary-dark: #2563EB;
+  --primary: #2f6feb;
+  --primary-dark: #1f56c2;
   --secondary: #64748B;
   --success: #10B981;
   --warning: #F59E0B;
   --danger: #EF4444;
-  --background: #F8FAFC;
+  --background: #f3f6fb;
   --surface: #FFFFFF;
   --text-primary: #1E293B;
   --text-secondary: #64748B;
@@ -23,12 +25,13 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--background);
+  background-image:
+    radial-gradient(circle at 20% -10%, rgba(47, 111, 235, 0.12), transparent 30%),
+    radial-gradient(circle at 80% -20%, rgba(16, 185, 129, 0.08), transparent 35%);
   color: var(--text-primary);
 }
 
@@ -94,12 +97,13 @@ code {
 
 /* Card hover effects */
 .card-hover {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.2s ease;
 }
 
 .card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  transform: translateY(-3px);
+  border-color: #cbdcf9;
+  box-shadow: 0 14px 30px -14px rgba(37, 99, 235, 0.35), 0 8px 16px -12px rgba(15, 23, 42, 0.35);
 }
 
 /* Status badges */
@@ -125,4 +129,19 @@ code {
 
 .badge-gray {
   @apply bg-gray-100 text-gray-800;
+}
+
+/* Form and interactive polish */
+button, input, select, textarea {
+  transition: all 0.2s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(47, 111, 235, 0.16);
+}
+
+::selection {
+  background: rgba(47, 111, 235, 0.2);
+  color: #0f172a;
 }

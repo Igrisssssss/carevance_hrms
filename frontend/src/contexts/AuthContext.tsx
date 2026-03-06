@@ -12,6 +12,7 @@ interface AuthContextType {
   register: (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string; organizationId?: number }) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (user: User) => void;
+  updateOrganization: (organization: Organization | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -174,6 +175,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('user', JSON.stringify(updatedUser));
   };
 
+  const updateOrganization = (updatedOrganization: Organization | null) => {
+    setOrganization(updatedOrganization);
+    if (updatedOrganization) {
+      localStorage.setItem('organization', JSON.stringify(updatedOrganization));
+    } else {
+      localStorage.removeItem('organization');
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -186,6 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register,
         logout,
         updateUser,
+        updateOrganization,
       }}
     >
       {children}

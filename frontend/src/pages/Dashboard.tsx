@@ -268,7 +268,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -284,7 +284,7 @@ export default function Dashboard() {
       </div>
 
       {/* Timer Card */}
-      <div className="bg-gradient-to-br from-primary-600 to-primary-800 rounded-2xl p-6 text-white">
+      <div className="bg-gradient-to-br from-primary-600 via-primary-700 to-slate-800 rounded-2xl p-6 text-white shadow-xl card-hover">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-primary-100 text-sm font-medium mb-1">
@@ -360,7 +360,7 @@ export default function Dashboard() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl p-5 border border-gray-200">
+        <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm card-hover">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Today's Time</p>
@@ -376,7 +376,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-5 border border-gray-200">
+        <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm card-hover">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Active Projects</p>
@@ -391,7 +391,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-5 border border-gray-200">
+        <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm card-hover">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Team Members</p>
@@ -407,7 +407,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-5 border border-gray-200">
+        <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm card-hover">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Productivity</p>
@@ -425,7 +425,7 @@ export default function Dashboard() {
       </div>
 
       {/* Today's Entries */}
-      <div className="bg-white rounded-xl border border-gray-200">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm card-hover">
         <div className="p-5 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Today's Time Entries</h2>
         </div>

@@ -534,4 +534,35 @@ export const notificationApi = {
     api.post('/notifications/read-all'),
 };
 
+export const settingsApi = {
+  me: () =>
+    api.get<{
+      user: User;
+      organization: Organization | null;
+      can_manage_org: boolean;
+    }>('/settings/me'),
+
+  updateProfile: (data: { name: string; email: string; avatar?: string | null }) =>
+    api.put<{ message: string; user: User }>('/settings/profile', data),
+
+  updatePassword: (data: { current_password: string; new_password: string; new_password_confirmation: string }) =>
+    api.put<{ message: string }>('/settings/password', data),
+
+  updatePreferences: (data: {
+    timezone?: string;
+    notifications?: {
+      email?: boolean;
+      weekly_summary?: boolean;
+      project_updates?: boolean;
+      task_assignments?: boolean;
+    };
+  }) => api.put<{ message: string; settings: Record<string, any> }>('/settings/preferences', data),
+
+  updateOrganization: (data: { name: string; slug: string }) =>
+    api.put<{ message: string; organization: Organization }>('/settings/organization', data),
+
+  billing: () =>
+    api.get<{ plan: { name: string; status: string; renewal_date?: string | null } | null }>('/settings/billing'),
+};
+
 export default api;

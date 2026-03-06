@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\AttendanceTimeEditRequestController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\SettingsController;
 
 // Public routes
 Route::post('/auth/register', [AuthController::class, 'register']);
@@ -112,6 +113,14 @@ Route::middleware('api.token')->group(function () {
     Route::post('/notifications/publish', [NotificationController::class, 'publish']);
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+
+    // Settings
+    Route::get('/settings/me', [SettingsController::class, 'me']);
+    Route::put('/settings/profile', [SettingsController::class, 'updateProfile']);
+    Route::put('/settings/password', [SettingsController::class, 'updatePassword']);
+    Route::put('/settings/preferences', [SettingsController::class, 'updatePreferences']);
+    Route::put('/settings/organization', [SettingsController::class, 'updateOrganization']);
+    Route::get('/settings/billing', [SettingsController::class, 'billing']);
     
     // Reports
     Route::get('/dashboard', [ReportController::class, 'dashboard']);

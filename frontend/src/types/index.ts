@@ -5,7 +5,7 @@ export interface User {
   email: string;
   role: 'admin' | 'manager' | 'employee';
   organization_id: number | null;
-  avatar?: string;
+  avatar?: string | null;
   hourly_rate?: number;
   is_active: boolean;
   is_working?: boolean;
@@ -13,6 +13,7 @@ export interface User {
   current_project?: string | null;
   total_duration?: number;
   total_elapsed_duration?: number;
+  settings?: Record<string, any>;
   created_at: string;
   updated_at: string;
 }

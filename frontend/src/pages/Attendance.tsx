@@ -338,7 +338,7 @@ export default function Attendance() {
   }, [calendarDays]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Attendance</h1>
         <p className="text-gray-500 mt-1">{isAdmin ? 'Track attendance for all employees' : 'Your attendance records'}</p>

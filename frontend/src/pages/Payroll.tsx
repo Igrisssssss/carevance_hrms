@@ -262,7 +262,7 @@ export default function Payroll() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Payroll Management</h1>
         <p className="text-gray-500 mt-1">Manage INR/USD salary structures, adjustments, payslips, and payments</p>
