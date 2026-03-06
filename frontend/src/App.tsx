@@ -13,6 +13,7 @@ import Team from '@/pages/Team';
 import Monitoring from '@/pages/Monitoring';
 import Attendance from '@/pages/Attendance';
 import Chat from '@/pages/Chat';
+import Payroll from '@/pages/Payroll';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -105,6 +106,7 @@ function App() {
         <Route path="monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
         <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
         <Route path="invoices" element={<AdminRoute><Invoices /></AdminRoute>} />
+        <Route path="payroll" element={<AdminRoute><Payroll /></AdminRoute>} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

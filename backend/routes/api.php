@@ -12,6 +12,11 @@ use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\ScreenshotController;
 use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\ChatController;
+use App\Http\Controllers\Api\PayrollController;
+use App\Http\Controllers\Api\AttendanceController;
+use App\Http\Controllers\Api\LeaveRequestController;
+use App\Http\Controllers\Api\AttendanceTimeEditRequestController;
+use App\Http\Controllers\Api\NotificationController;
 
 // Public routes
 Route::post('/auth/register', [AuthController::class, 'register']);
@@ -71,6 +76,42 @@ Route::middleware('api.token')->group(function () {
     Route::apiResource('invoices', InvoiceController::class);
     Route::post('/invoices/{id}/send', [InvoiceController::class, 'send']);
     Route::post('/invoices/{id}/mark-paid', [InvoiceController::class, 'markPaid']);
+
+    // Attendance check-in/out
+    Route::get('/attendance/today', [AttendanceController::class, 'today']);
+    Route::post('/attendance/check-in', [AttendanceController::class, 'checkIn']);
+    Route::post('/attendance/check-out', [AttendanceController::class, 'checkOut']);
+    Route::get('/attendance/calendar', [AttendanceController::class, 'calendar']);
+    Route::get('/attendance/summary', [AttendanceController::class, 'summary']);
+
+    // Leave requests
+    Route::get('/leave-requests', [LeaveRequestController::class, 'index']);
+    Route::post('/leave-requests', [LeaveRequestController::class, 'store']);
+    Route::patch('/leave-requests/{id}/approve', [LeaveRequestController::class, 'approve']);
+    Route::patch('/leave-requests/{id}/reject', [LeaveRequestController::class, 'reject']);
+
+    // Attendance time edit requests (overtime/manual adjustments)
+    Route::get('/attendance-time-edit-requests', [AttendanceTimeEditRequestController::class, 'index']);
+    Route::post('/attendance-time-edit-requests', [AttendanceTimeEditRequestController::class, 'store']);
+    Route::patch('/attendance-time-edit-requests/{id}/approve', [AttendanceTimeEditRequestController::class, 'approve']);
+    Route::patch('/attendance-time-edit-requests/{id}/reject', [AttendanceTimeEditRequestController::class, 'reject']);
+
+    // Payroll
+    Route::get('/payroll/structures', [PayrollController::class, 'structures']);
+    Route::post('/payroll/structures', [PayrollController::class, 'upsertStructure']);
+    Route::get('/payroll/payslips', [PayrollController::class, 'payslips']);
+    Route::post('/payroll/payslips/generate', [PayrollController::class, 'generatePayslip']);
+    Route::put('/payroll/structures/{id}', [PayrollController::class, 'updateStructure']);
+    Route::delete('/payroll/structures/{id}', [PayrollController::class, 'deleteStructure']);
+    Route::post('/payroll/payslips/pay-now', [PayrollController::class, 'payNow']);
+    Route::get('/payroll/payslips/{id}', [PayrollController::class, 'showPayslip']);
+    Route::get('/payroll/payslips/{id}/pdf', [PayrollController::class, 'downloadPayslipPdf']);
+
+    // Notifications
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/publish', [NotificationController::class, 'publish']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
     
     // Reports
     Route::get('/dashboard', [ReportController::class, 'dashboard']);

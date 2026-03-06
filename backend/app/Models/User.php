@@ -38,6 +38,16 @@ class User extends Authenticatable
         return $this->hasMany(Invoice::class);
     }
 
+    public function payrollStructures()
+    {
+        return $this->hasMany(PayrollStructure::class);
+    }
+
+    public function payslips()
+    {
+        return $this->hasMany(Payslip::class);
+    }
+
     public function sentChatMessages()
     {
         return $this->hasMany(ChatMessage::class, 'sender_id');

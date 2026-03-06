@@ -1,7 +1,7 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
-import { chatApi } from '@/services/api';
+import { chatApi, notificationApi } from '@/services/api';
 import { 
   LayoutDashboard, 
   Clock, 
@@ -12,9 +12,11 @@ import {
   MessageSquare,
   BarChart3, 
   FileText, 
+  Wallet,
   Settings, 
   LogOut,
   Play,
+  Bell,
   Menu,
   X
 } from 'lucide-react';
@@ -26,6 +28,9 @@ export default function Layout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadSenders, setUnreadSenders] = useState(0);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const isAdminView = user?.role === 'admin' || user?.role === 'manager';
   const navigation = useMemo(
     () => [
@@ -38,6 +43,7 @@ export default function Layout() {
       { name: 'Monitoring', href: '/monitoring', icon: Monitor, adminOnly: true },
       { name: 'Reports', href: '/reports', icon: BarChart3, adminOnly: true },
       { name: 'Invoices', href: '/invoices', icon: FileText, adminOnly: true },
+      { name: 'Payroll', href: '/payroll', icon: Wallet, adminOnly: true },
       { name: 'Settings', href: '/settings', icon: Settings, adminOnly: false },
     ].filter((item) => (item.adminOnly ? isAdminView : true)),
     [isAdminView]
@@ -66,6 +72,32 @@ export default function Layout() {
 
     loadUnread();
     const interval = setInterval(loadUnread, 5000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadNotifications = async () => {
+      try {
+        const response = await notificationApi.list({ limit: 20 });
+        if (!active) return;
+        setNotifications(response.data?.data || []);
+        setUnreadNotifications(Number(response.data?.unread_count || 0));
+      } catch {
+        if (active) {
+          setNotifications([]);
+          setUnreadNotifications(0);
+        }
+      }
+    };
+
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 8000);
 
     return () => {
       active = false;
@@ -117,6 +149,59 @@ export default function Layout() {
             <div className="flex-1" />
             
             <div className="flex items-center gap-4">
+              <div className="relative">
+                <button
+                  onClick={() => setNotificationsOpen((prev) => !prev)}
+                  className="relative p-2 rounded-lg border border-gray-200 hover:bg-gray-50"
+                >
+                  <Bell className="h-5 w-5 text-gray-600" />
+                  {unreadNotifications > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center">
+                      {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                    </span>
+                  )}
+                </button>
+                {notificationsOpen && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                    <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
+                      <p className="text-sm font-semibold text-gray-900">Notifications</p>
+                      <button
+                        className="text-xs text-primary-700 hover:underline"
+                        onClick={async () => {
+                          await notificationApi.markAllRead();
+                          setUnreadNotifications(0);
+                          setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+                        }}
+                      >
+                        Mark all read
+                      </button>
+                    </div>
+                    <div className="max-h-80 overflow-auto">
+                      {notifications.length === 0 ? (
+                        <p className="p-3 text-sm text-gray-500">No notifications</p>
+                      ) : (
+                        notifications.map((n) => (
+                          <button
+                            key={n.id}
+                            onClick={async () => {
+                              if (!n.is_read) {
+                                await notificationApi.markRead(n.id);
+                                setNotifications((prev) => prev.map((item) => item.id === n.id ? { ...item, is_read: true } : item));
+                                setUnreadNotifications((prev) => Math.max(0, prev - 1));
+                              }
+                            }}
+                            className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 ${n.is_read ? '' : 'bg-blue-50'}`}
+                          >
+                            <p className="text-xs uppercase tracking-wide text-gray-500">{n.type?.replace('_', ' ')}</p>
+                            <p className="text-sm font-medium text-gray-900">{n.title}</p>
+                            <p className="text-xs text-gray-600 mt-1">{n.message}</p>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <div className="h-8 w-8 rounded-full bg-primary-600 flex items-center justify-center text-white font-medium">
                   {user?.name?.charAt(0).toUpperCase()}

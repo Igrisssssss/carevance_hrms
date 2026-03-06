@@ -2,11 +2,28 @@ import { useEffect, useState } from 'react';
 import { reportApi, screenshotApi } from '@/services/api';
 import { Activity, Camera, Search, Users } from 'lucide-react';
 
+const PIE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2'];
+
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   return `${hours}h ${minutes}m`;
+};
+
+const polarToCartesian = (cx: number, cy: number, r: number, angle: number) => {
+  const rad = (angle - 90) * Math.PI / 180;
+  return {
+    x: cx + r * Math.cos(rad),
+    y: cy + r * Math.sin(rad),
+  };
+};
+
+const arcPath = (cx: number, cy: number, r: number, startAngle: number, endAngle: number) => {
+  const start = polarToCartesian(cx, cy, r, endAngle);
+  const end = polarToCartesian(cx, cy, r, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
+  return `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
 };
 
 export default function Monitoring() {
@@ -45,6 +62,7 @@ export default function Monitoring() {
   const stats = data?.stats;
   const screenshots = data?.recent_screenshots || [];
   const activityBreakdown = data?.activity_breakdown || [];
+  const totalActivityDuration = activityBreakdown.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0);
 
   const handleDeleteScreenshot = async (id: number) => {
     if (!confirm('Delete this screenshot?')) return;
@@ -143,14 +161,48 @@ export default function Monitoring() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <h2 className="font-semibold text-gray-900 mb-3">Activity Breakdown</h2>
-              <div className="space-y-2">
-                {activityBreakdown.length === 0 ? <p className="text-sm text-gray-500">No activity logs found.</p> : activityBreakdown.map((item: any) => (
-                  <div key={item.type} className="flex items-center justify-between p-2 border border-gray-100 rounded-lg">
-                    <p className="text-sm text-gray-700 capitalize">{item.type}</p>
-                    <p className="text-sm text-gray-900 font-medium">{item.count} events, {formatDuration(item.total_duration || 0)}</p>
+              {activityBreakdown.length === 0 || totalActivityDuration <= 0 ? (
+                <p className="text-sm text-gray-500">No activity logs found.</p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-center">
+                    <svg viewBox="0 0 220 220" className="h-48 w-48" aria-label="Activity breakdown pie chart">
+                      {(() => {
+                        let start = 0;
+                        return activityBreakdown.map((item: any, idx: number) => {
+                          const duration = Number(item.total_duration || 0);
+                          if (duration <= 0) return null;
+                          const fraction = duration / totalActivityDuration;
+                          const sweep = fraction * 360;
+                          const path = arcPath(110, 110, 90, start, start + sweep);
+                          start += sweep;
+                          return <path key={item.type} d={path} fill={PIE_COLORS[idx % PIE_COLORS.length]} />;
+                        });
+                      })()}
+                    </svg>
                   </div>
-                ))}
-              </div>
+                  <div className="space-y-2">
+                    {activityBreakdown.map((item: any, idx: number) => {
+                      const duration = Number(item.total_duration || 0);
+                      const pct = totalActivityDuration > 0 ? Math.round((duration / totalActivityDuration) * 100) : 0;
+                      return (
+                        <div key={item.type} className="flex items-center justify-between p-2 border border-gray-100 rounded-lg">
+                          <p className="text-sm text-gray-700 capitalize flex items-center gap-2">
+                            <span
+                              className="inline-block h-3 w-3 rounded-sm"
+                              style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }}
+                            />
+                            {item.type}
+                          </p>
+                          <p className="text-sm text-gray-900 font-medium">
+                            {item.count} events, {formatDuration(duration)} ({pct}%)
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <h2 className="font-semibold text-gray-900 mb-3">Recent Screenshots</h2>

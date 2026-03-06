@@ -1,0 +1,161 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\AttendanceRecord;
+use App\Models\AttendanceTimeEditRequest;
+use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+
+class AttendanceTimeEditRequestController extends Controller
+{
+    public function index(Request $request)
+    {
+        $request->validate([
+            'status' => 'nullable|in:pending,approved,rejected',
+            'user_id' => 'nullable|integer',
+        ]);
+
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id) {
+            return response()->json(['data' => []]);
+        }
+
+        $query = AttendanceTimeEditRequest::with(['user:id,name,email,role', 'reviewer:id,name,email'])
+            ->where('organization_id', $currentUser->organization_id)
+            ->orderByDesc('created_at');
+
+        if (!$this->canManage($currentUser)) {
+            $query->where('user_id', $currentUser->id);
+        } elseif ($request->filled('user_id')) {
+            $query->where('user_id', (int) $request->user_id);
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        return response()->json([
+            'data' => $query->limit(200)->get(),
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'attendance_date' => 'required|date',
+            'extra_minutes' => 'required|integer|min:1|max:600',
+            'message' => 'nullable|string|max:2000',
+        ]);
+
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id) {
+            return response()->json(['message' => 'Organization is required.'], 422);
+        }
+
+        $date = Carbon::parse($request->attendance_date)->toDateString();
+        $extraSeconds = (int) $request->extra_minutes * 60;
+
+        $hasPending = AttendanceTimeEditRequest::where('organization_id', $currentUser->organization_id)
+            ->where('user_id', $currentUser->id)
+            ->whereDate('attendance_date', $date)
+            ->where('status', 'pending')
+            ->exists();
+        if ($hasPending) {
+            return response()->json(['message' => 'A pending time edit request already exists for this date.'], 422);
+        }
+
+        $created = AttendanceTimeEditRequest::create([
+            'organization_id' => $currentUser->organization_id,
+            'user_id' => $currentUser->id,
+            'attendance_date' => $date,
+            'extra_seconds' => $extraSeconds,
+            'message' => $request->message,
+            'status' => 'pending',
+        ]);
+
+        return response()->json([
+            'message' => 'Time edit request submitted.',
+            'data' => $created->load(['user:id,name,email,role', 'reviewer:id,name,email']),
+        ], 201);
+    }
+
+    public function approve(Request $request, int $id)
+    {
+        $request->validate([
+            'review_note' => 'nullable|string|max:2000',
+        ]);
+
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id || !$this->canManage($currentUser)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $item = AttendanceTimeEditRequest::where('organization_id', $currentUser->organization_id)->find($id);
+        if (!$item) {
+            return response()->json(['message' => 'Time edit request not found'], 404);
+        }
+        if ($item->status !== 'pending') {
+            return response()->json(['message' => 'Only pending requests can be approved.'], 422);
+        }
+
+        $item->update([
+            'status' => 'approved',
+            'reviewed_by' => $currentUser->id,
+            'reviewed_at' => now(),
+            'review_note' => $request->review_note,
+        ]);
+
+        $record = AttendanceRecord::firstOrNew([
+            'user_id' => $item->user_id,
+            'attendance_date' => Carbon::parse($item->attendance_date)->toDateString(),
+        ]);
+        $record->organization_id = $item->organization_id;
+        $record->manual_adjustment_seconds = (int) ($record->manual_adjustment_seconds ?? 0) + (int) $item->extra_seconds;
+        $record->save();
+
+        return response()->json([
+            'message' => 'Time edit request approved and applied.',
+            'data' => $item->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email']),
+        ]);
+    }
+
+    public function reject(Request $request, int $id)
+    {
+        $request->validate([
+            'review_note' => 'nullable|string|max:2000',
+        ]);
+
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id || !$this->canManage($currentUser)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $item = AttendanceTimeEditRequest::where('organization_id', $currentUser->organization_id)->find($id);
+        if (!$item) {
+            return response()->json(['message' => 'Time edit request not found'], 404);
+        }
+        if ($item->status !== 'pending') {
+            return response()->json(['message' => 'Only pending requests can be rejected.'], 422);
+        }
+
+        $item->update([
+            'status' => 'rejected',
+            'reviewed_by' => $currentUser->id,
+            'reviewed_at' => now(),
+            'review_note' => $request->review_note,
+        ]);
+
+        return response()->json([
+            'message' => 'Time edit request rejected.',
+            'data' => $item->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email']),
+        ]);
+    }
+
+    private function canManage(User $user): bool
+    {
+        return in_array($user->role, ['admin', 'manager'], true);
+    }
+}

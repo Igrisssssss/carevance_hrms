@@ -262,3 +262,49 @@ export interface ChatUnreadSummary {
   unread_conversations: number;
   unread_senders: number;
 }
+
+export interface PayrollComponent {
+  id?: number;
+  name: string;
+  calculation_type: 'fixed' | 'percentage';
+  amount?: number;
+  value?: number;
+  computed_amount?: number;
+}
+
+export interface PayrollStructure {
+  id: number;
+  user_id: number;
+  organization_id: number;
+  basic_salary: number;
+  currency: string;
+  effective_from: string;
+  effective_to?: string | null;
+  is_active: boolean;
+  user?: User;
+  allowances: PayrollComponent[];
+  deductions: PayrollComponent[];
+}
+
+export interface Payslip {
+  id: number;
+  organization_id: number;
+  user_id: number;
+  payroll_structure_id?: number | null;
+  period_month: string;
+  currency: string;
+  basic_salary: number;
+  total_allowances: number;
+  total_deductions: number;
+  net_salary: number;
+  payment_status?: 'pending' | 'paid';
+  allowances: PayrollComponent[];
+  deductions: PayrollComponent[];
+  generated_by?: number | null;
+  generated_at?: string | null;
+  paid_at?: string | null;
+  paid_by?: number | null;
+  created_at: string;
+  updated_at: string;
+  user?: User;
+}

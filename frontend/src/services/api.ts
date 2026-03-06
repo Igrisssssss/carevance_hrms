@@ -17,6 +17,9 @@ import type {
   ChatMessage,
   ChatTypingUser,
   ChatUnreadSummary,
+  PayrollStructure,
+  Payslip,
+  PayrollComponent,
 } from '@/types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -306,6 +309,135 @@ export const dashboardApi = {
   summary: () => api.get('/dashboard'),
 };
 
+export const attendanceApi = {
+  today: () =>
+    api.get<{
+      record: {
+        id: number;
+        attendance_date: string;
+        check_in_at?: string | null;
+        check_out_at?: string | null;
+        worked_seconds: number;
+        manual_adjustment_seconds: number;
+        late_minutes: number;
+        status: string;
+        is_checked_in: boolean;
+        total_break_seconds: number;
+        shift_target_seconds: number;
+        remaining_shift_seconds: number;
+        completed_shift: boolean;
+        punches: Array<{
+          id: number;
+          punch_in_at: string;
+          punch_out_at?: string | null;
+          worked_seconds: number;
+        }>;
+      } | null;
+      late_after: string;
+      shift_target_seconds: number;
+      has_approved_leave_today: boolean;
+    }>('/attendance/today'),
+
+  checkIn: () => api.post('/attendance/check-in'),
+
+  checkOut: () => api.post('/attendance/check-out'),
+
+  calendar: (params?: { month?: string; user_id?: number }) =>
+    api.get<{
+      month: string;
+      user_id: number;
+      days: Array<{
+        date: string;
+        status: 'present' | 'absent' | 'weekend' | 'checked_in';
+        is_weekend: boolean;
+        check_in_at?: string | null;
+        check_out_at?: string | null;
+        late_minutes: number;
+        worked_seconds: number;
+      }>;
+      summary: {
+        present_days: number;
+        absent_days: number;
+        weekend_days: number;
+        late_days: number;
+        total_worked_seconds: number;
+      };
+    }>('/attendance/calendar', { params }),
+
+  summary: (params?: { start_date?: string; end_date?: string; q?: string }) =>
+    api.get<{
+      start_date: string;
+      end_date: string;
+      data: Array<{
+        user: { id: number; name: string; email: string; role: string };
+        present_days: number;
+        late_days: number;
+        total_worked_seconds: number;
+        is_checked_in: boolean;
+      }>;
+    }>('/attendance/summary', { params }),
+};
+
+export const leaveApi = {
+  list: (params?: { status?: 'pending' | 'approved' | 'rejected'; user_id?: number }) =>
+    api.get<{
+      data: Array<{
+        id: number;
+        user_id: number;
+        organization_id: number;
+        start_date: string;
+        end_date: string;
+        reason?: string | null;
+        status: 'pending' | 'approved' | 'rejected';
+        reviewed_by?: number | null;
+        reviewed_at?: string | null;
+        review_note?: string | null;
+        user?: { id: number; name: string; email: string; role: string };
+        reviewer?: { id: number; name: string; email: string } | null;
+        created_at: string;
+      }>;
+    }>('/leave-requests', { params }),
+
+  create: (data: { start_date: string; end_date: string; reason?: string }) =>
+    api.post('/leave-requests', data),
+
+  approve: (id: number, review_note?: string) =>
+    api.patch(`/leave-requests/${id}/approve`, { review_note }),
+
+  reject: (id: number, review_note?: string) =>
+    api.patch(`/leave-requests/${id}/reject`, { review_note }),
+};
+
+export const attendanceTimeEditApi = {
+  list: (params?: { status?: 'pending' | 'approved' | 'rejected'; user_id?: number }) =>
+    api.get<{
+      data: Array<{
+        id: number;
+        user_id: number;
+        organization_id: number;
+        attendance_date: string;
+        extra_seconds: number;
+        message?: string | null;
+        status: 'pending' | 'approved' | 'rejected';
+        reviewed_by?: number | null;
+        reviewed_at?: string | null;
+        review_note?: string | null;
+        user?: { id: number; name: string; email: string; role: string };
+        reviewer?: { id: number; name: string; email: string } | null;
+        created_at: string;
+      }>;
+    }>('/attendance-time-edit-requests', { params }),
+
+  create: (data: { attendance_date: string; extra_minutes: number; message?: string }) =>
+    api.post('/attendance-time-edit-requests', data),
+
+  approve: (id: number, review_note?: string) =>
+    api.patch(`/attendance-time-edit-requests/${id}/approve`, { review_note }),
+
+  reject: (id: number, review_note?: string) =>
+    api.patch(`/attendance-time-edit-requests/${id}/reject`, { review_note }),
+};
+
 export const chatApi = {
   getConversations: () => api.get<ChatConversation[]>('/chat/conversations'),
   getUnreadSummary: () => api.get<ChatUnreadSummary>('/chat/unread-summary'),
@@ -336,6 +468,70 @@ export const chatApi = {
     api.get<Blob>(`/chat/messages/${messageId}/attachment`, {
       responseType: 'blob' as AxiosRequestConfig['responseType'],
     }),
+};
+
+export const payrollApi = {
+  getStructures: (params?: { user_id?: number }) =>
+    api.get<{ users: Array<{ id: number; name: string; email: string; role: string }>; structures: PayrollStructure[] }>('/payroll/structures', { params }),
+
+  saveStructure: (data: {
+    user_id: number;
+    basic_salary: number;
+    currency?: 'INR' | 'USD';
+    effective_from: string;
+    allowances?: PayrollComponent[];
+    deductions?: PayrollComponent[];
+  }) => api.post<PayrollStructure>('/payroll/structures', data),
+
+  updateStructure: (id: number, data: {
+    basic_salary: number;
+    currency?: 'INR' | 'USD';
+    effective_from: string;
+    allowances?: PayrollComponent[];
+    deductions?: PayrollComponent[];
+  }) => api.put<PayrollStructure>(`/payroll/structures/${id}`, data),
+
+  deleteStructure: (id: number) => api.delete(`/payroll/structures/${id}`),
+
+  getPayslips: (params?: { user_id?: number; period_month?: string }) =>
+    api.get<{ data: Payslip[] }>('/payroll/payslips', { params }),
+
+  generatePayslip: (data: { user_id: number; period_month: string; payroll_structure_id?: number }) =>
+    api.post<Payslip>('/payroll/payslips/generate', data),
+
+  payNow: (data: { payslip_ids: number[] }) =>
+    api.post<{ message: string; paid_count: number }>('/payroll/payslips/pay-now', data),
+
+  downloadPayslipPdf: (id: number) =>
+    api.get<Blob>(`/payroll/payslips/${id}/pdf`, {
+      responseType: 'blob' as AxiosRequestConfig['responseType'],
+    }),
+};
+
+export const notificationApi = {
+  list: (params?: { limit?: number }) =>
+    api.get<{
+      data: Array<{
+        id: number;
+        type: 'announcement' | 'news' | 'salary_credited';
+        title: string;
+        message: string;
+        is_read: boolean;
+        created_at: string;
+        sender?: { id: number; name: string; email: string } | null;
+        meta?: Record<string, any> | null;
+      }>;
+      unread_count: number;
+    }>('/notifications', { params }),
+
+  publish: (data: { type: 'announcement' | 'news'; title: string; message: string; recipient_user_ids?: number[] }) =>
+    api.post('/notifications/publish', data),
+
+  markRead: (id: number) =>
+    api.post(`/notifications/${id}/read`),
+
+  markAllRead: () =>
+    api.post('/notifications/read-all'),
 };
 
 export default api;

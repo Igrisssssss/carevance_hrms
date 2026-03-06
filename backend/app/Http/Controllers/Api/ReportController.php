@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
+use App\Models\AttendanceRecord;
+use App\Models\LeaveRequest;
 use App\Models\Project;
 use App\Models\Screenshot;
 use App\Models\TimeEntry;
@@ -515,8 +517,8 @@ class ReportController extends Controller
             if ($request->filled('q')) {
                 $term = trim((string) $request->q);
                 $usersQuery->where(function ($query) use ($term) {
-                    $query->where('name', 'ilike', "%{$term}%")
-                        ->orWhere('email', 'ilike', "%{$term}%");
+                    $query->where('name', 'like', "%{$term}%")
+                        ->orWhere('email', 'like', "%{$term}%");
                 });
             }
         }
@@ -524,29 +526,50 @@ class ReportController extends Controller
         $users = $usersQuery->orderBy('name')->get();
         $workingDaysCount = max(1, $workingDates->count());
 
-        $rows = $users->map(function (User $user) use ($startDate, $endDate, $workingDaysCount, $workingDates, $weekendDates) {
-            $entries = TimeEntry::query()
-                ->selectRaw('DATE(start_time) as worked_date, COALESCE(SUM(duration), 0) as worked_seconds')
-                ->whereBetween('start_time', [$startDate, $endDate])
+        $rows = $users->map(function (User $user) use ($startDate, $endDate, $workingDaysCount, $workingDates, $weekendDates, $currentUser) {
+            $records = AttendanceRecord::query()
+                ->where('organization_id', $currentUser->organization_id)
                 ->where('user_id', $user->id)
-                ->groupBy('worked_date')
-                ->get();
+                ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
+                ->get(['attendance_date', 'check_in_at', 'check_out_at', 'worked_seconds', 'manual_adjustment_seconds']);
 
-            $presentByDate = $entries->keyBy('worked_date');
+            $recordByDate = $records->keyBy(fn ($record) => Carbon::parse($record->attendance_date)->toDateString());
             $presentDates = $workingDates
-                ->filter(fn (string $date) => $presentByDate->has($date))
-                ->values();
-            $absentDates = $workingDates
-                ->filter(fn (string $date) => !$presentByDate->has($date))
+                ->filter(fn (string $date) => (bool) $recordByDate->get($date)?->check_in_at)
                 ->values();
 
-            $workedSeconds = (int) $entries->sum('worked_seconds');
+            $approvedLeaveDates = LeaveRequest::query()
+                ->where('organization_id', $currentUser->organization_id)
+                ->where('user_id', $user->id)
+                ->where('status', 'approved')
+                ->whereDate('start_date', '<=', $endDate->toDateString())
+                ->whereDate('end_date', '>=', $startDate->toDateString())
+                ->get(['start_date', 'end_date'])
+                ->flatMap(function ($leave) {
+                    return collect(CarbonPeriod::create($leave->start_date, $leave->end_date))
+                        ->filter(fn ($date) => !$date->isWeekend())
+                        ->map(fn ($date) => $date->toDateString())
+                        ->values();
+                })
+                ->unique()
+                ->values();
+
+            $absentDates = $workingDates
+                ->filter(fn (string $date) => !$presentDates->contains($date))
+                ->values();
+
+            $workedSeconds = (int) $records->sum(function ($record) {
+                return (int) ($record->worked_seconds ?? 0) + (int) ($record->manual_adjustment_seconds ?? 0);
+            });
             $daysPresent = $presentDates->count();
-            $leaveDays = $absentDates->count();
+            $leaveDays = $approvedLeaveDates->count();
             $attendanceRate = (float) round(($daysPresent / $workingDaysCount) * 100, 2);
 
-            $isWorking = TimeEntry::where('user_id', $user->id)
-                ->whereNull('end_time')
+            $isWorking = AttendanceRecord::where('organization_id', $currentUser->organization_id)
+                ->where('user_id', $user->id)
+                ->whereDate('attendance_date', now()->toDateString())
+                ->whereNotNull('check_in_at')
+                ->whereNull('check_out_at')
                 ->exists();
 
             return [
@@ -564,7 +587,8 @@ class ReportController extends Controller
                 'worked_hours' => round($workedSeconds / 3600, 2),
                 'is_working' => $isWorking,
                 'present_dates' => $presentDates,
-                'leave_dates' => $absentDates,
+                'leave_dates' => $approvedLeaveDates,
+                'absent_dates' => $absentDates,
                 'weekend_dates' => $weekendDates,
             ];
         })->values();
@@ -605,8 +629,8 @@ class ReportController extends Controller
             if ($request->filled('q')) {
                 $term = trim((string) $request->q);
                 $usersQuery->where(function ($query) use ($term) {
-                    $query->where('name', 'ilike', "%{$term}%")
-                        ->orWhere('email', 'ilike', "%{$term}%");
+                    $query->where('name', 'like', "%{$term}%")
+                        ->orWhere('email', 'like', "%{$term}%");
                 });
             }
         }
