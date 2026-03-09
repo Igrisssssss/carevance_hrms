@@ -100,6 +100,33 @@ Start frontend:
 npm run dev
 ```
 
+## Live deployment
+
+For a deployed setup, configure the frontend and backend with public URLs.
+
+Example backend `.env`:
+
+```env
+APP_URL=https://your-backend-domain.com
+FRONTEND_URL=https://your-frontend-domain.com
+DESKTOP_WINDOWS_DOWNLOAD_URL=https://github.com/Igrisssssss/download_time_tracker/releases/latest/download/TimeTrack%20Pro-Setup-1.0.0-x64.exe
+```
+
+Example frontend `.env`:
+
+```env
+VITE_API_URL=https://your-backend-domain.com/api
+VITE_WEB_APP_URL=https://your-frontend-domain.com
+```
+
+With that setup, the login page download button will call:
+
+```text
+https://your-backend-domain.com/api/downloads/desktop/windows
+```
+
+The browser will start downloading the installer directly through your backend endpoint.
+
 ## 3) Desktop (optional)
 
 ```bash
