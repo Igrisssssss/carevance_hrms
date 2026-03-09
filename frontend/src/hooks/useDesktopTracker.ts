@@ -60,6 +60,7 @@ export const useDesktopTracker = () => {
 
         if (idleSeconds >= IDLE_THRESHOLD_SECONDS) {
           await activityApi.create({
+            time_entry_id: activeEntry.id,
             type: 'idle',
             name: 'System Idle',
             duration: idleSeconds,
@@ -67,6 +68,7 @@ export const useDesktopTracker = () => {
           });
         } else {
           await activityApi.create({
+            time_entry_id: activeEntry.id,
             type: 'app',
             name: 'Active Input',
             duration: TRACK_INTERVAL_MS / 1000,
@@ -90,4 +92,3 @@ export const useDesktopTracker = () => {
     return () => clearInterval(interval);
   }, [isAuthenticated, user?.role]);
 };
-

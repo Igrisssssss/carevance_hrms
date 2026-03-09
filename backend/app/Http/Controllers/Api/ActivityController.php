@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
+use App\Models\TimeEntry;
 use Illuminate\Http\Request;
 
 class ActivityController extends Controller
@@ -53,6 +54,7 @@ class ActivityController extends Controller
     {
         $validated = $request->validate([
             'user_id' => 'nullable|exists:users,id',
+            'time_entry_id' => 'nullable|exists:time_entries,id',
             'type' => 'required|in:app,url,idle',
             'name' => 'required|string|max:255',
             'duration' => 'nullable|integer|min:0',
@@ -62,6 +64,16 @@ class ActivityController extends Controller
         if ($request->user()) {
             // Employees can only submit their own telemetry.
             $validated['user_id'] = $request->user()->id;
+        }
+
+        if (!empty($validated['time_entry_id'])) {
+            $timeEntryBelongsToUser = TimeEntry::whereKey($validated['time_entry_id'])
+                ->where('user_id', $validated['user_id'])
+                ->exists();
+
+            if (!$timeEntryBelongsToUser) {
+                return response()->json(['message' => 'Selected time entry is invalid for this user.'], 422);
+            }
         }
 
         $validated['duration'] = $validated['duration'] ?? 0;
@@ -108,11 +120,22 @@ class ActivityController extends Controller
         }
 
         $validated = $request->validate([
+            'time_entry_id' => 'nullable|exists:time_entries,id',
             'type' => 'sometimes|in:app,url,idle',
             'name' => 'sometimes|string|max:255',
             'duration' => 'nullable|integer|min:0',
             'recorded_at' => 'nullable|date',
         ]);
+
+        if (array_key_exists('time_entry_id', $validated) && !empty($validated['time_entry_id'])) {
+            $timeEntryBelongsToUser = TimeEntry::whereKey($validated['time_entry_id'])
+                ->where('user_id', $activity->user_id)
+                ->exists();
+
+            if (!$timeEntryBelongsToUser) {
+                return response()->json(['message' => 'Selected time entry is invalid for this user.'], 422);
+            }
+        }
 
         $activity->update($validated);
 

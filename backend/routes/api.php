@@ -96,6 +96,9 @@ Route::middleware('api.token')->group(function () {
     Route::post('/leave-requests', [LeaveRequestController::class, 'store']);
     Route::patch('/leave-requests/{id}/approve', [LeaveRequestController::class, 'approve']);
     Route::patch('/leave-requests/{id}/reject', [LeaveRequestController::class, 'reject']);
+    Route::post('/leave-requests/{id}/revoke-request', [LeaveRequestController::class, 'requestRevoke']);
+    Route::patch('/leave-requests/{id}/revoke-approve', [LeaveRequestController::class, 'approveRevoke']);
+    Route::patch('/leave-requests/{id}/revoke-reject', [LeaveRequestController::class, 'rejectRevoke']);
 
     // Attendance time edit requests (overtime/manual adjustments)
     Route::get('/attendance-time-edit-requests', [AttendanceTimeEditRequestController::class, 'index']);

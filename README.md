@@ -89,6 +89,9 @@ Create/update `frontend/.env`:
 VITE_API_URL=http://localhost:8000/api
 # optional for desktop external-open target:
 # VITE_WEB_APP_URL=http://localhost:5173
+# optional installer/download button on login page:
+# VITE_DESKTOP_DOWNLOAD_URL=https://your-domain.com/downloads/TimeTrackSetup.exe
+# VITE_DESKTOP_DOWNLOAD_LABEL=Download for Windows
 ```
 
 Start frontend:
@@ -111,6 +114,8 @@ Optional desktop URL override:
 $env:APP_URL="http://localhost:5173"
 npm start
 ```
+
+If you want users to install the desktop app from the login page, host your installer somewhere public and set `VITE_DESKTOP_DOWNLOAD_URL` in `frontend/.env`. The login page will then show a download button automatically.
 
 ## Role-Based Behavior
 

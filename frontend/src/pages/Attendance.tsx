@@ -240,6 +240,37 @@ export default function Attendance() {
     }
   };
 
+  const requestLeaveRevoke = async (id: number) => {
+    try {
+      await leaveApi.requestRevoke(id);
+      await fetchLeaveRequests();
+      alert('Leave revoke request submitted');
+    } catch (e) {
+      console.error('Leave revoke request failed:', e);
+      alert((e as any)?.response?.data?.message || 'Failed to request leave revoke');
+    }
+  };
+
+  const approveLeaveRevoke = async (id: number) => {
+    try {
+      await leaveApi.approveRevoke(id);
+      await Promise.all([fetchLeaveRequests(), fetchCalendar(), fetchAttendance(), fetchToday()]);
+    } catch (e) {
+      console.error('Approve leave revoke failed:', e);
+      alert((e as any)?.response?.data?.message || 'Failed to approve leave revoke');
+    }
+  };
+
+  const rejectLeaveRevoke = async (id: number) => {
+    try {
+      await leaveApi.rejectRevoke(id);
+      await fetchLeaveRequests();
+    } catch (e) {
+      console.error('Reject leave revoke failed:', e);
+      alert((e as any)?.response?.data?.message || 'Failed to reject leave revoke');
+    }
+  };
+
   const fetchTimeEditRequests = async () => {
     setIsTimeEditLoading(true);
     try {
@@ -332,6 +363,14 @@ export default function Attendance() {
   }, [todayRecord?.check_in_at, lateAfter]);
 
   const monthGrid = useMemo(() => buildMonthGrid(calendarMonth), [calendarMonth]);
+  const todayDate = useMemo(() => formatLocalDate(new Date()), []);
+  const canRequestRevoke = (item: any) => {
+    if (!item || item.status !== 'approved' || item.revoke_status) return false;
+    const [y, m, d] = String(item.start_date || '').split('-').map((v: string) => Number(v));
+    if (!y || !m || !d) return false;
+    const deadline = new Date(y, m - 1, d - 1);
+    return todayDate <= formatLocalDate(deadline);
+  };
   const calendarMap = useMemo(() => {
     const map = new Map<string, any>();
     for (const d of calendarDays) map.set(d.date, d);
@@ -566,7 +605,7 @@ export default function Attendance() {
                       : status === 'checked_in'
                         ? 'bg-blue-50 border-blue-200 text-blue-900'
                         : status === 'leave'
-                          ? 'bg-amber-50 border-amber-200 text-amber-900'
+                          ? 'bg-red-50 border-red-200 text-red-900'
                           : 'bg-gray-50 border-gray-200 text-gray-600';
 
                   return (
@@ -679,15 +718,31 @@ export default function Attendance() {
                     <p className="text-sm font-medium text-gray-900">
                       {item.user?.name || 'You'}: {item.start_date} to {item.end_date}
                     </p>
-                    <span className={`text-xs px-2 py-1 rounded-full ${item.status === 'approved' ? 'bg-green-100 text-green-700' : item.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                    <span className={`text-xs px-2 py-1 rounded-full ${item.status === 'approved' ? 'bg-green-100 text-green-700' : item.status === 'rejected' ? 'bg-red-100 text-red-700' : item.status === 'revoked' ? 'bg-gray-100 text-gray-700' : 'bg-amber-100 text-amber-700'}`}>
                       {item.status}
                     </span>
                   </div>
                   {item.reason ? <p className="text-xs text-gray-600 mt-1">{item.reason}</p> : null}
+                  {item.revoke_status ? (
+                    <p className="text-xs mt-1 text-gray-600">
+                      Revoke Request: <span className={`font-medium ${item.revoke_status === 'pending' ? 'text-amber-700' : item.revoke_status === 'approved' ? 'text-green-700' : 'text-red-700'}`}>{item.revoke_status}</span>
+                    </p>
+                  ) : null}
                   {isAdmin && item.status === 'pending' ? (
                     <div className="mt-2 flex gap-2">
                       <button onClick={() => approveLeave(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-green-600 text-white hover:bg-green-700">Approve</button>
                       <button onClick={() => rejectLeave(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700">Reject</button>
+                    </div>
+                  ) : null}
+                  {!isAdmin && canRequestRevoke(item) ? (
+                    <div className="mt-2">
+                      <button onClick={() => requestLeaveRevoke(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700">Request Revoke</button>
+                    </div>
+                  ) : null}
+                  {isAdmin && item.status === 'approved' && item.revoke_status === 'pending' ? (
+                    <div className="mt-2 flex gap-2">
+                      <button onClick={() => approveLeaveRevoke(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-green-600 text-white hover:bg-green-700">Approve Revoke</button>
+                      <button onClick={() => rejectLeaveRevoke(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700">Reject Revoke</button>
                     </div>
                   ) : null}
                 </div>

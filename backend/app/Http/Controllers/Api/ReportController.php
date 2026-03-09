@@ -385,10 +385,9 @@ class ReportController extends Controller
             ->whereBetween('start_time', [$startDate, $endDate])
             ->get(['user_id', 'duration', 'billable', 'start_time']);
 
-        $idleActivities = Activity::whereIn('user_id', $userIds)
-            ->where('type', 'idle')
+        $activities = Activity::whereIn('user_id', $userIds)
             ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->get(['user_id', 'duration']);
+            ->get(['user_id', 'type', 'duration', 'recorded_at']);
 
         $activeUserIds = TimeEntry::whereIn('user_id', $userIds)
             ->whereNull('end_time')
@@ -397,13 +396,15 @@ class ReportController extends Controller
             ->map(fn ($id) => (int) $id);
 
         $entriesByUser = $entries->groupBy('user_id');
-        $idleByUser = $idleActivities->groupBy('user_id');
+        $activitiesByUser = $activities->groupBy('user_id');
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $idleByUser, $activeUserIds) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $activitiesByUser, $activeUserIds) {
             $userEntries = $entriesByUser->get($user->id, collect());
+            $userActivities = $activitiesByUser->get($user->id, collect());
             $totalDuration = (int) $userEntries->sum('duration');
             $billableDuration = (int) $userEntries->where('billable', true)->sum('duration');
-            $idleDuration = (int) $idleByUser->get($user->id, collect())->sum('duration');
+            $idleDuration = (int) $userActivities->where('type', 'idle')->sum('duration');
+            $lastActivityAt = $userActivities->max('recorded_at');
 
             return [
                 'user' => $user,
@@ -412,6 +413,8 @@ class ReportController extends Controller
                 'billable_duration' => $billableDuration,
                 'non_billable_duration' => max($totalDuration - $billableDuration, 0),
                 'idle_duration' => $idleDuration,
+                'idle_percentage' => $totalDuration > 0 ? (float) round(($idleDuration / $totalDuration) * 100, 2) : 0,
+                'last_activity_at' => $lastActivityAt,
                 'is_working' => $activeUserIds->contains((int) $user->id),
             ];
         })->values();
@@ -429,7 +432,7 @@ class ReportController extends Controller
 
         $totalDuration = (int) $entries->sum('duration');
         $billableDuration = (int) $entries->where('billable', true)->sum('duration');
-        $idleDuration = (int) $idleActivities->sum('duration');
+        $idleDuration = (int) $activities->where('type', 'idle')->sum('duration');
 
         return response()->json([
             'start_date' => $startDate->toDateString(),
@@ -441,6 +444,7 @@ class ReportController extends Controller
                 'billable_duration' => $billableDuration,
                 'non_billable_duration' => max($totalDuration - $billableDuration, 0),
                 'idle_duration' => $idleDuration,
+                'idle_percentage' => $totalDuration > 0 ? (float) round(($idleDuration / $totalDuration) * 100, 2) : 0,
             ],
             'users' => $users,
             'by_user' => $byUser,

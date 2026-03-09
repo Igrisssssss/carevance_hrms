@@ -138,7 +138,7 @@ export default function Monitoring() {
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">No employee found</div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="flex items-center justify-between"><p className="text-sm text-gray-500">Employee</p><Users className="h-5 w-5 text-gray-400" /></div>
               <p className="text-lg font-bold text-gray-900 mt-1">{selectedUser.name}</p>
@@ -147,6 +147,10 @@ export default function Monitoring() {
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="flex items-center justify-between"><p className="text-sm text-gray-500">Total Worked</p><Activity className="h-5 w-5 text-green-500" /></div>
               <p className="text-2xl font-bold text-gray-900 mt-1">{formatDuration(stats?.total_duration || 0)}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between"><p className="text-sm text-gray-500">Total Idle</p><Activity className="h-5 w-5 text-orange-500" /></div>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{formatDuration(stats?.idle_total_duration || 0)}</p>
             </div>
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="flex items-center justify-between"><p className="text-sm text-gray-500">Average Idle</p><Activity className="h-5 w-5 text-amber-500" /></div>

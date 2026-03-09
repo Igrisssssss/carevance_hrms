@@ -382,7 +382,7 @@ export const attendanceApi = {
 };
 
 export const leaveApi = {
-  list: (params?: { status?: 'pending' | 'approved' | 'rejected'; user_id?: number }) =>
+  list: (params?: { status?: 'pending' | 'approved' | 'rejected' | 'revoked'; user_id?: number }) =>
     api.get<{
       data: Array<{
         id: number;
@@ -391,12 +391,18 @@ export const leaveApi = {
         start_date: string;
         end_date: string;
         reason?: string | null;
-        status: 'pending' | 'approved' | 'rejected';
+        status: 'pending' | 'approved' | 'rejected' | 'revoked';
+        revoke_status?: 'pending' | 'approved' | 'rejected' | null;
+        revoke_requested_at?: string | null;
+        revoke_reviewed_by?: number | null;
+        revoke_reviewed_at?: string | null;
+        revoke_review_note?: string | null;
         reviewed_by?: number | null;
         reviewed_at?: string | null;
         review_note?: string | null;
         user?: { id: number; name: string; email: string; role: string };
         reviewer?: { id: number; name: string; email: string } | null;
+        revoke_reviewer?: { id: number; name: string; email: string } | null;
         created_at: string;
       }>;
     }>('/leave-requests', { params }),
@@ -409,6 +415,15 @@ export const leaveApi = {
 
   reject: (id: number, review_note?: string) =>
     api.patch(`/leave-requests/${id}/reject`, { review_note }),
+
+  requestRevoke: (id: number) =>
+    api.post(`/leave-requests/${id}/revoke-request`),
+
+  approveRevoke: (id: number, review_note?: string) =>
+    api.patch(`/leave-requests/${id}/revoke-approve`, { review_note }),
+
+  rejectRevoke: (id: number, review_note?: string) =>
+    api.patch(`/leave-requests/${id}/revoke-reject`, { review_note }),
 };
 
 export const attendanceTimeEditApi = {

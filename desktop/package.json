@@ -1,12 +1,46 @@
 {
   "name": "timetrackpro-desktop",
   "version": "1.0.0",
+  "description": "TimeTrack Pro desktop timer and activity tracker",
   "private": true,
+  "author": "TimeTrack Pro",
   "main": "main.cjs",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist:win": "electron-builder --win nsis --config.win.artifactName=\"${productName}-Setup-${version}-${arch}.${ext}\"",
+    "dist:portable": "electron-builder --win portable --config.win.artifactName=\"${productName}-Portable-${version}-${arch}.${ext}\""
+  },
+  "build": {
+    "appId": "com.timetrackpro.desktop",
+    "productName": "TimeTrack Pro",
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "asar": true,
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "signAndEditExecutable": false,
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TimeTrack Pro"
+    }
   },
   "devDependencies": {
-    "electron": "^33.2.1"
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
   }
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { reportApi, reportGroupApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { BarChart3, Calendar, Download, TrendingUp, Users } from 'lucide-react';
+import { BarChart3, Calendar, Clock, Download, TrendingUp, Users } from 'lucide-react';
 
 type OrgUser = { id: number; name: string; email: string; role: string };
 type Group = { id: number; name: string; users: OrgUser[] };
@@ -12,6 +12,13 @@ const formatDuration = (seconds: number) => {
   const h = Math.floor(safe / 3600);
   const m = Math.floor((safe % 3600) / 60);
   return `${h}h ${m}m`;
+};
+
+const formatLastActivity = (value?: string | null) => {
+  if (!value) return 'No activity';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'No activity';
+  return parsed.toLocaleString();
 };
 
 export default function Reports() {
@@ -194,9 +201,10 @@ export default function Reports() {
 
       {isLoading ? <div className="text-sm text-gray-500">Loading reports...</div> : (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <StatCard label="Total Work" value={formatDuration(overallData?.summary?.total_duration || reportData?.total_duration || 0)} icon={<Calendar className="h-4 w-4 text-primary-600" />} />
             <StatCard label="Billable Work" value={formatDuration(overallData?.summary?.billable_duration || reportData?.billable_duration || 0)} icon={<TrendingUp className="h-4 w-4 text-green-600" />} />
+            <StatCard label="Idle Time" value={formatDuration(overallData?.summary?.idle_duration || 0)} icon={<Clock className="h-4 w-4 text-amber-600" />} />
             <StatCard label="Users" value={String(overallData?.summary?.users_count || 0)} icon={<Users className="h-4 w-4 text-blue-600" />} />
             <StatCard label="Active Users" value={String(overallData?.summary?.active_users || 0)} icon={<BarChart3 className="h-4 w-4 text-purple-600" />} />
           </div>
@@ -210,12 +218,14 @@ export default function Reports() {
                   <th className="text-left px-4 py-2">Total</th>
                   <th className="text-left px-4 py-2">Billable</th>
                   <th className="text-left px-4 py-2">Idle</th>
+                  <th className="text-left px-4 py-2">Idle %</th>
+                  <th className="text-left px-4 py-2">Last Activity</th>
                   <th className="text-left px-4 py-2">Working</th>
                 </tr>
               </thead>
               <tbody>
                 {(overallData?.by_user || []).length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-4 text-gray-500">No report rows found.</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-4 text-gray-500">No report rows found.</td></tr>
                 ) : (
                   (overallData?.by_user || []).map((row: any) => (
                     <tr key={row.user.id} className="border-b border-gray-100">
@@ -223,6 +233,8 @@ export default function Reports() {
                       <td className="px-4 py-2">{formatDuration(row.total_duration || 0)}</td>
                       <td className="px-4 py-2">{formatDuration(row.billable_duration || 0)}</td>
                       <td className="px-4 py-2">{formatDuration(row.idle_duration || 0)}</td>
+                      <td className="px-4 py-2">{Number(row.idle_percentage || 0).toFixed(1)}%</td>
+                      <td className="px-4 py-2">{formatLastActivity(row.last_activity_at)}</td>
                       <td className="px-4 py-2">{row.is_working ? 'Yes' : 'No'}</td>
                     </tr>
                   ))
@@ -249,4 +261,3 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
     </div>
   );
 }
-

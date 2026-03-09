@@ -14,6 +14,11 @@ class LeaveRequest extends Model
         'end_date',
         'reason',
         'status',
+        'revoke_status',
+        'revoke_requested_at',
+        'revoke_reviewed_by',
+        'revoke_reviewed_at',
+        'revoke_review_note',
         'reviewed_by',
         'reviewed_at',
         'review_note',
@@ -25,6 +30,8 @@ class LeaveRequest extends Model
             'start_date' => 'date',
             'end_date' => 'date',
             'reviewed_at' => 'datetime',
+            'revoke_requested_at' => 'datetime',
+            'revoke_reviewed_at' => 'datetime',
         ];
     }
 
@@ -36,6 +43,11 @@ class LeaveRequest extends Model
     public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function revokeReviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'revoke_reviewed_by');
     }
 
     public function organization(): BelongsTo

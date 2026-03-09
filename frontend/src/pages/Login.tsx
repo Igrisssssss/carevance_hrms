@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Clock, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Clock, Eye, EyeOff, AlertCircle, Download, Monitor } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -11,6 +11,8 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const desktopDownloadUrl = import.meta.env.VITE_DESKTOP_DOWNLOAD_URL?.trim();
+  const desktopDownloadLabel = import.meta.env.VITE_DESKTOP_DOWNLOAD_LABEL?.trim() || 'Download for Windows';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,6 +145,31 @@ export default function Login() {
               )}
             </button>
           </form>
+
+          {desktopDownloadUrl ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+                  <Monitor className="h-5 w-5" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-semibold text-slate-900">Need the desktop timer?</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Install the desktop app on your PC to use the timer, screenshots, and idle tracking.
+                  </p>
+                  <a
+                    href={desktopDownloadUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+                  >
+                    <Download className="h-4 w-4" />
+                    {desktopDownloadLabel}
+                  </a>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -180,6 +207,17 @@ export default function Login() {
               </div>
               <span className="text-primary-50">Team collaboration</span>
             </div>
+            {desktopDownloadUrl ? (
+              <a
+                href={desktopDownloadUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-3 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/20"
+              >
+                <Download className="h-4 w-4" />
+                {desktopDownloadLabel}
+              </a>
+            ) : null}
           </div>
         </div>
       </div>

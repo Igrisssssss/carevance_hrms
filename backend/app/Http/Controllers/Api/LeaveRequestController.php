@@ -15,7 +15,7 @@ class LeaveRequestController extends Controller
     public function index(Request $request)
     {
         $request->validate([
-            'status' => 'nullable|in:pending,approved,rejected',
+            'status' => 'nullable|in:pending,approved,rejected,revoked',
             'user_id' => 'nullable|integer',
         ]);
 
@@ -24,7 +24,7 @@ class LeaveRequestController extends Controller
             return response()->json(['data' => []]);
         }
 
-        $query = LeaveRequest::with(['user:id,name,email,role', 'reviewer:id,name,email'])
+        $query = LeaveRequest::with(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email'])
             ->where('organization_id', $currentUser->organization_id)
             ->orderByDesc('created_at');
 
@@ -81,7 +81,7 @@ class LeaveRequestController extends Controller
 
         return response()->json([
             'message' => 'Leave request submitted.',
-            'data' => $leave->load(['user:id,name,email,role', 'reviewer:id,name,email']),
+            'data' => $leave->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
         ], 201);
     }
 
@@ -115,7 +115,7 @@ class LeaveRequestController extends Controller
 
         return response()->json([
             'message' => 'Leave request approved.',
-            'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email']),
+            'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
         ]);
     }
 
@@ -147,7 +147,113 @@ class LeaveRequestController extends Controller
 
         return response()->json([
             'message' => 'Leave request rejected.',
-            'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email']),
+            'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
+        ]);
+    }
+
+    public function requestRevoke(Request $request, int $id)
+    {
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id) {
+            return response()->json(['message' => 'Organization is required.'], 422);
+        }
+
+        $leave = LeaveRequest::where('organization_id', $currentUser->organization_id)
+            ->where('user_id', $currentUser->id)
+            ->find($id);
+        if (!$leave) {
+            return response()->json(['message' => 'Leave request not found'], 404);
+        }
+        if ($leave->status !== 'approved') {
+            return response()->json(['message' => 'Only approved leave can be revoked.'], 422);
+        }
+        if ($leave->revoke_status === 'pending') {
+            return response()->json(['message' => 'Revoke request is already pending.'], 422);
+        }
+
+        $deadline = Carbon::parse($leave->start_date)->subDay()->startOfDay();
+        if (now()->greaterThan($deadline)) {
+            return response()->json(['message' => 'Revoke request is allowed only until 1 day before leave start date.'], 422);
+        }
+
+        $leave->update([
+            'revoke_status' => 'pending',
+            'revoke_requested_at' => now(),
+            'revoke_reviewed_by' => null,
+            'revoke_reviewed_at' => null,
+            'revoke_review_note' => null,
+        ]);
+
+        return response()->json([
+            'message' => 'Leave revoke request submitted.',
+            'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
+        ]);
+    }
+
+    public function approveRevoke(Request $request, int $id)
+    {
+        $request->validate([
+            'review_note' => 'nullable|string|max:2000',
+        ]);
+
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id || !$this->canManage($currentUser)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $leave = LeaveRequest::where('organization_id', $currentUser->organization_id)->find($id);
+        if (!$leave) {
+            return response()->json(['message' => 'Leave request not found'], 404);
+        }
+        if ($leave->status !== 'approved' || $leave->revoke_status !== 'pending') {
+            return response()->json(['message' => 'Only pending revoke requests can be approved.'], 422);
+        }
+
+        $leave->update([
+            'status' => 'revoked',
+            'revoke_status' => 'approved',
+            'revoke_reviewed_by' => $currentUser->id,
+            'revoke_reviewed_at' => now(),
+            'revoke_review_note' => $request->review_note,
+        ]);
+
+        $this->rollbackApprovedLeaveFromAttendance($leave);
+
+        return response()->json([
+            'message' => 'Leave revoke request approved.',
+            'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
+        ]);
+    }
+
+    public function rejectRevoke(Request $request, int $id)
+    {
+        $request->validate([
+            'review_note' => 'nullable|string|max:2000',
+        ]);
+
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id || !$this->canManage($currentUser)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $leave = LeaveRequest::where('organization_id', $currentUser->organization_id)->find($id);
+        if (!$leave) {
+            return response()->json(['message' => 'Leave request not found'], 404);
+        }
+        if ($leave->status !== 'approved' || $leave->revoke_status !== 'pending') {
+            return response()->json(['message' => 'Only pending revoke requests can be rejected.'], 422);
+        }
+
+        $leave->update([
+            'revoke_status' => 'rejected',
+            'revoke_reviewed_by' => $currentUser->id,
+            'revoke_reviewed_at' => now(),
+            'revoke_review_note' => $request->review_note,
+        ]);
+
+        return response()->json([
+            'message' => 'Leave revoke request rejected.',
+            'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
         ]);
     }
 
@@ -178,6 +284,24 @@ class LeaveRequestController extends Controller
                 'status' => 'absent',
             ]);
             $record->save();
+        }
+    }
+
+    private function rollbackApprovedLeaveFromAttendance(LeaveRequest $leave): void
+    {
+        foreach (CarbonPeriod::create($leave->start_date, $leave->end_date) as $date) {
+            if ($date->isWeekend()) {
+                continue;
+            }
+
+            AttendanceRecord::where('organization_id', $leave->organization_id)
+                ->where('user_id', $leave->user_id)
+                ->whereDate('attendance_date', $date->toDateString())
+                ->whereNull('check_in_at')
+                ->whereNull('check_out_at')
+                ->where('worked_seconds', 0)
+                ->where('status', 'absent')
+                ->delete();
         }
     }
 
