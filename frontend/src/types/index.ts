@@ -220,6 +220,7 @@ export interface PaginatedResponse<T> {
 
 export interface ChatConversation {
   id: number;
+  type?: 'direct';
   other_user: {
     id: number;
     name: string;
@@ -228,6 +229,23 @@ export interface ChatConversation {
     is_online?: boolean;
   };
   last_message?: ChatMessage;
+  unread_count?: number;
+  updated_at?: string;
+}
+
+export interface ChatGroup {
+  id: number;
+  type?: 'group';
+  name: string;
+  member_count?: number;
+  members?: Array<{
+    id: number;
+    name: string;
+    email: string;
+    last_seen_at?: string | null;
+    is_online?: boolean;
+  }>;
+  last_message?: ChatGroupMessage;
   unread_count?: number;
   updated_at?: string;
 }
@@ -243,6 +261,25 @@ export interface ChatMessage {
   attachment_size?: number | null;
   has_attachment?: boolean;
   read_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  sender?: {
+    id: number;
+    name: string;
+    email: string;
+  };
+}
+
+export interface ChatGroupMessage {
+  id: number;
+  group_id: number;
+  sender_id: number;
+  body: string;
+  attachment_path?: string | null;
+  attachment_name?: string | null;
+  attachment_mime?: string | null;
+  attachment_size?: number | null;
+  has_attachment?: boolean;
   created_at: string;
   updated_at: string;
   sender?: {

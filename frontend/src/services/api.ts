@@ -14,6 +14,8 @@ import type {
   DailyReport,
   WeeklyReport,
   ChatConversation,
+  ChatGroup,
+  ChatGroupMessage,
   ChatMessage,
   ChatTypingUser,
   ChatUnreadSummary,
@@ -458,10 +460,15 @@ export const attendanceTimeEditApi = {
 
 export const chatApi = {
   getConversations: () => api.get<ChatConversation[]>('/chat/conversations'),
+  getGroups: () => api.get<ChatGroup[]>('/chat/groups'),
+  getAvailableUsers: () => api.get<Array<{ id: number; name: string; email: string; role: string }>>('/chat/available-users'),
   getUnreadSummary: () => api.get<ChatUnreadSummary>('/chat/unread-summary'),
   startConversation: (email: string) => api.post<ChatConversation>('/chat/conversations', { email }),
+  createGroup: (data: { name: string; user_ids: number[] }) => api.post<ChatGroup>('/chat/groups', data),
   getMessages: (conversationId: number, params?: { since_id?: number }) =>
     api.get<ChatMessage[]>(`/chat/conversations/${conversationId}/messages`, { params }),
+  getGroupMessages: (groupId: number, params?: { since_id?: number }) =>
+    api.get<ChatGroupMessage[]>(`/chat/groups/${groupId}/messages`, { params }),
   sendMessage: (conversationId: number, data: { body?: string; attachment?: File | null }) => {
     if (data.attachment) {
       const formData = new FormData();
@@ -476,14 +483,38 @@ export const chatApi = {
 
     return api.post<ChatMessage>(`/chat/conversations/${conversationId}/messages`, { body: data.body || '' });
   },
+  sendGroupMessage: (groupId: number, data: { body?: string; attachment?: File | null }) => {
+    if (data.attachment) {
+      const formData = new FormData();
+      if (data.body?.trim()) {
+        formData.append('body', data.body.trim());
+      }
+      formData.append('attachment', data.attachment);
+      return api.post<ChatGroupMessage>(`/chat/groups/${groupId}/messages`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+    }
+
+    return api.post<ChatGroupMessage>(`/chat/groups/${groupId}/messages`, { body: data.body || '' });
+  },
   markRead: (conversationId: number) =>
     api.post(`/chat/conversations/${conversationId}/read`),
+  markGroupRead: (groupId: number) =>
+    api.post(`/chat/groups/${groupId}/read`),
   setTyping: (conversationId: number, isTyping: boolean) =>
     api.post(`/chat/conversations/${conversationId}/typing`, { is_typing: isTyping }),
+  setGroupTyping: (groupId: number, isTyping: boolean) =>
+    api.post(`/chat/groups/${groupId}/typing`, { is_typing: isTyping }),
   getTyping: (conversationId: number) =>
     api.get<ChatTypingUser[]>(`/chat/conversations/${conversationId}/typing`),
+  getGroupTyping: (groupId: number) =>
+    api.get<ChatTypingUser[]>(`/chat/groups/${groupId}/typing`),
   getAttachment: (messageId: number) =>
     api.get<Blob>(`/chat/messages/${messageId}/attachment`, {
+      responseType: 'blob' as AxiosRequestConfig['responseType'],
+    }),
+  getGroupAttachment: (messageId: number) =>
+    api.get<Blob>(`/chat/groups/messages/${messageId}/attachment`, {
       responseType: 'blob' as AxiosRequestConfig['responseType'],
     }),
 };
