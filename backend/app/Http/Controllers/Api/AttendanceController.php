@@ -202,28 +202,53 @@ class AttendanceController extends Controller
         $present = 0;
         $absent = 0;
         $weekend = 0;
+        $leaveDays = 0;
         $late = 0;
         $totalWorked = 0;
+        $today = now()->toDateString();
+
+        $approvedLeaves = LeaveRequest::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->where('user_id', $targetUserId)
+            ->where('status', 'approved')
+            ->whereDate('start_date', '<=', $monthEnd->toDateString())
+            ->whereDate('end_date', '>=', $monthStart->toDateString())
+            ->get(['start_date', 'end_date']);
+
+        $leaveDateSet = $approvedLeaves
+            ->flatMap(function ($leave) {
+                return collect(CarbonPeriod::create($leave->start_date, $leave->end_date))
+                    ->map(fn (Carbon $date) => $date->toDateString());
+            })
+            ->unique()
+            ->flip();
 
         foreach (CarbonPeriod::create($monthStart, $monthEnd) as $date) {
             $dateStr = $date->toDateString();
             $isWeekend = $date->isWeekend();
             $record = $records->get($dateStr);
+            $isLeave = $leaveDateSet->has($dateStr);
 
-            if ($isWeekend && !$record) {
-                $status = 'weekend';
-                $weekend++;
-            } elseif (!$record || !$record->check_in_at) {
-                $status = 'absent';
-                $absent++;
-            } elseif ($record->check_in_at && !$record->check_out_at) {
+            if ($isLeave) {
+                $status = 'leave';
+                $leaveDays++;
+            } elseif ($record && $record->check_in_at && !$record->check_out_at) {
                 $status = 'checked_in';
                 $present++;
                 $totalWorked += $this->calculateEffectiveWorkedSeconds($record);
-            } else {
+            } elseif ($record && $record->check_in_at) {
                 $status = 'present';
                 $present++;
                 $totalWorked += $this->calculateEffectiveWorkedSeconds($record);
+            } else {
+                $status = 'none';
+
+                // Keep monthly counters meaningful: count weekend and absent only up to today.
+                if ($isWeekend) {
+                    $weekend++;
+                } elseif ($dateStr <= $today) {
+                    $absent++;
+                }
             }
 
             if ($record && (int) $record->late_minutes > 0) {
@@ -234,6 +259,7 @@ class AttendanceController extends Controller
                 'date' => $dateStr,
                 'status' => $status,
                 'is_weekend' => $isWeekend,
+                'is_leave' => $isLeave,
                 'check_in_at' => $record?->check_in_at,
                 'check_out_at' => $record?->check_out_at,
                 'late_minutes' => (int) ($record?->late_minutes ?? 0),
@@ -249,6 +275,7 @@ class AttendanceController extends Controller
                 'present_days' => $present,
                 'absent_days' => $absent,
                 'weekend_days' => $weekend,
+                'leave_days' => $leaveDays,
                 'late_days' => $late,
                 'total_worked_seconds' => (int) $totalWorked,
             ],

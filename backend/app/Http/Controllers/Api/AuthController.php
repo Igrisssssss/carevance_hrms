@@ -136,14 +136,32 @@ class AuthController extends Controller
         return response()->json(['message' => 'Logged out successfully']);
     }
 
-    private function issueToken(User $user): string
+    public function handoff(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $token = $this->issueToken($user, 'web-handoff-token');
+        $user->load('organization');
+
+        return response()->json([
+            'user' => $user,
+            'token' => $token,
+            'organization' => $user->organization,
+        ]);
+    }
+
+    private function issueToken(User $user, string $name = 'auth-token'): string
     {
         $plainToken = bin2hex(random_bytes(40));
 
         DB::table('personal_access_tokens')->insert([
             'tokenable_type' => User::class,
             'tokenable_id' => $user->id,
-            'name' => 'auth-token',
+            'name' => $name,
             'token' => hash('sha256', $plainToken),
             'abilities' => json_encode(['*']),
             'last_used_at' => null,

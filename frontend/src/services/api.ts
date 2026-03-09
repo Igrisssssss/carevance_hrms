@@ -34,7 +34,7 @@ const api = axios.create({
 
 // Request interceptor to add auth token
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = sessionStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -46,8 +46,9 @@ api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('user');
+      sessionStorage.removeItem('organization');
       window.location.href = '/login';
     }
     return Promise.reject(error);
@@ -109,7 +110,7 @@ export const userApi = {
   get: (id: number) => 
     api.get<User>(`/users/${id}`),
   
-  create: (data: Partial<User>) => 
+  create: (data: Partial<User> & { password?: string }) => 
     api.post<User>('/users', data),
   
   update: (id: number, data: Partial<User>) => 
@@ -292,7 +293,7 @@ export const reportApi = {
   employeeInsights: (params?: { start_date?: string; end_date?: string; user_id?: number; q?: string }) =>
     api.get('/reports/employee-insights', { params }),
 
-  overall: (params?: { start_date?: string; end_date?: string; user_ids?: number[] }) =>
+  overall: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[] }) =>
     api.get('/reports/overall', { params }),
   
   project: (projectId: number, params?: { start_date?: string; end_date?: string }) => 
@@ -348,8 +349,9 @@ export const attendanceApi = {
       user_id: number;
       days: Array<{
         date: string;
-        status: 'present' | 'absent' | 'weekend' | 'checked_in';
+        status: 'present' | 'checked_in' | 'leave' | 'none';
         is_weekend: boolean;
+        is_leave?: boolean;
         check_in_at?: string | null;
         check_out_at?: string | null;
         late_minutes: number;
@@ -359,6 +361,7 @@ export const attendanceApi = {
         present_days: number;
         absent_days: number;
         weekend_days: number;
+        leave_days?: number;
         late_days: number;
         total_worked_seconds: number;
       };
@@ -532,6 +535,27 @@ export const notificationApi = {
 
   markAllRead: () =>
     api.post('/notifications/read-all'),
+};
+
+export const reportGroupApi = {
+  list: () =>
+    api.get<{
+      data: Array<{
+        id: number;
+        organization_id: number;
+        name: string;
+        users: Array<{ id: number; name: string; email: string; role: string }>;
+      }>;
+    }>('/report-groups'),
+
+  create: (data: { name: string; user_ids?: number[] }) =>
+    api.post('/report-groups', data),
+
+  update: (id: number, data: { name?: string; user_ids?: number[] }) =>
+    api.put(`/report-groups/${id}`, data),
+
+  delete: (id: number) =>
+    api.delete(`/report-groups/${id}`),
 };
 
 export const settingsApi = {

@@ -7,6 +7,7 @@ use App\Models\Activity;
 use App\Models\AttendanceRecord;
 use App\Models\LeaveRequest;
 use App\Models\Project;
+use App\Models\ReportGroup;
 use App\Models\Screenshot;
 use App\Models\TimeEntry;
 use App\Models\User;
@@ -296,6 +297,8 @@ class ReportController extends Controller
             'end_date' => 'nullable|date',
             'user_ids' => 'nullable|array',
             'user_ids.*' => 'integer',
+            'group_ids' => 'nullable|array',
+            'group_ids.*' => 'integer',
         ]);
 
         $currentUser = $request->user();
@@ -314,12 +317,49 @@ class ReportController extends Controller
             ->filter(fn ($id) => $id > 0)
             ->unique()
             ->values();
+        $selectedGroupIds = collect($request->input('group_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
 
         $usersQuery = User::where('organization_id', $currentUser->organization_id);
         if (!$this->canViewAll($currentUser)) {
             $usersQuery->where('id', $currentUser->id);
-        } elseif ($selectedIds->isNotEmpty()) {
-            $usersQuery->whereIn('id', $selectedIds);
+        } else {
+            if ($selectedGroupIds->isNotEmpty()) {
+                $groupUserIds = ReportGroup::where('organization_id', $currentUser->organization_id)
+                    ->whereIn('id', $selectedGroupIds)
+                    ->with('users:id')
+                    ->get()
+                    ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values();
+
+                if ($groupUserIds->isEmpty()) {
+                    return response()->json([
+                        'start_date' => $startDate->toDateString(),
+                        'end_date' => $endDate->toDateString(),
+                        'summary' => [
+                            'users_count' => 0,
+                            'active_users' => 0,
+                            'total_duration' => 0,
+                            'billable_duration' => 0,
+                            'non_billable_duration' => 0,
+                            'idle_duration' => 0,
+                        ],
+                        'by_user' => [],
+                        'by_day' => [],
+                    ]);
+                }
+
+                $usersQuery->whereIn('id', $groupUserIds);
+            }
+
+            if ($selectedIds->isNotEmpty()) {
+                $usersQuery->whereIn('id', $selectedIds);
+            }
         }
         $users = $usersQuery->orderBy('name')->get(['id', 'name', 'email', 'role']);
         if ($users->isEmpty()) {

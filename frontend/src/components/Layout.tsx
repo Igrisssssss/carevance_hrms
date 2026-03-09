@@ -10,11 +10,11 @@ import {
   Users, 
   Monitor,
   MessageSquare,
-  BarChart3, 
   FileText, 
   Wallet,
   Settings, 
   LogOut,
+  Calendar,
   Play,
   Bell,
   Menu,
@@ -23,7 +23,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
   useDesktopTracker();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -33,21 +33,44 @@ export default function Layout() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
   const isAdminView = user?.role === 'admin' || user?.role === 'manager';
+  const isDesktopShell = Boolean(window.desktopTracker);
+  const webAppBaseUrl = (import.meta.env.VITE_WEB_APP_URL || window.location.origin).replace(/\/+$/, '');
+
+  const openWebDashboard = (path: string) => {
+    const target = path.startsWith('/') ? path : `/${path}`;
+    const nextUrl = new URL(`${webAppBaseUrl}${target}`);
+    if (token) {
+      nextUrl.searchParams.set('desktop_token', token);
+    }
+    window.open(nextUrl.toString(), '_blank', 'noopener,noreferrer');
+    if (sidebarOpen) setSidebarOpen(false);
+  };
+
   const navigation = useMemo(
-    () => [
-      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, adminOnly: false },
-      { name: 'Projects', href: '/projects', icon: FolderKanban, adminOnly: false },
-      { name: 'Tasks', href: '/tasks', icon: CheckSquare, adminOnly: false },
-      { name: 'Chat', href: '/chat', icon: MessageSquare, adminOnly: false },
-      { name: 'Attendance', href: '/attendance', icon: Clock, adminOnly: false },
-      { name: 'Team', href: '/team', icon: Users, adminOnly: true },
-      { name: 'Monitoring', href: '/monitoring', icon: Monitor, adminOnly: true },
-      { name: 'Reports', href: '/reports', icon: BarChart3, adminOnly: true },
-      { name: 'Invoices', href: '/invoices', icon: FileText, adminOnly: true },
-      { name: 'Payroll', href: '/payroll', icon: Wallet, adminOnly: true },
-      { name: 'Settings', href: '/settings', icon: Settings, adminOnly: false },
-    ].filter((item) => (item.adminOnly ? isAdminView : true)),
-    [isAdminView]
+    () =>
+      (isDesktopShell
+        ? [
+            { name: 'Timer', href: '/dashboard', icon: Clock, adminOnly: false, external: false },
+            { name: 'Dashboard', href: '/desktop-web-dashboard', externalPath: '/dashboard', icon: LayoutDashboard, adminOnly: false, external: true },
+            { name: 'Edit Time', href: '/attendance', icon: Calendar, adminOnly: false, external: false },
+            { name: 'Screenshot', href: '/desktop-web-screenshot', externalPath: '/monitoring', icon: Monitor, adminOnly: true, external: true },
+            { name: 'Settings', href: '/settings', icon: Settings, adminOnly: false, external: false },
+          ]
+        : [
+            { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, adminOnly: false, external: false },
+            { name: 'Projects', href: '/projects', icon: FolderKanban, adminOnly: false, external: false },
+            { name: 'Tasks', href: '/tasks', icon: CheckSquare, adminOnly: false, external: false },
+            { name: 'Chat', href: '/chat', icon: MessageSquare, adminOnly: false, external: false },
+            { name: 'Attendance', href: '/attendance', icon: Clock, adminOnly: false, external: false },
+            { name: 'Team', href: '/team', icon: Users, adminOnly: true, external: false },
+            { name: 'Monitoring', href: '/monitoring', icon: Monitor, adminOnly: true, external: false },
+            { name: 'User Management', href: '/user-management', icon: Users, adminOnly: true, external: false },
+            { name: 'Invoices', href: '/invoices', icon: FileText, adminOnly: true, external: false },
+            { name: 'Payroll', href: '/payroll', icon: Wallet, adminOnly: true, external: false },
+            { name: 'Settings', href: '/settings', icon: Settings, adminOnly: false, external: false },
+          ]
+      ).filter((item) => (item.adminOnly ? isAdminView : true)),
+    [isAdminView, isDesktopShell]
   );
 
   const handleLogout = async () => {
@@ -137,6 +160,7 @@ export default function Layout() {
           user={user} 
           unreadSenders={unreadSenders}
           onLogout={handleLogout}
+          onOpenExternal={openWebDashboard}
           onClose={() => setSidebarOpen(false)}
         />
         </div>
@@ -150,6 +174,7 @@ export default function Layout() {
           user={user} 
           unreadSenders={unreadSenders}
           onLogout={handleLogout}
+          onOpenExternal={openWebDashboard}
         />
       </div>
 
@@ -244,7 +269,7 @@ export default function Layout() {
   );
 }
 
-function SidebarContent({ navigation, location, unreadSenders, onLogout, onClose }: any) {
+function SidebarContent({ navigation, location, unreadSenders, onLogout, onOpenExternal, onClose }: any) {
   return (
     <div className="flex h-full flex-col">
       {/* Logo */}
@@ -266,26 +291,41 @@ function SidebarContent({ navigation, location, unreadSenders, onLogout, onClose
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="space-y-1">
           {navigation.map((item: any) => {
-            const isActive = location.pathname === item.href;
+            const isActive = !item.external && location.pathname === item.href;
             return (
               <li key={item.name}>
-                <Link
-                  to={item.href}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-                    isActive
-                      ? 'bg-primary-50 text-primary-700 shadow-sm'
-                      : 'text-gray-700 hover:bg-gray-100 hover:translate-x-0.5'
-                  }`}
-                  onClick={onClose}
-                >
-                  <item.icon className={`h-5 w-5 ${isActive ? 'text-primary-600' : 'text-gray-400'}`} />
-                  <span>{item.name}</span>
-                  {item.href === '/chat' && unreadSenders > 0 && (
-                    <span className="ml-auto min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center">
-                      {unreadSenders > 99 ? '99+' : unreadSenders}
-                    </span>
-                  )}
-                </Link>
+                {item.external ? (
+                  <button
+                    type="button"
+                    className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                      isActive
+                        ? 'bg-primary-50 text-primary-700 shadow-sm'
+                        : 'text-gray-700 hover:bg-gray-100 hover:translate-x-0.5'
+                    }`}
+                    onClick={() => onOpenExternal(item.externalPath || item.href)}
+                  >
+                    <item.icon className={`h-5 w-5 ${isActive ? 'text-primary-600' : 'text-gray-400'}`} />
+                    <span>{item.name}</span>
+                  </button>
+                ) : (
+                  <Link
+                    to={item.href}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                      isActive
+                        ? 'bg-primary-50 text-primary-700 shadow-sm'
+                        : 'text-gray-700 hover:bg-gray-100 hover:translate-x-0.5'
+                    }`}
+                    onClick={onClose}
+                  >
+                    <item.icon className={`h-5 w-5 ${isActive ? 'text-primary-600' : 'text-gray-400'}`} />
+                    <span>{item.name}</span>
+                    {item.href === '/chat' && unreadSenders > 0 && (
+                      <span className="ml-auto min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center">
+                        {unreadSenders > 99 ? '99+' : unreadSenders}
+                      </span>
+                    )}
+                  </Link>
+                )}
               </li>
             );
           })}

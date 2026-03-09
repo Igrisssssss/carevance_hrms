@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\AttendanceTimeEditRequestController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Api\ReportGroupController;
 
 // Public routes
 Route::post('/auth/register', [AuthController::class, 'register']);
@@ -28,6 +29,7 @@ Route::middleware('api.token')->group(function () {
     // Auth
     Route::get('/auth/me', [AuthController::class, 'user']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+    Route::post('/auth/handoff', [AuthController::class, 'handoff']);
     
     // Organizations
     Route::apiResource('organizations', OrganizationController::class);
@@ -61,6 +63,10 @@ Route::middleware('api.token')->group(function () {
     // Users
     Route::apiResource('users', UserController::class);
     Route::get('/users/{id}/stats', [UserController::class, 'stats']);
+    Route::get('/report-groups', [ReportGroupController::class, 'index']);
+    Route::post('/report-groups', [ReportGroupController::class, 'store']);
+    Route::put('/report-groups/{id}', [ReportGroupController::class, 'update']);
+    Route::delete('/report-groups/{id}', [ReportGroupController::class, 'destroy']);
 
     // Private chat
     Route::get('/chat/conversations', [ChatController::class, 'conversations']);

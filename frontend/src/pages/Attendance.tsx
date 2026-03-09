@@ -11,6 +11,7 @@ const formatDuration = (seconds: number) => {
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const formatMonth = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+const formatLocalDate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
 const parseTimeToMinutes = (time: string) => {
   // expected "HH:mm:ss" (from backend env ATTENDANCE_LATE_AFTER)
@@ -50,8 +51,8 @@ const buildMonthGrid = (month: string) => {
 export default function Attendance() {
   const { user } = useAuth();
   const [query, setQuery] = useState('');
-  const [startDate, setStartDate] = useState(new Date(new Date().setDate(1)).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(formatLocalDate(new Date(new Date().setDate(1))));
+  const [endDate, setEndDate] = useState(formatLocalDate(new Date()));
   const [rows, setRows] = useState<any[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [workingDays, setWorkingDays] = useState(0);
@@ -90,13 +91,13 @@ export default function Attendance() {
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [isLeaveLoading, setIsLeaveLoading] = useState(false);
   const [isLeaveSubmitting, setIsLeaveSubmitting] = useState(false);
-  const [leaveStartDate, setLeaveStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [leaveEndDate, setLeaveEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [leaveStartDate, setLeaveStartDate] = useState(formatLocalDate(new Date()));
+  const [leaveEndDate, setLeaveEndDate] = useState(formatLocalDate(new Date()));
   const [leaveReason, setLeaveReason] = useState('');
   const [timeEditRequests, setTimeEditRequests] = useState<any[]>([]);
   const [isTimeEditLoading, setIsTimeEditLoading] = useState(false);
   const [isTimeEditSubmitting, setIsTimeEditSubmitting] = useState(false);
-  const [timeEditDate, setTimeEditDate] = useState(new Date().toISOString().split('T')[0]);
+  const [timeEditDate, setTimeEditDate] = useState(formatLocalDate(new Date()));
   const [extraMinutes, setExtraMinutes] = useState(60);
   const [timeEditMessage, setTimeEditMessage] = useState('');
 
@@ -389,7 +390,7 @@ export default function Attendance() {
             <div>
               <p className="text-sm font-medium text-gray-900">Today</p>
               <p className="text-xs text-gray-500">
-                {todayRecord?.attendance_date || new Date().toISOString().split('T')[0]}
+                {todayRecord?.attendance_date || formatLocalDate(new Date())}
                 {lateLabel ? <span className="ml-2 text-red-600 font-medium">({lateLabel})</span> : null}
               </p>
               {hasApprovedLeaveToday ? (
@@ -548,19 +549,25 @@ export default function Attendance() {
 
               <div className="grid grid-cols-7 gap-2">
                 {monthGrid.weeks.flat().map((d) => {
-                  const ds = d.toISOString().split('T')[0];
+                  const ds = formatLocalDate(d);
                   const inMonth = ds.startsWith(calendarMonth);
                   const item = calendarMap.get(ds);
-                  const status = item?.status || (d.getDay() === 0 || d.getDay() === 6 ? 'weekend' : 'absent');
+                  const status = item?.status || 'none';
+                  const statusLabel =
+                    status === 'leave'
+                      ? 'take a leave'
+                      : status === 'none'
+                        ? ''
+                        : String(status).replace('_', ' ');
 
                   const color =
                     status === 'present'
                       ? 'bg-green-50 border-green-200 text-green-900'
                       : status === 'checked_in'
                         ? 'bg-blue-50 border-blue-200 text-blue-900'
-                        : status === 'weekend'
-                          ? 'bg-gray-50 border-gray-200 text-gray-700'
-                          : 'bg-red-50 border-red-200 text-red-900';
+                        : status === 'leave'
+                          ? 'bg-amber-50 border-amber-200 text-amber-900'
+                          : 'bg-gray-50 border-gray-200 text-gray-600';
 
                   return (
                     <div
@@ -576,7 +583,9 @@ export default function Attendance() {
                         <div className="text-xs font-semibold">{d.getDate()}</div>
                         {item?.late_minutes > 0 ? <div className="text-[10px] font-semibold text-red-700">Late</div> : null}
                       </div>
-                      <div className="mt-1 text-[10px] uppercase tracking-wide">{status.replace('_', ' ')}</div>
+                      {statusLabel ? (
+                        <div className="mt-1 text-[10px] uppercase tracking-wide">{statusLabel}</div>
+                      ) : null}
                       {item?.worked_seconds ? (
                         <div className="mt-1 text-[11px] font-medium">{formatDuration(item.worked_seconds)}</div>
                       ) : null}

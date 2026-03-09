@@ -19,6 +19,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Demo mode - set to true to use mock data without backend
 const DEMO_MODE = false;
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -27,28 +28,98 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
-    const storedOrg = localStorage.getItem('organization');
+    let active = true;
 
-    if (storedToken && storedUser) {
-      setToken(storedToken);
-      setUser(JSON.parse(storedUser));
-      if (storedOrg) {
-        setOrganization(JSON.parse(storedOrg));
+    const cleanDesktopTokenFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.has('desktop_token')) return;
+      params.delete('desktop_token');
+      const cleanSearch = params.toString();
+      const cleanUrl = `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`;
+      window.history.replaceState({}, '', cleanUrl);
+    };
+
+    const bootstrapAuth = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const desktopToken = params.get('desktop_token');
+
+      if (desktopToken && !DEMO_MODE) {
+        try {
+          const response = await fetch(`${API_URL}/auth/handoff`, {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              Authorization: `Bearer ${desktopToken}`,
+            },
+          });
+
+          if (response.ok) {
+            const payload = await response.json();
+            const nextToken = payload?.token;
+            const nextUser = payload?.user;
+            const nextOrg = payload?.organization;
+
+            if (nextToken && nextUser) {
+              sessionStorage.setItem('token', nextToken);
+              sessionStorage.setItem('user', JSON.stringify(nextUser));
+              if (nextOrg) {
+                sessionStorage.setItem('organization', JSON.stringify(nextOrg));
+              } else {
+                sessionStorage.removeItem('organization');
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Desktop handoff failed:', error);
+        } finally {
+          cleanDesktopTokenFromUrl();
+        }
+      } else if (desktopToken) {
+        cleanDesktopTokenFromUrl();
       }
-      if (!DEMO_MODE) {
-        fetchUser();
+
+      const storedToken = sessionStorage.getItem('token');
+      const storedUser = sessionStorage.getItem('user');
+      const storedOrg = sessionStorage.getItem('organization');
+
+      if (storedToken) {
+        setToken(storedToken);
+        if (storedUser) {
+          try {
+            setUser(JSON.parse(storedUser));
+          } catch {
+            sessionStorage.removeItem('user');
+          }
+        }
+        if (storedOrg) {
+          try {
+            setOrganization(JSON.parse(storedOrg));
+          } catch {
+            sessionStorage.removeItem('organization');
+          }
+        }
+        if (!DEMO_MODE) {
+          await fetchUser();
+        }
       }
-    }
-    setIsLoading(false);
+
+      if (active) {
+        setIsLoading(false);
+      }
+    };
+
+    bootstrapAuth();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const fetchUser = async () => {
     try {
       const response = await authApi.me();
       setUser(response.data);
-      localStorage.setItem('user', JSON.stringify(response.data));
+      sessionStorage.setItem('user', JSON.stringify(response.data));
     } catch (error) {
       console.error('Failed to fetch user:', error);
       logout();
@@ -80,9 +151,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setOrganization(demoOrg);
       setToken('demo-token-12345');
       
-      localStorage.setItem('token', 'demo-token-12345');
-      localStorage.setItem('user', JSON.stringify(demoUser));
-      localStorage.setItem('organization', JSON.stringify(demoOrg));
+      sessionStorage.setItem('token', 'demo-token-12345');
+      sessionStorage.setItem('user', JSON.stringify(demoUser));
+      sessionStorage.setItem('organization', JSON.stringify(demoOrg));
       return;
     }
 
@@ -93,11 +164,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(authToken);
     if (org) {
       setOrganization(org);
-      localStorage.setItem('organization', JSON.stringify(org));
+      sessionStorage.setItem('organization', JSON.stringify(org));
     }
     
-    localStorage.setItem('token', authToken);
-    localStorage.setItem('user', JSON.stringify(userData));
+    sessionStorage.setItem('token', authToken);
+    sessionStorage.setItem('user', JSON.stringify(userData));
   };
 
   const register = async (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string; organizationId?: number }) => {
@@ -125,9 +196,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setOrganization(demoOrg);
       setToken('demo-token-12345');
       
-      localStorage.setItem('token', 'demo-token-12345');
-      localStorage.setItem('user', JSON.stringify(demoUser));
-      localStorage.setItem('organization', JSON.stringify(demoOrg));
+      sessionStorage.setItem('token', 'demo-token-12345');
+      sessionStorage.setItem('user', JSON.stringify(demoUser));
+      sessionStorage.setItem('organization', JSON.stringify(demoOrg));
       return;
     }
 
@@ -147,11 +218,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(authToken);
     if (org) {
       setOrganization(org);
-      localStorage.setItem('organization', JSON.stringify(org));
+      sessionStorage.setItem('organization', JSON.stringify(org));
     }
     
-    localStorage.setItem('token', authToken);
-    localStorage.setItem('user', JSON.stringify(userData));
+    sessionStorage.setItem('token', authToken);
+    sessionStorage.setItem('user', JSON.stringify(userData));
   };
 
   const logout = async () => {
@@ -165,22 +236,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setToken(null);
     setOrganization(null);
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('organization');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('user');
+    sessionStorage.removeItem('organization');
   };
 
   const updateUser = (updatedUser: User) => {
     setUser(updatedUser);
-    localStorage.setItem('user', JSON.stringify(updatedUser));
+    sessionStorage.setItem('user', JSON.stringify(updatedUser));
   };
 
   const updateOrganization = (updatedOrganization: Organization | null) => {
     setOrganization(updatedOrganization);
     if (updatedOrganization) {
-      localStorage.setItem('organization', JSON.stringify(updatedOrganization));
+      sessionStorage.setItem('organization', JSON.stringify(updatedOrganization));
     } else {
-      localStorage.removeItem('organization');
+      sessionStorage.removeItem('organization');
     }
   };
 
