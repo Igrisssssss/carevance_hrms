@@ -1,225 +1,176 @@
-# TimeTrack Pro - SaaS Time Tracking Software
+# TimeTrack Pro
 
-A Time Doctor-like SaaS product built with Laravel backend and React frontend.
+TimeTrack Pro is a Laravel + React time tracking platform with a desktop shell for tracker workflows and a full-featured web app for management/reporting.
 
-## Features
+## Highlights
 
-- **Time Tracking**: Start/stop timer, manual time entry
-- **Project Management**: Create and manage projects with budgets
-- **Task Management**: Assign tasks to team members
-- **Reports & Analytics**: Daily, weekly, monthly reports
-- **Invoicing**: Generate invoices from time entries
-- **Team Management**: Invite and manage team members
-- **Responsive UI**: Modern React frontend with Tailwind CSS
+- Desktop shell with focused actions: Timer, Dashboard (opens web), Edit Time, Settings, and admin-only Screenshot shortcut.
+- Web dashboard is report-first (role-based).
+- Attendance with punch in/out, leave requests, time-edit requests, and calendar.
+- Payroll structures, payslip generation, payment marking, and PDF download.
+- Admin user management with add/edit/delete users.
+- Report groups (teams) to filter reports by group or selected users.
+- Separate desktop/web tokens via auth handoff.
+- Tab-isolated web sessions (`sessionStorage`) so logout in one tab does not force logout in others.
 
 ## Tech Stack
 
 ### Backend
 - Laravel 11
 - PostgreSQL
-- Laravel Sanctum (API Authentication)
+- Token auth via `personal_access_tokens`
 
 ### Frontend
-- React 18 with TypeScript
+- React 18 + TypeScript
 - Vite
 - Tailwind CSS
 - React Router
 - Axios
 
-## Project Structure
+### Desktop
+- Electron shell (`desktop/`)
 
-```
+## Repository Structure
+
+```text
 demo_laravel_2/
-├── backend/                 # Laravel API
-│   ├── app/
-│   │   ├── Http/Controllers/Api/
-│   │   └── Models/
-│   ├── config/
-│   ├── database/migrations/
-│   ├── routes/
-│   ├── composer.json
-│   └── .env.example
-│
-├── frontend/                # React Frontend
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── contexts/
-│   │   ├── services/
-│   │   └── types/
-│   ├── package.json
-│   └── vite.config.ts
-│
-├── SPEC.md                  # Project specification
-├── TODO.md                  # Implementation progress
-└── README.md                # This file
+  backend/                 Laravel API
+  frontend/                React app
+  desktop/                 Electron shell
+  SPEC.md
+  TODO.md
+  README.md
 ```
 
-## Prerequisites
+## Setup
 
-Before running the project, you need to install:
+## 1) Backend
 
-1. **PHP 8.2+** - [Download](https://www.php.net/downloads)
-2. **Composer** - [Download](https://getcomposer.org/download/)
-3. **PostgreSQL** - [Download](https://www.postgresql.org/download/)
-4. **Node.js 18+** - [Download](https://nodejs.org/) (Already installed)
-5. **npm** - Comes with Node.js (Already installed)
-
-## Quick Start (Demo Mode)
-
-The frontend is configured to run in **Demo Mode** by default, which allows you to test the UI without setting up the backend.
-
-### Frontend Only (Demo Mode)
-
-```
-bash
-cd frontend
-npm install
-npm run dev
-```
-
-Then open http://localhost:5173 in your browser.
-
-### Full Setup (With Backend)
-
-#### 1. Setup Backend (Laravel)
-
-```
-bash
+```bash
 cd backend
-
-# Install PHP dependencies
 composer install
-
-# Copy environment file
 copy .env.example .env
-
-# Generate application key
 php artisan key:generate
-
-# Create PostgreSQL database
-# Run: createdb timetrackpro (or use pgAdmin)
-
-# Update .env with your database credentials:
-# DB_CONNECTION=pgsql
-# DB_HOST=127.0.0.1
-# DB_PORT=5432
-# DB_DATABASE=timetrackpro
-# DB_USERNAME=postgres
-# DB_PASSWORD=your_password
-
-# Run migrations
-php artisan migrate
-
-# Start Laravel server
-php artisan serve
 ```
 
-Backend will run at http://localhost:8000
+Configure DB in `backend/.env`:
 
-#### 2. Setup Frontend
-
-```
-bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Update API URL in .env (create if not exists)
-# VITE_API_URL=http://localhost:8000/api
-
-# Disable demo mode in src/contexts/AuthContext.tsx
-# Change: const DEMO_MODE = true; to const DEMO_MODE = false;
-
-# Start development server
-npm run dev
-```
-
-Frontend will run at http://localhost:5173
-
-## API Endpoints
-
-### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login
-- `POST /api/auth/logout` - Logout
-- `GET /api/auth/me` - Get current user
-
-### Time Entries
-- `GET /api/time-entries` - List time entries
-- `POST /api/time-entries` - Create time entry
-- `POST /api/time-entries/start` - Start timer
-- `POST /api/time-entries/stop` - Stop timer
-- `GET /api/time-entries/active` - Get active timer
-- `GET /api/time-entries/today` - Get today's entries
-
-### Projects
-- `GET /api/projects` - List projects
-- `POST /api/projects` - Create project
-- `PUT /api/projects/{id}` - Update project
-- `DELETE /api/projects/{id}` - Delete project
-
-### Tasks
-- `GET /api/tasks` - List tasks
-- `POST /api/tasks` - Create task
-- `PUT /api/tasks/{id}` - Update task
-- `PATCH /api/tasks/{id}/status` - Update task status
-
-### Invoices
-- `GET /api/invoices` - List invoices
-- `POST /api/invoices` - Create invoice
-- `PUT /api/invoices/{id}` - Update invoice
-- `POST /api/invoices/{id}/send` - Send invoice
-- `POST /api/invoices/{id}/mark-paid` - Mark as paid
-
-### Reports
-- `GET /api/reports/daily` - Daily report
-- `GET /api/reports/weekly` - Weekly report
-- `GET /api/reports/monthly` - Monthly report
-- `GET /api/reports/productivity` - Productivity report
-
-## Environment Variables
-
-### Backend (.env)
-```
-APP_NAME=TimeTrackPro
-APP_ENV=local
-APP_KEY=
-APP_DEBUG=true
-APP_URL=http://localhost:8000
-
+```env
 DB_CONNECTION=pgsql
 DB_HOST=127.0.0.1
 DB_PORT=5432
 DB_DATABASE=timetrackpro
 DB_USERNAME=postgres
-DB_PASSWORD=password
-
-FRONTEND_URL=http://localhost:5173
+DB_PASSWORD=your_password
 ```
 
-### Frontend (.env)
+Run migrations:
+
+```bash
+php artisan migrate
 ```
+
+Start backend:
+
+```bash
+php artisan serve
+```
+
+## 2) Frontend
+
+```bash
+cd frontend
+npm install
+```
+
+Create/update `frontend/.env`:
+
+```env
 VITE_API_URL=http://localhost:8000/api
+# optional for desktop external-open target:
+# VITE_WEB_APP_URL=http://localhost:5173
 ```
 
-## Development
+Start frontend:
 
-### Running Tests (Backend)
+```bash
+npm run dev
 ```
-bash
+
+## 3) Desktop (optional)
+
+```bash
+cd desktop
+npm install
+npm start
+```
+
+Optional desktop URL override:
+
+```powershell
+$env:APP_URL="http://localhost:5173"
+npm start
+```
+
+## Role-Based Behavior
+
+- Employee:
+  - Web dashboard shows self report only.
+  - Desktop screenshot shortcut is hidden.
+- Admin/Manager:
+  - Web dashboard defaults to team report.
+  - Can filter reports by team, selected users, or groups.
+  - Can access User Management and manage groups.
+
+## New Report Group Feature
+
+Backend endpoints:
+
+- `GET /api/report-groups`
+- `POST /api/report-groups`
+- `PUT /api/report-groups/{id}`
+- `DELETE /api/report-groups/{id}`
+
+Reports endpoint supports group filtering:
+
+- `GET /api/reports/overall?group_ids[]=1&group_ids[]=2`
+
+## Auth and Session Notes
+
+- Desktop -> web links pass `desktop_token` and web exchanges it via:
+  - `POST /api/auth/handoff`
+- Web auth state uses `sessionStorage` (tab/window isolated).
+
+## Important Migration Note
+
+If you pull latest changes and get `relation "report_groups" does not exist`, run:
+
+```bash
 cd backend
-php artisan test
+php artisan migrate
 ```
 
-### Building for Production (Frontend)
-```
-bash
+This creates:
+
+- `report_groups`
+- `report_group_user`
+
+## Build/Test
+
+### Frontend production build
+
+```bash
 cd frontend
 npm run build
 ```
 
+### Backend tests
+
+```bash
+cd backend
+php artisan test
+```
+
 ## License
 
-Commercial - All rights reserved
+Commercial - All rights reserved.
