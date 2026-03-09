@@ -16,13 +16,30 @@ npm install
 npm start
 ```
 
-By default Electron loads `http://localhost:5173`.
+By default Electron loads the deployed frontend:
+
+```text
+https://carevance-hrms-1.onrender.com
+```
+
+For local development you can still override it to `localhost`.
 To change URL:
 
 ```powershell
-$env:APP_URL="http://localhost:4173"
+$env:APP_URL="http://localhost:5173"
 npm start
 ```
+
+## Shared usage
+
+If you want multiple people on different PCs to use the same product and let admins see employee reports, everyone must use the same deployed backend and frontend.
+
+For this project, the intended shared setup is:
+
+- Frontend: `https://carevance-hrms-1.onrender.com`
+- Backend API: `https://carevance-hrms.onrender.com/api`
+
+With the default desktop build, users who install the app will open the deployed frontend automatically instead of `localhost`.
 
 ## Build Windows installer
 

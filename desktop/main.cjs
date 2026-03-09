@@ -1,7 +1,8 @@
 const { app, BrowserWindow, desktopCapturer, ipcMain, powerMonitor, shell } = require('electron');
 const path = require('path');
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const DEFAULT_APP_URL = 'https://carevance-hrms-1.onrender.com';
+const APP_URL = process.env.APP_URL || DEFAULT_APP_URL;
 const APP_ICON = path.join(__dirname, 'assets', 'icon.png');
 
 const createWindow = () => {
