@@ -89,8 +89,8 @@ Create/update `frontend/.env`:
 VITE_API_URL=http://localhost:8000/api
 # optional for desktop external-open target:
 # VITE_WEB_APP_URL=http://localhost:5173
-# optional installer/download button on login page:
-# VITE_DESKTOP_DOWNLOAD_URL=https://your-domain.com/downloads/TimeTrackSetup.exe
+# optional installer/download button override on login page:
+# VITE_DESKTOP_DOWNLOAD_URL=https://your-domain.com/api/downloads/desktop/windows
 # VITE_DESKTOP_DOWNLOAD_LABEL=Download for Windows
 ```
 
@@ -116,6 +116,20 @@ npm start
 ```
 
 If you want users to install the desktop app from the login page, host your installer somewhere public and set `VITE_DESKTOP_DOWNLOAD_URL` in `frontend/.env`. The login page will then show a download button automatically.
+
+To make the download start from your own app domain instead of sending users to GitHub, set this in `backend/.env`:
+
+```env
+DESKTOP_WINDOWS_DOWNLOAD_URL=https://github.com/Igrisssssss/download_time_tracker/releases/latest/download/TimeTrack%20Pro-Setup-1.0.0-x64.exe
+```
+
+The public endpoint will then be:
+
+```text
+http://localhost:8000/api/downloads/desktop/windows
+```
+
+Your login page is already configured to use that backend endpoint by default.
 
 ## Role-Based Behavior
 

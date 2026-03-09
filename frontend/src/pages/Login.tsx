@@ -3,6 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Clock, Eye, EyeOff, AlertCircle, Download, Monitor } from 'lucide-react';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_BASE_URL = API_URL.replace(/\/api\/?$/, '');
+const DEFAULT_DESKTOP_DOWNLOAD_URL = `${API_BASE_URL}/api/downloads/desktop/windows`;
+const DEFAULT_DESKTOP_DOWNLOAD_LABEL = 'Download for Windows';
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -11,8 +16,8 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
-  const desktopDownloadUrl = import.meta.env.VITE_DESKTOP_DOWNLOAD_URL?.trim();
-  const desktopDownloadLabel = import.meta.env.VITE_DESKTOP_DOWNLOAD_LABEL?.trim() || 'Download for Windows';
+  const desktopDownloadUrl = import.meta.env.VITE_DESKTOP_DOWNLOAD_URL?.trim() || DEFAULT_DESKTOP_DOWNLOAD_URL;
+  const desktopDownloadLabel = import.meta.env.VITE_DESKTOP_DOWNLOAD_LABEL?.trim() || DEFAULT_DESKTOP_DOWNLOAD_LABEL;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

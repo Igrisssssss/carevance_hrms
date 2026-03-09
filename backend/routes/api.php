@@ -19,10 +19,12 @@ use App\Http\Controllers\Api\AttendanceTimeEditRequestController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\ReportGroupController;
+use App\Http\Controllers\Api\DesktopDownloadController;
 
 // Public routes
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
+Route::get('/downloads/desktop/windows', [DesktopDownloadController::class, 'windows']);
 
 // Protected routes
 Route::middleware('api.token')->group(function () {
