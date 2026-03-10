@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { organizationApi, userApi } from '@/services/api';
-import { useAuth } from '@/contexts/AuthContext';
-import { Users, Plus, Trash2 } from 'lucide-react';
+import { userApi } from '@/services/api';
+import { Users, Trash2 } from 'lucide-react';
 import type { User } from '@/types';
 
 const COUNTRY_TIMEZONES: Record<string, string[]> = {
@@ -13,19 +12,14 @@ const COUNTRY_TIMEZONES: Record<string, string[]> = {
 };
 
 export default function Team() {
-  const { organization } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
   const [period, setPeriod] = useState<'today' | 'week' | 'all'>('all');
   const [country, setCountry] = useState('India');
   const defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
   const [timezone, setTimezone] = useState(defaultTimezone);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [inviteForm, setInviteForm] = useState({ name: '', email: '', role: 'employee' });
-  const [inviteError, setInviteError] = useState('');
-  const [inviteSuccess, setInviteSuccess] = useState('');
 
   useEffect(() => {
     if (!COUNTRY_TIMEZONES[country]?.includes(timezone)) {
@@ -71,38 +65,12 @@ export default function Team() {
     return `${hours}h ${minutes}m`;
   };
 
-  const handleInvite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setInviteError('');
-    setInviteSuccess('');
-
-    if (!organization?.id) {
-      setInviteError('Organization not found. Please sign in again.');
-      return;
-    }
-
-    try {
-      const response = await organizationApi.inviteMember(organization.id, inviteForm);
-      const payload = response.data as any;
-      const message = payload?.temporary_password
-        ? `User invited. Temporary password: ${payload.temporary_password}`
-        : (payload?.message || 'User invited successfully.');
-
-      setInviteSuccess(message);
-      setInviteForm({ name: '', email: '', role: 'employee' });
-      fetchUsers();
-    } catch (e: any) {
-      setInviteError(e?.response?.data?.message || 'Failed to invite team member.');
-    }
-  };
-
   if (isLoading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-bold text-gray-900">Team</h1><p className="text-gray-500 mt-1">Manage your team members</p></div>
-        <button onClick={() => setShowModal(true)} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus className="h-5 w-5" />Add Member</button>
       </div>
 
       <div className="flex gap-2">
@@ -211,52 +179,6 @@ export default function Team() {
         ))}
       </div>
 
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Add Team Member</h2>
-            <form className="space-y-4" onSubmit={handleInvite}>
-              {inviteError && <p className="text-sm text-red-600">{inviteError}</p>}
-              {inviteSuccess && <p className="text-sm text-green-700">{inviteSuccess}</p>}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                <input
-                  type="text"
-                  required
-                  value={inviteForm.name}
-                  onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  placeholder="Jane Doe"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  required
-                  value={inviteForm.email}
-                  onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  placeholder="colleague@company.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                <select
-                  value={inviteForm.role}
-                  onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                >
-                  <option value="employee">Employee</option>
-                  <option value="manager">Manager</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-              <div className="flex gap-3 pt-2"><button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg">Cancel</button><button type="submit" className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg">Send Invite</button></div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

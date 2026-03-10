@@ -62,7 +62,6 @@ export default function Layout() {
             { name: 'Tasks', href: '/tasks', icon: CheckSquare, adminOnly: false, external: false },
             { name: 'Chat', href: '/chat', icon: MessageSquare, adminOnly: false, external: false },
             { name: 'Attendance', href: '/attendance', icon: Clock, adminOnly: false, external: false },
-            { name: 'Team', href: '/team', icon: Users, adminOnly: true, external: false },
             { name: 'Monitoring', href: '/monitoring', icon: Monitor, adminOnly: true, external: false },
             { name: 'User Management', href: '/user-management', icon: Users, adminOnly: true, external: false },
             { name: 'Invoices', href: '/invoices', icon: FileText, adminOnly: true, external: false },

@@ -836,6 +836,7 @@ class ReportController extends Controller
             ->values();
 
         $employeeScores = collect(array_values($perUserScore))
+            ->filter(fn (array $row) => strtolower((string) ($row['user']['role'] ?? '')) === 'employee')
             ->map(function (array $row) {
                 $total = max(1, (int) $row['total_duration']);
                 $row['productive_share'] = (float) round(($row['productive_duration'] / $total) * 100, 2);
@@ -857,6 +858,128 @@ class ReportController extends Controller
         $orgUnproductiveDuration = (int) $unproductiveTools->sum('total_duration');
         $orgNeutralDuration = (int) $toolAnalytics->where('classification', 'neutral')->sum('total_duration');
         $orgTrackedDuration = max(1, $orgProductiveDuration + $orgUnproductiveDuration + $orgNeutralDuration);
+
+        $activeTimeEntryUserIds = $analyticsUserIds->isEmpty()
+            ? collect()
+            : TimeEntry::whereIn('user_id', $analyticsUserIds)
+                ->whereNull('end_time')
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique();
+
+        $todayDate = now()->toDateString();
+        $onLeaveUserIds = $analyticsUserIds->isEmpty()
+            ? collect()
+            : LeaveRequest::query()
+                ->whereIn('user_id', $analyticsUserIds)
+                ->where('status', 'approved')
+                ->whereDate('start_date', '<=', $todayDate)
+                ->whereDate('end_date', '>=', $todayDate)
+                ->where(function ($query) {
+                    $query->whereNull('revoke_status')
+                        ->orWhere('revoke_status', '!=', 'approved');
+                })
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique();
+
+        $userScoreById = collect($perUserScore);
+        $orgGroups = ReportGroup::with(['users:id,name,email,role'])
+            ->where('organization_id', $currentUser->organization_id)
+            ->orderBy('name')
+            ->get();
+
+        $teamEfficiency = $orgGroups->map(function (ReportGroup $group) use ($userScoreById, $activeTimeEntryUserIds, $onLeaveUserIds) {
+            $memberIds = collect($group->users ?? [])
+                ->filter(fn ($u) => strtolower((string) ($u->role ?? '')) === 'employee')
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values();
+
+            $memberScores = $memberIds
+                ->map(fn ($id) => $userScoreById->get($id))
+                ->filter()
+                ->values();
+
+            $productive = (int) $memberScores->sum(fn ($row) => (int) ($row['productive_duration'] ?? 0));
+            $unproductive = (int) $memberScores->sum(fn ($row) => (int) ($row['unproductive_duration'] ?? 0));
+            $neutral = (int) $memberScores->sum(fn ($row) => (int) ($row['neutral_duration'] ?? 0));
+            $total = $productive + $unproductive + $neutral;
+            $score = $total > 0 ? (float) round(($productive / $total) * 100, 2) : 0.0;
+
+            return [
+                'group' => [
+                    'id' => (int) $group->id,
+                    'name' => $group->name,
+                ],
+                'members_count' => $memberIds->count(),
+                'active_members_count' => $memberIds->filter(fn ($id) => $activeTimeEntryUserIds->contains($id))->count(),
+                'on_leave_members_count' => $memberIds->filter(fn ($id) => $onLeaveUserIds->contains($id))->count(),
+                'productive_duration' => $productive,
+                'unproductive_duration' => $unproductive,
+                'neutral_duration' => $neutral,
+                'total_duration' => $total,
+                'efficiency_score' => $score,
+            ];
+        })->values();
+
+        $teamEfficiencyRanked = $teamEfficiency
+            ->sortByDesc('efficiency_score')
+            ->values();
+
+        $latestRecentActivities = $analyticsUserIds->isEmpty()
+            ? collect()
+            : Activity::whereIn('user_id', $analyticsUserIds)
+                ->where('recorded_at', '>=', now()->subMinutes(5))
+                ->orderByDesc('recorded_at')
+                ->get(['user_id', 'type', 'name', 'duration', 'recorded_at'])
+                ->groupBy('user_id')
+                ->map(fn ($group) => $group->first());
+
+        $liveMonitoringRows = $analyticsUsers->map(function ($user) use ($latestRecentActivities, $activeTimeEntryUserIds) {
+            $latest = $latestRecentActivities->get((int) $user->id);
+            $classification = 'neutral';
+            $toolLabel = null;
+            $toolType = null;
+            $activityType = null;
+
+            if ($latest) {
+                $toolLabel = $this->normalizeToolLabel((string) ($latest->name ?? ''), (string) ($latest->type ?? 'app'));
+                $classification = $this->classifyProductivity($toolLabel, (string) ($latest->type ?? 'app'));
+                $toolType = $this->guessToolType((string) ($latest->type ?? 'app'));
+                $activityType = (string) ($latest->type ?? 'app');
+            }
+
+            return [
+                'user' => [
+                    'id' => (int) $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                ],
+                'is_working' => $activeTimeEntryUserIds->contains((int) $user->id),
+                'current_tool' => $toolLabel,
+                'tool_type' => $toolType,
+                'activity_type' => $activityType,
+                'classification' => $classification,
+                'last_activity_at' => $latest ? Carbon::parse($latest->recorded_at)->toIso8601String() : null,
+            ];
+        })->values();
+
+        $liveMonitoringRows = $liveMonitoringRows->map(function (array $row) use ($onLeaveUserIds) {
+            $isOnLeave = $onLeaveUserIds->contains((int) ($row['user']['id'] ?? 0));
+            $row['is_on_leave'] = $isOnLeave;
+            $row['work_status'] = $isOnLeave
+                ? 'on_leave'
+                : ((bool) ($row['is_working'] ?? false) ? 'active' : 'inactive');
+            return $row;
+        })->values();
+
+        $employeeLiveRows = $liveMonitoringRows
+            ->filter(fn (array $row) => strtolower((string) ($row['user']['role'] ?? '')) === 'employee')
+            ->values();
+
+        $selectedUserLive = $liveMonitoringRows->first(fn ($row) => (int) ($row['user']['id'] ?? 0) === (int) $selectedUser->id);
 
         return response()->json([
             'start_date' => $startDate->toDateString(),
@@ -889,8 +1012,21 @@ class ReportController extends Controller
             'employee_rankings' => [
                 'most_productive' => $mostProductiveEmployee,
                 'most_unproductive' => $mostUnproductiveEmployee,
-                'by_productive_duration' => $employeeScores->sortByDesc('productive_duration')->take(10)->values(),
-                'by_unproductive_duration' => $employeeScores->sortByDesc('unproductive_duration')->take(10)->values(),
+                'by_productive_duration' => $employeeScores->sortByDesc('productive_duration')->values(),
+                'by_unproductive_duration' => $employeeScores->sortByDesc('unproductive_duration')->values(),
+            ],
+            'team_rankings' => [
+                'by_efficiency' => $teamEfficiencyRanked,
+                'top_productive' => $teamEfficiencyRanked->first(),
+                'least_productive' => $teamEfficiencyRanked->sortBy('efficiency_score')->first(),
+            ],
+            'live_monitoring' => [
+                'selected_user' => $selectedUserLive,
+                'working_now' => $liveMonitoringRows->where('is_working', true)->values(),
+                'all_users' => $liveMonitoringRows,
+                'employees_active' => $employeeLiveRows->where('work_status', 'active')->values(),
+                'employees_inactive' => $employeeLiveRows->where('work_status', 'inactive')->values(),
+                'employees_on_leave' => $employeeLiveRows->where('work_status', 'on_leave')->values(),
             ],
             'recent_screenshots' => $recentScreenshots,
         ]);
@@ -923,16 +1059,12 @@ class ReportController extends Controller
             }
         }
 
-        $firstPart = trim((string) preg_split('/\s*-\s*/', $trimmed)[0]);
-        return mb_substr($firstPart !== '' ? $firstPart : $trimmed, 0, 80);
+        // Keep full app/window string so classifier can match terms like "YouTube" in "Chrome - YouTube".
+        return mb_substr($trimmed, 0, 120);
     }
 
     private function classifyProductivity(string $toolLabel, string $activityType): string
     {
-        if (strtolower(trim($activityType)) === 'idle') {
-            return 'neutral';
-        }
-
         $text = strtolower($toolLabel);
 
         $productiveKeywords = [
@@ -940,22 +1072,35 @@ class ReportController extends Controller
             'vscode', 'visual studio', 'intellij', 'pycharm', 'webstorm', 'phpstorm', 'terminal',
             'powershell', 'cmd', 'postman', 'figma', 'miro', 'docs.google', 'sheets.google', 'drive.google',
             'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
-            'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint',
+            'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint', 'meet.google',
+            'chat.openai', 'chatgpt', 'claude.ai', 'gemini.google', 'code', 'cursor', 'android studio',
+            'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat',
         ];
 
         $unproductiveKeywords = [
             'youtube', 'netflix', 'primevideo', 'hotstar', 'spotify', 'instagram', 'facebook', 'twitter',
             'x.com', 'reddit', 'snapchat', 'tiktok', 'discord', 'twitch', 'pinterest', '9gag',
+            'telegram', 'whatsapp', 'web.whatsapp', 'wa.me', 'fb.com', 'reels', 'shorts', 'cricbuzz', 'espncricinfo',
         ];
 
         $isProductive = collect($productiveKeywords)->contains(fn ($keyword) => str_contains($text, $keyword));
         $isUnproductive = collect($unproductiveKeywords)->contains(fn ($keyword) => str_contains($text, $keyword));
 
+        if ($isUnproductive && !$isProductive) {
+            return 'unproductive';
+        }
         if ($isProductive && !$isUnproductive) {
             return 'productive';
         }
-        if ($isUnproductive && !$isProductive) {
-            return 'unproductive';
+
+        if (strtolower(trim($activityType)) === 'idle') {
+            return 'neutral';
+        }
+
+        // Default non-idle activity to productive so monitored websites/software are visible
+        // unless explicitly flagged as unproductive.
+        if (in_array(strtolower(trim($activityType)), ['url', 'app'], true)) {
+            return 'productive';
         }
 
         return 'neutral';

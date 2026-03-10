@@ -21,22 +21,31 @@ class AuthController extends Controller
             'password' => 'required|string|min:8|confirmed',
             'role' => 'nullable|in:admin,employee',
             'organization_name' => 'nullable|string|max:255',
-            'organization_id' => 'nullable|integer|exists:organizations,id',
         ]);
 
         $result = DB::transaction(function () use ($request) {
             $role = $request->get('role', 'admin');
             $organization = null;
+            $organizationName = trim((string) $request->organization_name);
 
             if ($role === 'employee') {
-                $organization = Organization::find($request->organization_id);
+                if ($organizationName === '') {
+                    throw ValidationException::withMessages([
+                        'organization_name' => ['Organization name is required for employee signup.'],
+                    ]);
+                }
+
+                $organization = Organization::query()
+                    ->whereRaw('LOWER(name) = ?', [mb_strtolower($organizationName)])
+                    ->orWhere('slug', Str::slug($organizationName))
+                    ->first();
+
                 if (!$organization) {
                     throw ValidationException::withMessages([
-                        'organization_id' => ['Valid organization_id is required for employee signup.'],
+                        'organization_name' => ['Organization not found. Enter a valid organization name.'],
                     ]);
                 }
             } else {
-                $organizationName = trim((string) $request->organization_name);
                 if ($organizationName === '') {
                     throw ValidationException::withMessages([
                         'organization_name' => ['Organization name is required for admin signup.'],

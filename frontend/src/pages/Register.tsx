@@ -10,7 +10,6 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState<'admin' | 'employee'>('admin');
   const [organizationName, setOrganizationName] = useState('');
-  const [organizationId, setOrganizationId] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -36,8 +35,7 @@ export default function Register() {
     try {
       await register(name, email, password, {
         role,
-        organizationName: role === 'admin' ? organizationName : undefined,
-        organizationId: role === 'employee' && organizationId ? Number(organizationId) : undefined,
+        organizationName,
       });
       navigate('/dashboard');
     } catch (err: any) {
@@ -114,43 +112,23 @@ export default function Register() {
                 </div>
               </div>
 
-              {role === 'admin' ? (
-                <div>
-                  <label htmlFor="organization" className="block text-sm font-medium text-gray-700">
-                    Organization Name
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      id="organization"
-                      name="organization"
-                      type="text"
-                      required
-                      value={organizationName}
-                      onChange={(e) => setOrganizationName(e.target.value)}
-                      className="appearance-none block w-full px-4 py-3 border border-gray-300 rounded-lg placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                      placeholder="Acme Inc."
-                    />
-                  </div>
+              <div>
+                <label htmlFor="organization" className="block text-sm font-medium text-gray-700">
+                  {role === 'admin' ? 'Organization Name' : 'Organization Name (To Join)'}
+                </label>
+                <div className="mt-1">
+                  <input
+                    id="organization"
+                    name="organization"
+                    type="text"
+                    required
+                    value={organizationName}
+                    onChange={(e) => setOrganizationName(e.target.value)}
+                    className="appearance-none block w-full px-4 py-3 border border-gray-300 rounded-lg placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    placeholder={role === 'admin' ? 'Acme Inc.' : 'Enter existing organization name'}
+                  />
                 </div>
-              ) : (
-                <div>
-                  <label htmlFor="organization-id" className="block text-sm font-medium text-gray-700">
-                    Organization ID
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      id="organization-id"
-                      name="organization-id"
-                      type="number"
-                      required
-                      value={organizationId}
-                      onChange={(e) => setOrganizationId(e.target.value)}
-                      className="appearance-none block w-full px-4 py-3 border border-gray-300 rounded-lg placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                      placeholder="Enter your organization ID"
-                    />
-                  </div>
-                </div>
-              )}
+              </div>
 
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700">
