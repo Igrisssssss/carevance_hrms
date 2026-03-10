@@ -48,7 +48,7 @@
   - [x] Invoice.php - Invoice model
   - [x] InvoiceItem.php - Invoice items model
   - [x] Screenshot.php - Screenshot model
-  - [x] Activity.php - Activity tracking model
+ss/carevance_hrms.git)  - [x] Activity.php - Activity tracking model
 - [x] Controllers created:
   - [x] AuthController.php - Authentication
   - [x] TimeEntryController.php - Time tracking
