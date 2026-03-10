@@ -195,7 +195,6 @@ export interface RegisterRequest {
   password_confirmation: string;
   role?: 'admin' | 'employee';
   organization_name?: string;
-  organization_id?: number;
 }
 
 export interface AuthResponse {

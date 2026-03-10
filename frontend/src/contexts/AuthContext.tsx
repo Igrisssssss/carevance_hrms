@@ -9,7 +9,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string; organizationId?: number }) => Promise<void>;
+  register: (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (user: User) => void;
   updateOrganization: (organization: Organization | null) => void;
@@ -171,7 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionStorage.setItem('user', JSON.stringify(userData));
   };
 
-  const register = async (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string; organizationId?: number }) => {
+  const register = async (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => {
     if (DEMO_MODE) {
       const demoUser: User = {
         id: 1,
@@ -209,7 +209,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password_confirmation: password,
       role: options?.role || 'admin',
       organization_name: options?.organizationName,
-      organization_id: options?.organizationId,
     });
     
     const { user: userData, token: authToken, organization: org } = response.data;
