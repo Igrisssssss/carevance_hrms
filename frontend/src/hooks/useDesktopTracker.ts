@@ -4,6 +4,7 @@ import { activityApi, screenshotApi, timeEntryApi } from '@/services/api';
 
 const TRACK_INTERVAL_MS = 60000;
 const IDLE_THRESHOLD_SECONDS = 60;
+const BROWSER_APP_KEYWORDS = ['chrome', 'edge', 'firefox', 'brave', 'opera', 'safari', 'vivaldi'];
 
 const dataUrlToFile = (dataUrl: string, filename: string): File | null => {
   try {
@@ -67,10 +68,20 @@ export const useDesktopTracker = () => {
             recorded_at: new Date().toISOString(),
           });
         } else {
+          const activeContext = await desktopApi.getActiveWindowContext();
+          const appName = String(activeContext?.app || '').trim();
+          const title = String(activeContext?.title || '').trim();
+          const url = String(activeContext?.url || '').trim();
+          const isBrowserApp = BROWSER_APP_KEYWORDS.some((keyword) => appName.toLowerCase().includes(keyword));
+
+          const type: 'app' | 'url' = url || isBrowserApp ? 'url' : 'app';
+          const nameBase = url || [appName, title].filter(Boolean).join(' - ') || 'Active Input';
+          const name = nameBase.slice(0, 255);
+
           await activityApi.create({
             time_entry_id: activeEntry.id,
-            type: 'app',
-            name: 'Active Input',
+            type,
+            name,
             duration: TRACK_INTERVAL_MS / 1000,
             recorded_at: new Date().toISOString(),
           });

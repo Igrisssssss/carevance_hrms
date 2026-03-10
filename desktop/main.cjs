@@ -1,5 +1,6 @@
 const { app, BrowserWindow, desktopCapturer, ipcMain, powerMonitor, shell } = require('electron');
 const path = require('path');
+const activeWin = require('active-win');
 
 const DEFAULT_APP_URL = 'http://localhost:5173';
 const APP_URL = process.env.APP_URL || DEFAULT_APP_URL;
@@ -39,6 +40,21 @@ ipcMain.handle('desktop:capture-screenshot', async () => {
 
 ipcMain.handle('desktop:get-system-idle-seconds', async () => {
   return powerMonitor.getSystemIdleTime();
+});
+
+ipcMain.handle('desktop:get-active-window-context', async () => {
+  try {
+    const context = await activeWin();
+    if (!context) return null;
+
+    return {
+      app: context.owner?.name || null,
+      title: context.title || null,
+      url: context.url || null,
+    };
+  } catch {
+    return null;
+  }
 });
 
 app.whenReady().then(() => {

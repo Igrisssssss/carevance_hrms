@@ -679,7 +679,8 @@ class ReportController extends Controller
             }
         }
 
-        $matchedUsers = $usersQuery->orderBy('name')->limit(20)->get(['id', 'name', 'email', 'role']);
+        $matchedUsers = (clone $usersQuery)->orderBy('name')->limit(20)->get(['id', 'name', 'email', 'role']);
+        $analyticsUsers = (clone $usersQuery)->orderBy('name')->get(['id', 'name', 'email', 'role']);
         $selectedUserId = $request->filled('user_id')
             ? (int) $request->user_id
             : (int) ($matchedUsers->first()->id ?? 0);
@@ -715,7 +716,7 @@ class ReportController extends Controller
 
         $activities = Activity::where('user_id', $selectedUser->id)
             ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->get(['type', 'duration', 'recorded_at']);
+            ->get(['type', 'name', 'duration', 'recorded_at']);
 
         $totalIdle = (int) $activities->where('type', 'idle')->sum('duration');
         $idleCount = max(1, $activities->where('type', 'idle')->count());
@@ -738,10 +739,130 @@ class ReportController extends Controller
             ->limit(60)
             ->get();
 
+        $analyticsUserIds = $analyticsUsers->pluck('id')->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->values();
+        $organizationActivities = $analyticsUserIds->isEmpty()
+            ? collect()
+            : Activity::whereIn('user_id', $analyticsUserIds)
+                ->whereBetween('recorded_at', [$startDate, $endDate])
+                ->get(['user_id', 'type', 'name', 'duration']);
+
+        $toolTotalsByKey = [];
+        $perUserScore = [];
+
+        foreach ($analyticsUsers as $analyticsUser) {
+            $perUserScore[(int) $analyticsUser->id] = [
+                'user' => [
+                    'id' => (int) $analyticsUser->id,
+                    'name' => $analyticsUser->name,
+                    'email' => $analyticsUser->email,
+                    'role' => $analyticsUser->role,
+                ],
+                'productive_duration' => 0,
+                'unproductive_duration' => 0,
+                'neutral_duration' => 0,
+                'total_duration' => 0,
+            ];
+        }
+
+        foreach ($organizationActivities as $item) {
+            $duration = max(0, (int) ($item->duration ?? 0));
+            if ($duration <= 0) {
+                continue;
+            }
+
+            $label = $this->normalizeToolLabel((string) ($item->name ?? ''), (string) ($item->type ?? 'app'));
+            $classification = $this->classifyProductivity($label, (string) ($item->type ?? 'app'));
+            $toolType = $this->guessToolType((string) ($item->type ?? 'app'));
+            $toolKey = strtolower($toolType.'|'.$label);
+
+            if (!isset($toolTotalsByKey[$toolKey])) {
+                $toolTotalsByKey[$toolKey] = [
+                    'label' => $label,
+                    'type' => $toolType,
+                    'classification' => $classification,
+                    'total_duration' => 0,
+                    'total_events' => 0,
+                    'users' => [],
+                ];
+            }
+
+            $toolTotalsByKey[$toolKey]['total_duration'] += $duration;
+            $toolTotalsByKey[$toolKey]['total_events'] += 1;
+            $toolTotalsByKey[$toolKey]['users'][(int) $item->user_id] = true;
+
+            if (!isset($perUserScore[(int) $item->user_id])) {
+                $perUserScore[(int) $item->user_id] = [
+                    'user' => ['id' => (int) $item->user_id, 'name' => 'Unknown', 'email' => '', 'role' => 'employee'],
+                    'productive_duration' => 0,
+                    'unproductive_duration' => 0,
+                    'neutral_duration' => 0,
+                    'total_duration' => 0,
+                ];
+            }
+
+            $perUserScore[(int) $item->user_id]['total_duration'] += $duration;
+            if ($classification === 'productive') {
+                $perUserScore[(int) $item->user_id]['productive_duration'] += $duration;
+            } elseif ($classification === 'unproductive') {
+                $perUserScore[(int) $item->user_id]['unproductive_duration'] += $duration;
+            } else {
+                $perUserScore[(int) $item->user_id]['neutral_duration'] += $duration;
+            }
+        }
+
+        $toolAnalytics = collect(array_values($toolTotalsByKey))->map(function (array $row) use ($analyticsUsers) {
+            $usersCount = count($row['users']);
+            $totalDuration = (int) $row['total_duration'];
+            return [
+                'label' => $row['label'],
+                'type' => $row['type'],
+                'classification' => $row['classification'],
+                'total_duration' => $totalDuration,
+                'total_events' => (int) $row['total_events'],
+                'users_count' => $usersCount,
+                'avg_duration_per_employee' => $analyticsUsers->count() > 0
+                    ? (float) round($totalDuration / $analyticsUsers->count(), 2)
+                    : 0.0,
+            ];
+        });
+
+        $productiveTools = $toolAnalytics
+            ->where('classification', 'productive')
+            ->sortByDesc('total_duration')
+            ->values();
+        $unproductiveTools = $toolAnalytics
+            ->where('classification', 'unproductive')
+            ->sortByDesc('total_duration')
+            ->values();
+
+        $employeeScores = collect(array_values($perUserScore))
+            ->map(function (array $row) {
+                $total = max(1, (int) $row['total_duration']);
+                $row['productive_share'] = (float) round(($row['productive_duration'] / $total) * 100, 2);
+                $row['unproductive_share'] = (float) round(($row['unproductive_duration'] / $total) * 100, 2);
+                return $row;
+            })
+            ->sortByDesc('productive_duration')
+            ->values();
+
+        $mostProductiveEmployee = $employeeScores
+            ->sortByDesc('productive_duration')
+            ->first(fn ($row) => (int) ($row['productive_duration'] ?? 0) > 0);
+        $mostUnproductiveEmployee = $employeeScores
+            ->sortByDesc('unproductive_duration')
+            ->first(fn ($row) => (int) ($row['unproductive_duration'] ?? 0) > 0);
+
+        $selectedToolBreakdown = $this->buildToolBreakdown($activities);
+        $orgProductiveDuration = (int) $productiveTools->sum('total_duration');
+        $orgUnproductiveDuration = (int) $unproductiveTools->sum('total_duration');
+        $orgNeutralDuration = (int) $toolAnalytics->where('classification', 'neutral')->sum('total_duration');
+        $orgTrackedDuration = max(1, $orgProductiveDuration + $orgUnproductiveDuration + $orgNeutralDuration);
+
         return response()->json([
             'start_date' => $startDate->toDateString(),
             'end_date' => $endDate->toDateString(),
             'matched_users' => $matchedUsers,
+            'analytics_users_count' => $analyticsUsers->count(),
             'selected_user' => $selectedUser,
             'stats' => [
                 'entries_count' => $entriesCount,
@@ -753,8 +874,129 @@ class ReportController extends Controller
                 'activity_events' => $activities->count(),
             ],
             'activity_breakdown' => $activityBreakdown,
+            'selected_user_tools' => $selectedToolBreakdown,
+            'organization_tools' => [
+                'productive' => $productiveTools->take(10)->values(),
+                'unproductive' => $unproductiveTools->take(10)->values(),
+            ],
+            'organization_summary' => [
+                'productive_duration' => $orgProductiveDuration,
+                'unproductive_duration' => $orgUnproductiveDuration,
+                'neutral_duration' => $orgNeutralDuration,
+                'productive_share' => (float) round(($orgProductiveDuration / $orgTrackedDuration) * 100, 2),
+                'unproductive_share' => (float) round(($orgUnproductiveDuration / $orgTrackedDuration) * 100, 2),
+            ],
+            'employee_rankings' => [
+                'most_productive' => $mostProductiveEmployee,
+                'most_unproductive' => $mostUnproductiveEmployee,
+                'by_productive_duration' => $employeeScores->sortByDesc('productive_duration')->take(10)->values(),
+                'by_unproductive_duration' => $employeeScores->sortByDesc('unproductive_duration')->take(10)->values(),
+            ],
             'recent_screenshots' => $recentScreenshots,
         ]);
+    }
+
+    private function guessToolType(string $activityType): string
+    {
+        $type = strtolower(trim($activityType));
+        return $type === 'url' ? 'website' : 'software';
+    }
+
+    private function normalizeToolLabel(string $name, string $activityType): string
+    {
+        $trimmed = trim($name);
+
+        if ($trimmed === '') {
+            return $this->guessToolType($activityType) === 'website' ? 'unknown-site' : 'unknown-app';
+        }
+
+        if (strtolower(trim($activityType)) === 'url') {
+            if (filter_var($trimmed, FILTER_VALIDATE_URL)) {
+                $host = (string) parse_url($trimmed, PHP_URL_HOST);
+                if ($host !== '') {
+                    return strtolower(preg_replace('/^www\./', '', $host));
+                }
+            }
+
+            if (preg_match('/([a-z0-9-]+\.)+[a-z]{2,}/i', $trimmed, $matches)) {
+                return strtolower(preg_replace('/^www\./', '', $matches[0]));
+            }
+        }
+
+        $firstPart = trim((string) preg_split('/\s*-\s*/', $trimmed)[0]);
+        return mb_substr($firstPart !== '' ? $firstPart : $trimmed, 0, 80);
+    }
+
+    private function classifyProductivity(string $toolLabel, string $activityType): string
+    {
+        if (strtolower(trim($activityType)) === 'idle') {
+            return 'neutral';
+        }
+
+        $text = strtolower($toolLabel);
+
+        $productiveKeywords = [
+            'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'notion', 'slack', 'teams', 'zoom',
+            'vscode', 'visual studio', 'intellij', 'pycharm', 'webstorm', 'phpstorm', 'terminal',
+            'powershell', 'cmd', 'postman', 'figma', 'miro', 'docs.google', 'sheets.google', 'drive.google',
+            'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
+            'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint',
+        ];
+
+        $unproductiveKeywords = [
+            'youtube', 'netflix', 'primevideo', 'hotstar', 'spotify', 'instagram', 'facebook', 'twitter',
+            'x.com', 'reddit', 'snapchat', 'tiktok', 'discord', 'twitch', 'pinterest', '9gag',
+        ];
+
+        $isProductive = collect($productiveKeywords)->contains(fn ($keyword) => str_contains($text, $keyword));
+        $isUnproductive = collect($unproductiveKeywords)->contains(fn ($keyword) => str_contains($text, $keyword));
+
+        if ($isProductive && !$isUnproductive) {
+            return 'productive';
+        }
+        if ($isUnproductive && !$isProductive) {
+            return 'unproductive';
+        }
+
+        return 'neutral';
+    }
+
+    private function buildToolBreakdown($activities): array
+    {
+        $rows = [];
+
+        foreach ($activities as $activity) {
+            $duration = max(0, (int) ($activity->duration ?? 0));
+            if ($duration <= 0) {
+                continue;
+            }
+
+            $label = $this->normalizeToolLabel((string) ($activity->name ?? ''), (string) ($activity->type ?? 'app'));
+            $classification = $this->classifyProductivity($label, (string) ($activity->type ?? 'app'));
+            $type = $this->guessToolType((string) ($activity->type ?? 'app'));
+            $key = strtolower($classification.'|'.$type.'|'.$label);
+
+            if (!isset($rows[$key])) {
+                $rows[$key] = [
+                    'label' => $label,
+                    'type' => $type,
+                    'classification' => $classification,
+                    'total_duration' => 0,
+                    'total_events' => 0,
+                ];
+            }
+
+            $rows[$key]['total_duration'] += $duration;
+            $rows[$key]['total_events'] += 1;
+        }
+
+        $grouped = collect(array_values($rows))->sortByDesc('total_duration')->values();
+
+        return [
+            'productive' => $grouped->where('classification', 'productive')->values(),
+            'unproductive' => $grouped->where('classification', 'unproductive')->values(),
+            'neutral' => $grouped->where('classification', 'neutral')->values(),
+        ];
     }
 
     private function buildCommonReportPayload($timeEntries): array
