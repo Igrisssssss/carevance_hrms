@@ -9,7 +9,6 @@ import Tasks from '@/pages/Tasks';
 import Reports from '@/pages/Reports';
 import Invoices from '@/pages/Invoices';
 import Settings from '@/pages/Settings';
-import Team from '@/pages/Team';
 import Monitoring from '@/pages/Monitoring';
 import Attendance from '@/pages/Attendance';
 import Chat from '@/pages/Chat';
@@ -104,7 +103,7 @@ function App() {
         <Route path="chat" element={<Chat />} />
         <Route path="attendance" element={<Attendance />} />
         <Route path="edit-time" element={<Attendance mode="time-edit" />} />
-        <Route path="team" element={<AdminRoute><Team /></AdminRoute>} />
+        <Route path="team" element={<Navigate to="/user-management" replace />} />
         <Route path="monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
         <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
         <Route path="invoices" element={<AdminRoute><Invoices /></AdminRoute>} />

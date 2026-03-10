@@ -66,6 +66,8 @@ export default function Monitoring() {
   const organizationTools = data?.organization_tools || { productive: [], unproductive: [] };
   const organizationSummary = data?.organization_summary || null;
   const employeeRankings = data?.employee_rankings || null;
+  const liveMonitoring = data?.live_monitoring || { selected_user: null, working_now: [], all_users: [] };
+  const selectedUserLive = liveMonitoring?.selected_user;
   const analyticsUsersCount = Number(data?.analytics_users_count || 0);
   const totalActivityDuration = activityBreakdown.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0);
 
@@ -183,6 +185,62 @@ export default function Monitoring() {
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <p className="text-sm text-gray-500">Tracked Unproductive Time</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">{formatDuration(Number(organizationSummary?.unproductive_duration || 0))}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h2 className="font-semibold text-gray-900 mb-3">Live Activity (Selected Employee)</h2>
+              {!selectedUserLive ? (
+                <p className="text-sm text-gray-500">No live activity found.</p>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">Current Tool</p>
+                    <p className="text-sm font-medium text-gray-900">{selectedUserLive.current_tool || 'Unknown'}</p>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">Type</p>
+                    <p className="text-sm font-medium text-gray-900 capitalize">{selectedUserLive.tool_type || '--'}</p>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">Classification</p>
+                    <span className={`text-xs px-2 py-1 rounded-full ${selectedUserLive.classification === 'unproductive' ? 'bg-red-100 text-red-700' : selectedUserLive.classification === 'productive' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                      {selectedUserLive.classification || 'neutral'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">Working Now</p>
+                    <span className={`text-xs px-2 py-1 rounded-full ${selectedUserLive.is_working ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                      {selectedUserLive.is_working ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-gray-900">Live Working Now (Team)</h2>
+                <p className="text-xs text-gray-500">{(liveMonitoring?.working_now || []).length} active</p>
+              </div>
+              {(liveMonitoring?.working_now || []).length === 0 ? (
+                <p className="text-sm text-gray-500 mt-3">No users currently active.</p>
+              ) : (
+                <div className="mt-3 space-y-2 max-h-56 overflow-auto">
+                  {(liveMonitoring?.working_now || []).map((item: any) => (
+                    <div key={item.user?.id} className="rounded-lg border border-gray-100 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-gray-900">{item.user?.name}</p>
+                        <span className={`text-xs px-2 py-1 rounded-full ${item.classification === 'unproductive' ? 'bg-red-100 text-red-700' : item.classification === 'productive' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                          {item.classification}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1">{item.current_tool || 'Unknown tool'}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

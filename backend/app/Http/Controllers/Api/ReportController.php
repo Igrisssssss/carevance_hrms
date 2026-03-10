@@ -858,6 +858,55 @@ class ReportController extends Controller
         $orgNeutralDuration = (int) $toolAnalytics->where('classification', 'neutral')->sum('total_duration');
         $orgTrackedDuration = max(1, $orgProductiveDuration + $orgUnproductiveDuration + $orgNeutralDuration);
 
+        $activeTimeEntryUserIds = $analyticsUserIds->isEmpty()
+            ? collect()
+            : TimeEntry::whereIn('user_id', $analyticsUserIds)
+                ->whereNull('end_time')
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique();
+
+        $latestRecentActivities = $analyticsUserIds->isEmpty()
+            ? collect()
+            : Activity::whereIn('user_id', $analyticsUserIds)
+                ->where('recorded_at', '>=', now()->subMinutes(5))
+                ->orderByDesc('recorded_at')
+                ->get(['user_id', 'type', 'name', 'duration', 'recorded_at'])
+                ->groupBy('user_id')
+                ->map(fn ($group) => $group->first());
+
+        $liveMonitoringRows = $analyticsUsers->map(function ($user) use ($latestRecentActivities, $activeTimeEntryUserIds) {
+            $latest = $latestRecentActivities->get((int) $user->id);
+            $classification = 'neutral';
+            $toolLabel = null;
+            $toolType = null;
+            $activityType = null;
+
+            if ($latest) {
+                $toolLabel = $this->normalizeToolLabel((string) ($latest->name ?? ''), (string) ($latest->type ?? 'app'));
+                $classification = $this->classifyProductivity($toolLabel, (string) ($latest->type ?? 'app'));
+                $toolType = $this->guessToolType((string) ($latest->type ?? 'app'));
+                $activityType = (string) ($latest->type ?? 'app');
+            }
+
+            return [
+                'user' => [
+                    'id' => (int) $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                ],
+                'is_working' => $activeTimeEntryUserIds->contains((int) $user->id),
+                'current_tool' => $toolLabel,
+                'tool_type' => $toolType,
+                'activity_type' => $activityType,
+                'classification' => $classification,
+                'last_activity_at' => $latest ? Carbon::parse($latest->recorded_at)->toIso8601String() : null,
+            ];
+        })->values();
+
+        $selectedUserLive = $liveMonitoringRows->first(fn ($row) => (int) ($row['user']['id'] ?? 0) === (int) $selectedUser->id);
+
         return response()->json([
             'start_date' => $startDate->toDateString(),
             'end_date' => $endDate->toDateString(),
@@ -892,6 +941,11 @@ class ReportController extends Controller
                 'by_productive_duration' => $employeeScores->sortByDesc('productive_duration')->take(10)->values(),
                 'by_unproductive_duration' => $employeeScores->sortByDesc('unproductive_duration')->take(10)->values(),
             ],
+            'live_monitoring' => [
+                'selected_user' => $selectedUserLive,
+                'working_now' => $liveMonitoringRows->where('is_working', true)->values(),
+                'all_users' => $liveMonitoringRows,
+            ],
             'recent_screenshots' => $recentScreenshots,
         ]);
     }
@@ -923,16 +977,12 @@ class ReportController extends Controller
             }
         }
 
-        $firstPart = trim((string) preg_split('/\s*-\s*/', $trimmed)[0]);
-        return mb_substr($firstPart !== '' ? $firstPart : $trimmed, 0, 80);
+        // Keep full app/window string so classifier can match terms like "YouTube" in "Chrome - YouTube".
+        return mb_substr($trimmed, 0, 120);
     }
 
     private function classifyProductivity(string $toolLabel, string $activityType): string
     {
-        if (strtolower(trim($activityType)) === 'idle') {
-            return 'neutral';
-        }
-
         $text = strtolower($toolLabel);
 
         $productiveKeywords = [
@@ -940,22 +990,35 @@ class ReportController extends Controller
             'vscode', 'visual studio', 'intellij', 'pycharm', 'webstorm', 'phpstorm', 'terminal',
             'powershell', 'cmd', 'postman', 'figma', 'miro', 'docs.google', 'sheets.google', 'drive.google',
             'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
-            'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint',
+            'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint', 'meet.google',
+            'chat.openai', 'chatgpt', 'claude.ai', 'gemini.google', 'code', 'cursor', 'android studio',
+            'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat',
         ];
 
         $unproductiveKeywords = [
             'youtube', 'netflix', 'primevideo', 'hotstar', 'spotify', 'instagram', 'facebook', 'twitter',
             'x.com', 'reddit', 'snapchat', 'tiktok', 'discord', 'twitch', 'pinterest', '9gag',
+            'telegram', 'whatsapp', 'web.whatsapp', 'wa.me', 'fb.com', 'reels', 'shorts', 'cricbuzz', 'espncricinfo',
         ];
 
         $isProductive = collect($productiveKeywords)->contains(fn ($keyword) => str_contains($text, $keyword));
         $isUnproductive = collect($unproductiveKeywords)->contains(fn ($keyword) => str_contains($text, $keyword));
 
+        if ($isUnproductive && !$isProductive) {
+            return 'unproductive';
+        }
         if ($isProductive && !$isUnproductive) {
             return 'productive';
         }
-        if ($isUnproductive && !$isProductive) {
-            return 'unproductive';
+
+        if (strtolower(trim($activityType)) === 'idle') {
+            return 'neutral';
+        }
+
+        // Default non-idle activity to productive so monitored websites/software are visible
+        // unless explicitly flagged as unproductive.
+        if (in_array(strtolower(trim($activityType)), ['url', 'app'], true)) {
+            return 'productive';
         }
 
         return 'neutral';
