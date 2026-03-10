@@ -103,6 +103,7 @@ function App() {
         <Route path="tasks" element={<Tasks />} />
         <Route path="chat" element={<Chat />} />
         <Route path="attendance" element={<Attendance />} />
+        <Route path="edit-time" element={<Attendance mode="time-edit" />} />
         <Route path="team" element={<AdminRoute><Team /></AdminRoute>} />
         <Route path="monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
         <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />

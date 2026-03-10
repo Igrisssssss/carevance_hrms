@@ -48,7 +48,11 @@ const buildMonthGrid = (month: string) => {
   return { first, weeks };
 };
 
-export default function Attendance() {
+type AttendanceProps = {
+  mode?: 'full' | 'time-edit';
+};
+
+export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [startDate, setStartDate] = useState(formatLocalDate(new Date(new Date().setDate(1))));
@@ -328,20 +332,23 @@ export default function Attendance() {
   };
 
   useEffect(() => {
+    if (mode !== 'full') return;
     fetchAttendance();
-  }, [startDate, endDate]);
+  }, [startDate, endDate, mode]);
 
   useEffect(() => {
+    fetchTimeEditRequests();
+    if (mode !== 'full') return;
     fetchToday();
     fetchLeaveRequests();
-    fetchTimeEditRequests();
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
+    if (mode !== 'full') return;
     if (selectedUserId || !isAdmin) {
       fetchCalendar();
     }
-  }, [calendarMonth, selectedUserId]);
+  }, [calendarMonth, selectedUserId, mode]);
 
   const selectedRow = rows.find((row) => row.user.id === selectedUserId) || rows[0];
   const pendingLeaveRequests = useMemo(
@@ -376,6 +383,96 @@ export default function Attendance() {
     for (const d of calendarDays) map.set(d.date, d);
     return map;
   }, [calendarDays]);
+
+  if (mode === 'time-edit') {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Edit Time</h1>
+          <p className="text-gray-500 mt-1">Request overtime or attendance time adjustments</p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <h2 className="font-semibold text-gray-900 mb-3">Request Time Edit / Overtime</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Attendance Date</label>
+                <input type="date" value={timeEditDate} onChange={(e) => setTimeEditDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Extra Minutes</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={600}
+                  value={extraMinutes}
+                  onChange={(e) => setExtraMinutes(Number(e.target.value))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+            <div className="mt-3">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Message to Admin</label>
+              <textarea
+                value={timeEditMessage}
+                onChange={(e) => setTimeEditMessage(e.target.value)}
+                rows={3}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                placeholder="Example: I worked 1 hour extra after shift due to release deployment."
+              />
+            </div>
+            <div className="mt-3">
+              <button
+                onClick={submitTimeEditRequest}
+                disabled={isTimeEditSubmitting}
+                className="px-4 py-2 rounded-lg text-sm bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-60"
+              >
+                {isTimeEditSubmitting ? 'Submitting...' : 'Submit Time Edit Request'}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900">Time Edit Requests</h2>
+              <button onClick={fetchTimeEditRequests} className="text-sm text-primary-700 hover:underline">Refresh</button>
+            </div>
+            {isTimeEditLoading ? (
+              <p className="text-sm text-gray-500 mt-3">Loading...</p>
+            ) : timeEditRequests.length === 0 ? (
+              <p className="text-sm text-gray-500 mt-3">No time edit requests found.</p>
+            ) : (
+              <div className="mt-3 space-y-2 max-h-72 overflow-auto">
+                {timeEditRequests.map((item) => (
+                  <div key={item.id} className="border border-gray-200 rounded-lg p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-gray-900">
+                        {item.user?.name || 'You'}: {item.attendance_date} (+{formatDuration(item.extra_seconds)})
+                      </p>
+                      <span className={`text-xs px-2 py-1 rounded-full ${item.status === 'approved' ? 'bg-green-100 text-green-700' : item.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {item.status}
+                      </span>
+                    </div>
+                    {item.message ? <p className="text-xs text-gray-600 mt-1">{item.message}</p> : null}
+                    {isAdmin && item.status === 'pending' ? (
+                      <div className="mt-2 flex gap-2">
+                        <button onClick={() => approveTimeEdit(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-green-600 text-white hover:bg-green-700">Approve</button>
+                        <button onClick={() => rejectTimeEdit(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700">Reject</button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+            {isAdmin && pendingTimeEditRequests.length > 0 ? (
+              <p className="text-xs text-gray-500 mt-2">Pending approvals: {pendingTimeEditRequests.length}</p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">

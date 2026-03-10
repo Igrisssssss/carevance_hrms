@@ -62,6 +62,11 @@ export default function Monitoring() {
   const stats = data?.stats;
   const screenshots = data?.recent_screenshots || [];
   const activityBreakdown = data?.activity_breakdown || [];
+  const selectedTools = data?.selected_user_tools || { productive: [], unproductive: [], neutral: [] };
+  const organizationTools = data?.organization_tools || { productive: [], unproductive: [] };
+  const organizationSummary = data?.organization_summary || null;
+  const employeeRankings = data?.employee_rankings || null;
+  const analyticsUsersCount = Number(data?.analytics_users_count || 0);
   const totalActivityDuration = activityBreakdown.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0);
 
   const handleDeleteScreenshot = async (id: number) => {
@@ -162,6 +167,25 @@ export default function Monitoring() {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <p className="text-sm text-gray-500">Org Productive Share</p>
+              <p className="text-2xl font-bold text-green-700 mt-1">{Number(organizationSummary?.productive_share || 0).toFixed(1)}%</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <p className="text-sm text-gray-500">Org Unproductive Share</p>
+              <p className="text-2xl font-bold text-red-700 mt-1">{Number(organizationSummary?.unproductive_share || 0).toFixed(1)}%</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <p className="text-sm text-gray-500">Tracked Productive Time</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{formatDuration(Number(organizationSummary?.productive_duration || 0))}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <p className="text-sm text-gray-500">Tracked Unproductive Time</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{formatDuration(Number(organizationSummary?.unproductive_duration || 0))}</p>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <h2 className="font-semibold text-gray-900 mb-3">Activity Breakdown</h2>
@@ -208,6 +232,132 @@ export default function Monitoring() {
                 </div>
               )}
             </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h2 className="font-semibold text-gray-900 mb-3">Selected Employee Tool Usage</h2>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium text-green-700 mb-2">Most Productive Websites/Software</p>
+                  {selectedTools.productive.length === 0 ? (
+                    <p className="text-sm text-gray-500">No productive tools found.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {selectedTools.productive.slice(0, 8).map((item: any) => (
+                        <div key={`sel-prod-${item.type}-${item.label}`} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2">
+                          <div>
+                            <p className="text-sm text-gray-900">{item.label}</p>
+                            <p className="text-xs text-gray-500 capitalize">{item.type}</p>
+                          </div>
+                          <p className="text-sm font-medium text-gray-900">{formatDuration(item.total_duration)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-red-700 mb-2">Most Unproductive Websites/Software</p>
+                  {selectedTools.unproductive.length === 0 ? (
+                    <p className="text-sm text-gray-500">No unproductive tools found.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {selectedTools.unproductive.slice(0, 8).map((item: any) => (
+                        <div key={`sel-unprod-${item.type}-${item.label}`} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2">
+                          <div>
+                            <p className="text-sm text-gray-900">{item.label}</p>
+                            <p className="text-xs text-gray-500 capitalize">{item.type}</p>
+                          </div>
+                          <p className="text-sm font-medium text-gray-900">{formatDuration(item.total_duration)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-gray-900">Organization Top Productive Tools</h2>
+                <p className="text-xs text-gray-500">Avg across {analyticsUsersCount} employees</p>
+              </div>
+              {organizationTools.productive.length === 0 ? (
+                <p className="text-sm text-gray-500 mt-3">No productive tool activity found.</p>
+              ) : (
+                <div className="mt-3 space-y-2 max-h-72 overflow-auto">
+                  {organizationTools.productive.map((item: any) => (
+                    <div key={`org-prod-${item.type}-${item.label}`} className="rounded-lg border border-gray-100 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-gray-900">{item.label}</p>
+                        <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 capitalize">{item.type}</span>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Total: {formatDuration(item.total_duration)} | Avg/Employee: {formatDuration(Math.round(item.avg_duration_per_employee || 0))}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-gray-900">Organization Top Unproductive Tools</h2>
+                <p className="text-xs text-gray-500">Avg across {analyticsUsersCount} employees</p>
+              </div>
+              {organizationTools.unproductive.length === 0 ? (
+                <p className="text-sm text-gray-500 mt-3">No unproductive tool activity found.</p>
+              ) : (
+                <div className="mt-3 space-y-2 max-h-72 overflow-auto">
+                  {organizationTools.unproductive.map((item: any) => (
+                    <div key={`org-unprod-${item.type}-${item.label}`} className="rounded-lg border border-gray-100 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-gray-900">{item.label}</p>
+                        <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 capitalize">{item.type}</span>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Total: {formatDuration(item.total_duration)} | Avg/Employee: {formatDuration(Math.round(item.avg_duration_per_employee || 0))}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h2 className="font-semibold text-gray-900 mb-3">Top Employee Rankings</h2>
+              <div className="space-y-3">
+                <div className="rounded-lg border border-gray-100 p-3">
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Most Productive Employee</p>
+                  {employeeRankings?.most_productive ? (
+                    <>
+                      <p className="text-sm font-semibold text-gray-900 mt-1">{employeeRankings.most_productive.user?.name}</p>
+                      <p className="text-xs text-gray-600">{employeeRankings.most_productive.user?.email}</p>
+                      <p className="text-xs text-green-700 mt-1">Productive: {formatDuration(employeeRankings.most_productive.productive_duration || 0)}</p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500 mt-1">No data.</p>
+                  )}
+                </div>
+                <div className="rounded-lg border border-gray-100 p-3">
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Most Unproductive Employee</p>
+                  {employeeRankings?.most_unproductive ? (
+                    <>
+                      <p className="text-sm font-semibold text-gray-900 mt-1">{employeeRankings.most_unproductive.user?.name}</p>
+                      <p className="text-xs text-gray-600">{employeeRankings.most_unproductive.user?.email}</p>
+                      <p className="text-xs text-red-700 mt-1">Unproductive: {formatDuration(employeeRankings.most_unproductive.unproductive_duration || 0)}</p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500 mt-1">No data.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <h2 className="font-semibold text-gray-900 mb-3">Recent Screenshots</h2>
               <div className="grid grid-cols-2 gap-2 max-h-80 overflow-auto">

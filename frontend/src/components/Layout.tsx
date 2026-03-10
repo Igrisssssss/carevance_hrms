@@ -52,7 +52,7 @@ export default function Layout() {
         ? [
             { name: 'Timer', href: '/dashboard', icon: Clock, adminOnly: false, external: false },
             { name: 'Dashboard', href: '/desktop-web-dashboard', externalPath: '/dashboard', icon: LayoutDashboard, adminOnly: false, external: true },
-            { name: 'Edit Time', href: '/attendance', icon: Calendar, adminOnly: false, external: false },
+            { name: 'Edit Time', href: '/edit-time', icon: Calendar, adminOnly: false, external: false },
             { name: 'Screenshot', href: '/desktop-web-screenshot', externalPath: '/monitoring', icon: Monitor, adminOnly: true, external: true },
             { name: 'Settings', href: '/settings', icon: Settings, adminOnly: false, external: false },
           ]
