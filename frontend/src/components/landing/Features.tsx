@@ -44,7 +44,7 @@ const features = [
 
 export default function Features() {
   return (
-    <section id="features" className="px-4 py-20 sm:px-6 lg:px-8">
+    <section id="features" className="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="Features"
@@ -52,7 +52,7 @@ export default function Features() {
           description="These cards reflect the modules and workflows that are present in the current frontend and backend code."
         />
 
-        <div className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-10 grid gap-4 sm:mt-12 sm:gap-5 md:grid-cols-2 xl:grid-cols-3">
           {features.map((feature, index) => (
             <motion.div
               key={feature.title}
@@ -61,7 +61,7 @@ export default function Features() {
               viewport={{ once: true, amount: 0.25 }}
               transition={{ duration: 0.5, delay: index * 0.06 }}
               whileHover={{ y: -8 }}
-              className="glass-panel group rounded-[28px] p-6"
+              className="glass-panel group rounded-[28px] p-5 sm:p-6"
             >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#0f172a,#0ea5e9)] text-white shadow-lg shadow-sky-950/15 transition duration-300 group-hover:scale-105">
                 <feature.icon className="h-6 w-6" />

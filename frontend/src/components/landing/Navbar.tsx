@@ -71,14 +71,14 @@ export default function Navbar() {
             : 'border-white/55 bg-white/58 shadow-[0_12px_40px_-30px_rgba(14,165,233,0.35)] backdrop-blur-xl'
         }`}
       >
-        <div className="flex items-center justify-between px-5 py-4 lg:px-7">
-          <Link to="/" onClick={handleLogoClick} className="flex items-center gap-3 text-slate-950">
-            <div className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_75%,#67e8f9_100%)] shadow-[0_18px_35px_-14px_rgba(14,165,233,0.8)]">
+        <div className="flex items-center justify-between px-4 py-3 sm:px-5 sm:py-4 lg:px-7">
+          <Link to="/" onClick={handleLogoClick} className="flex min-w-0 items-center gap-3 text-slate-950">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_75%,#67e8f9_100%)] shadow-[0_18px_35px_-14px_rgba(14,165,233,0.8)] sm:h-11 sm:w-11">
               <Clock3 className="h-5 w-5 text-white" />
             </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-sky-700">CareVance HRMS</p>
-              <p className="text-lg font-semibold tracking-[-0.04em]">TimeTrack</p>
+            <div className="min-w-0">
+              <p className="truncate text-[10px] font-semibold uppercase tracking-[0.28em] text-sky-700 sm:text-[11px] sm:tracking-[0.32em]">CareVance HRMS</p>
+              <p className="text-base font-semibold tracking-[-0.04em] sm:text-lg">TimeTrack</p>
             </div>
           </Link>
 

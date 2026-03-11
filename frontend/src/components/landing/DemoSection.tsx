@@ -12,8 +12,8 @@ export default function DemoSection() {
   const y = useTransform(scrollYProgress, [0, 1], [50, -50]);
 
   return (
-    <section id="product" className="px-4 py-20 sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-[0.82fr_1.18fr]">
+    <section id="product" className="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+      <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[0.82fr_1.18fr] lg:gap-14">
         <div>
           <SectionHeading
             eyebrow="Product overview"
@@ -21,7 +21,7 @@ export default function DemoSection() {
             description="The repository implements a combined web app and desktop-assisted workflow for tracking work sessions, monitoring employee activity, managing attendance, and running admin tasks."
             align="left"
           />
-          <div className="mt-10 space-y-4">
+          <div className="mt-8 space-y-4 sm:mt-10">
             {[
               {
                 icon: TimerReset,
@@ -39,7 +39,7 @@ export default function DemoSection() {
                 description: 'The Windows desktop tracker records active app or URL context, idle time, and screenshots for employees.',
               },
             ].map((item) => (
-              <div key={item.title} className="glass-panel rounded-3xl p-5">
+              <div key={item.title} className="glass-panel rounded-3xl p-4 sm:p-5">
                 <div className="flex items-start gap-4">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white">
                     <item.icon className="h-5 w-5" />
@@ -56,12 +56,12 @@ export default function DemoSection() {
 
         <motion.div ref={ref} style={{ y }} className="relative">
           <div className="absolute inset-0 rounded-[36px] bg-[linear-gradient(135deg,rgba(14,165,233,0.22),rgba(15,23,42,0.08))] blur-2xl" />
-          <div className="glass-panel relative overflow-hidden rounded-[36px] p-5 sm:p-7">
-            <div className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-[0_30px_80px_-50px_rgba(15,23,42,0.35)]">
+          <div className="glass-panel relative overflow-hidden rounded-[28px] p-4 sm:rounded-[36px] sm:p-7">
+            <div className="rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_30px_80px_-50px_rgba(15,23,42,0.35)] sm:rounded-[28px] sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.26em] text-sky-700">Module coverage</p>
-                  <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">What the product actually contains</h3>
+                  <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl">What the product actually contains</h3>
                 </div>
                 <div className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
                   Web app + Windows tracker
@@ -78,7 +78,7 @@ export default function DemoSection() {
                       ['Payroll / invoices', 'Finance workflows', 'Payroll records, payslips, payouts, and invoice actions'],
                     ].map(([name, score, meta]) => (
                       <div key={name} className="rounded-2xl bg-white p-4 shadow-sm">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                           <p className="font-medium text-slate-950">{name}</p>
                           <span className="text-sm font-semibold text-sky-700">{score}</span>
                         </div>
@@ -90,12 +90,12 @@ export default function DemoSection() {
 
                 <div className="space-y-4">
                   <div className="rounded-3xl border border-slate-200 bg-slate-950 p-5 text-white">
-                    <div className="flex items-center justify-between">
-                      <div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
                         <p className="text-sm text-slate-300">Monitoring inputs</p>
-                        <p className="mt-2 text-3xl font-semibold">App, URL, idle, screenshot</p>
+                        <p className="mt-2 text-2xl font-semibold sm:text-3xl">App, URL, idle, screenshot</p>
                       </div>
-                      <div className="h-24 w-24 rounded-full border-[10px] border-cyan-300/35 border-t-cyan-300" />
+                      <div className="h-16 w-16 shrink-0 rounded-full border-[8px] border-cyan-300/35 border-t-cyan-300 sm:h-24 sm:w-24 sm:border-[10px]" />
                     </div>
                   </div>
                   <div className="rounded-3xl border border-slate-200 p-4">

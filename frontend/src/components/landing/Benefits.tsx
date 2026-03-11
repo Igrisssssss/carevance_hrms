@@ -27,7 +27,7 @@ const benefits = [
 
 export default function Benefits() {
   return (
-    <section className="px-4 py-20 sm:px-6 lg:px-8">
+    <section className="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
           <SectionHeading
@@ -36,7 +36,7 @@ export default function Benefits() {
             description="The system is positioned more as an operational HRMS and monitoring workspace than a pure marketing-site SaaS shell."
             align="left"
           />
-          <div className="grid gap-5 sm:grid-cols-2">
+          <div className="grid gap-4 sm:gap-5 sm:grid-cols-2">
             {benefits.map((benefit, index) => (
               <motion.div
                 key={benefit.title}
@@ -44,7 +44,7 @@ export default function Benefits() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.25 }}
                 transition={{ duration: 0.5, delay: index * 0.06 }}
-                className="rounded-[28px] border border-slate-200/70 bg-white/85 p-6 shadow-[0_24px_60px_-40px_rgba(15,23,42,0.75)] backdrop-blur"
+                className="rounded-[28px] border border-slate-200/70 bg-white/85 p-5 shadow-[0_24px_60px_-40px_rgba(15,23,42,0.75)] backdrop-blur sm:p-6"
               >
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-white">
                   <benefit.icon className="h-6 w-6" />

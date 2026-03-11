@@ -26,14 +26,14 @@ const shots = [
 
 export default function Screenshots() {
   return (
-    <section id="screenshots" className="px-4 py-20 sm:px-6 lg:px-8">
+    <section id="screenshots" className="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="Showcase"
           title="Main product surfaces in the current application"
           description="These cards correspond to the actual frontend pages that are already wired into the app."
         />
-        <div className="mt-14 grid gap-6 lg:grid-cols-2">
+        <div className="mt-10 grid gap-5 sm:mt-14 sm:gap-6 lg:grid-cols-2">
           {shots.map((shot, index) => (
             <motion.div
               key={shot.title}
@@ -41,21 +41,21 @@ export default function Screenshots() {
               whileInView={{ opacity: 1, y: 0, scale: 1 }}
               viewport={{ once: true, amount: 0.2 }}
               transition={{ duration: 0.6, delay: index * 0.08 }}
-              className="group relative overflow-hidden rounded-[32px] border border-white/60 bg-white/75 p-5 shadow-[0_28px_70px_-42px_rgba(15,23,42,0.8)] backdrop-blur"
+              className="group relative overflow-hidden rounded-[28px] border border-white/60 bg-white/75 p-4 shadow-[0_28px_70px_-42px_rgba(15,23,42,0.8)] backdrop-blur sm:rounded-[32px] sm:p-5"
             >
               <div className={`absolute inset-0 bg-gradient-to-br ${shot.accent} opacity-80 transition duration-500 group-hover:scale-110`} />
-              <div className="relative rounded-[26px] border border-slate-200/80 bg-slate-950 p-5 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
+              <div className="relative rounded-[22px] border border-slate-200/80 bg-slate-950 p-4 text-white sm:rounded-[26px] sm:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
                     <p className="text-xs uppercase tracking-[0.28em] text-white/55">{shot.title}</p>
                     <p className="mt-2 text-lg font-semibold">Operational visibility without clutter</p>
                   </div>
-                  <div className="rounded-full bg-white/10 px-3 py-1 text-xs">Live</div>
+                  <div className="w-fit rounded-full bg-white/10 px-3 py-1 text-xs">Live</div>
                 </div>
 
                 <div className="mt-6 grid gap-4 sm:grid-cols-[1.1fr_0.9fr]">
                   <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex h-36 items-end gap-3">
+                    <div className="flex h-28 items-end gap-2 sm:h-36 sm:gap-3">
                       {[45, 62, 74, 58, 88, 81].map((value) => (
                         <div key={value} className="flex flex-1 items-end">
                           <div
@@ -79,7 +79,7 @@ export default function Screenshots() {
                 </div>
               </div>
               <div className="relative px-2 pb-2 pt-5">
-                <h3 className="text-2xl font-semibold tracking-tight text-slate-950">{shot.title}</h3>
+                <h3 className="text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl">{shot.title}</h3>
                 <p className="mt-2 text-sm leading-7 text-slate-600">{shot.description}</p>
               </div>
             </motion.div>

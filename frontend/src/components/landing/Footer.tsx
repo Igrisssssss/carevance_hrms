@@ -19,7 +19,7 @@ const footerGroups = [
 export default function Footer() {
   return (
     <footer className="px-4 pb-10 pt-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl rounded-[32px] border border-white/60 bg-white/80 px-6 py-8 shadow-[0_24px_70px_-46px_rgba(15,23,42,0.9)] backdrop-blur sm:px-8">
+      <div className="mx-auto max-w-7xl rounded-[28px] border border-white/60 bg-white/80 px-5 py-7 shadow-[0_24px_70px_-46px_rgba(15,23,42,0.9)] backdrop-blur sm:rounded-[32px] sm:px-8 sm:py-8">
         <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr]">
           <div>
             <Link to="/" className="flex items-center gap-3 text-slate-950">
@@ -28,11 +28,11 @@ export default function Footer() {
               </div>
               <div>
                 <p className="text-lg font-semibold tracking-tight">TimeTrack</p>
-                <p className="text-sm text-slate-500">CareVance HRMS front page</p>
+                <p className="text-sm text-slate-500">CareVance HRMS</p>
               </div>
             </Link>
             <p className="mt-6 max-w-md text-sm leading-7 text-slate-600">
-              Repository-backed landing page for the implemented HRMS modules: monitoring, attendance, reports, payroll, invoices, projects, tasks, chat, and settings.
+              TimeTrack helps teams monitor work activity, manage attendance, review reports, run payroll workflows, and coordinate daily operations from one connected HRMS workspace.
             </p>
             <div className="mt-6 flex items-center gap-3 text-slate-500">
               {[Twitter, Linkedin, Github].map((Icon) => (
@@ -48,7 +48,7 @@ export default function Footer() {
             </div>
           </div>
 
-          <div className="grid gap-8 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
             {footerGroups.map((group) => (
               <div key={group.title}>
                 <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{group.title}</p>
