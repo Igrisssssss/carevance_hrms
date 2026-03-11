@@ -1,0 +1,213 @@
+import { motion, Variants } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import { ArrowRight, BarChart3, CalendarRange, Clock4, Download, Sparkles } from 'lucide-react';
+
+const container: Variants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.12,
+    },
+  },
+};
+
+const item: Variants = {
+  hidden: { opacity: 0, y: 28 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: 'easeOut' } },
+};
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_BASE_URL = API_URL.replace(/\/api\/?$/, '');
+const desktopDownloadUrl =
+  import.meta.env.VITE_DESKTOP_DOWNLOAD_URL?.trim() || `${API_BASE_URL}/api/downloads/desktop/windows`;
+
+export default function Hero() {
+  return (
+    <section className="relative overflow-hidden px-4 pb-28 pt-12 sm:px-6 lg:px-8 lg:pb-36 lg:pt-16">
+      <div className="hero-grid pointer-events-none absolute inset-0 opacity-60" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.3),transparent_55%)]" />
+      <div className="pointer-events-none absolute left-1/2 top-24 h-72 w-72 -translate-x-1/2 rounded-full bg-cyan-300/20 blur-3xl" />
+
+      <div className="mx-auto grid max-w-7xl items-center gap-18 lg:grid-cols-[1.03fr_0.97fr]">
+        <motion.div variants={container} initial="hidden" animate="show" className="relative z-10">
+          <motion.div variants={item} className="premium-ring mb-7 inline-flex items-center gap-2 rounded-full border border-sky-200/80 bg-white/80 px-4 py-2 text-sm font-medium text-sky-900 shadow-[0_18px_40px_-20px_rgba(14,165,233,0.35)] backdrop-blur-xl">
+            <Sparkles className="h-4 w-4 text-sky-600" />
+            Built from the real CareVance HRMS modules
+          </motion.div>
+          <motion.h1
+            variants={item}
+            className="max-w-4xl text-5xl font-semibold tracking-[-0.065em] text-slate-950 sm:text-6xl lg:text-[5.2rem] lg:leading-[0.95]"
+          >
+            Monitor team productivity
+            <span className="block bg-[linear-gradient(135deg,#020617_0%,#0f172a_18%,#0369a1_52%,#22d3ee_100%)] bg-clip-text pb-2 text-transparent">
+              and work activity in real time
+            </span>
+          </motion.h1>
+          <motion.p
+            variants={item}
+            className="mt-7 max-w-2xl text-lg leading-8 text-slate-600 sm:text-[1.22rem]"
+          >
+            CareVance HRMS combines employee monitoring, attendance, reporting, payroll operations, and internal admin workflows in one system for managers and operations teams.
+          </motion.p>
+
+          <motion.div variants={item} className="mt-11 flex flex-col gap-4 lg:flex-row">
+            <Link
+              to="/register"
+              className="group inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-6 py-3.5 text-sm font-semibold text-white shadow-[0_22px_50px_-18px_rgba(14,165,233,0.6)] transition duration-300 hover:-translate-y-0.5"
+            >
+              Start Monitoring
+              <ArrowRight className="h-4 w-4 transition duration-300 group-hover:translate-x-0.5" />
+            </Link>
+            <Link
+              to="/login"
+              className="inline-flex items-center justify-center rounded-full border border-slate-300/80 bg-white/80 px-6 py-3.5 text-sm font-semibold text-slate-900 shadow-[0_16px_35px_-26px_rgba(15,23,42,0.45)] backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:border-slate-950 hover:bg-white"
+            >
+              View Dashboard
+            </Link>
+            <a
+              href={desktopDownloadUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-sky-200/80 bg-sky-50/90 px-6 py-3.5 text-sm font-semibold text-sky-900 shadow-[0_16px_35px_-26px_rgba(14,165,233,0.4)] backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:bg-white"
+            >
+              <Download className="h-4 w-4" />
+              Download Desktop App
+            </a>
+          </motion.div>
+
+          <motion.p variants={item} className="mt-5 text-sm font-medium text-slate-500">
+            Includes web app access plus Windows desktop tracker handoff
+          </motion.p>
+
+          <motion.div variants={item} className="mt-14 grid gap-4 sm:grid-cols-3">
+            {[
+              { value: 'Live', label: 'Timer, activity, and screenshot capture while work is in progress' },
+              { value: 'Admin', label: 'Monitoring, user management, report groups, payroll, and invoices' },
+              { value: 'HRMS', label: 'Attendance, leave, time-edit approvals, notifications, and settings' },
+            ].map((stat) => (
+              <div key={stat.label} className="glass-panel premium-ring rounded-[28px] px-5 py-6">
+                <p className="text-3xl font-semibold tracking-[-0.05em] text-slate-950">{stat.value}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{stat.label}</p>
+              </div>
+            ))}
+          </motion.div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, x: 40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.9, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+          className="relative lg:pl-4"
+        >
+          <div className="absolute -right-6 top-10 hidden h-36 w-36 rounded-full bg-sky-300/30 blur-3xl lg:block" />
+          <div className="glass-panel premium-ring noise-overlay relative overflow-hidden rounded-[36px] border border-white/70 p-4 shadow-[0_45px_140px_-56px_rgba(14,165,233,0.55)] sm:p-6">
+            <div className="absolute inset-x-0 top-0 h-32 bg-[linear-gradient(180deg,rgba(125,211,252,0.18),transparent)]" />
+            <div className="relative rounded-[30px] border border-slate-200/80 bg-[linear-gradient(180deg,#06111f_0%,#020617_100%)] p-5 text-white shadow-2xl shadow-slate-950/20">
+              <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/70">Live overview</p>
+                  <p className="mt-2 text-xl font-semibold">Time, attendance, and monitoring dashboard</p>
+                </div>
+                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-cyan-100">
+                  Web + desktop sync
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+                <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-slate-300">Productivity score</p>
+                      <p className="mt-2 text-4xl font-semibold">Billable ratio</p>
+                    </div>
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-400/15 text-cyan-200">
+                      <BarChart3 className="h-7 w-7" />
+                    </div>
+                  </div>
+                  <div className="mt-6 flex h-36 items-end gap-3">
+                    {[48, 62, 55, 84, 76, 92, 88].map((height, index) => (
+                      <motion.div
+                        key={height}
+                        initial={{ height: 0 }}
+                        animate={{ height: `${height}%` }}
+                        transition={{ duration: 0.8, delay: 0.35 + index * 0.06 }}
+                        className="flex-1 rounded-t-2xl bg-[linear-gradient(180deg,rgba(103,232,249,0.95),rgba(14,165,233,0.35))]"
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-200">
+                        <Clock4 className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-300">Attendance worked</p>
+                        <p className="text-xl font-semibold">Open shift tracking</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-400/15 text-violet-200">
+                        <CalendarRange className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-300">Attendance & leave</p>
+                        <p className="text-xl font-semibold">Calendar and approval workflows</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-sm text-slate-300">Activity timeline</p>
+                    <div className="mt-4 space-y-3">
+                      {[
+                        ['09:10', 'Punch in', 'Attendance record and primary timer start together'],
+                        ['11:00', 'Activity log', 'Desktop tracker records app, URL, or idle telemetry'],
+                        ['14:30', 'Manager review', 'Reports, screenshots, and approvals update from live data'],
+                      ].map(([time, title, meta]) => (
+                        <div key={time} className="flex gap-3">
+                          <div className="pt-1 text-xs font-medium text-cyan-200">{time}</div>
+                          <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                            <p className="text-sm font-medium">{title}</p>
+                            <p className="mt-1 text-xs text-slate-400">{meta}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <motion.div
+            animate={{ y: [-6, 6, -6] }}
+            transition={{ repeat: Infinity, duration: 5.5, ease: 'easeInOut' }}
+            className="glass-panel premium-ring absolute -left-4 top-10 hidden w-48 rounded-[28px] p-4 lg:block"
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Admin view</p>
+            <p className="mt-3 text-sm font-medium text-slate-950">See active employees, current tools, and recent screenshots from one monitoring surface.</p>
+          </motion.div>
+
+          <motion.div
+            animate={{ y: [8, -8, 8] }}
+            transition={{ repeat: Infinity, duration: 6.2, ease: 'easeInOut' }}
+            className="glass-panel premium-ring absolute -bottom-4 right-2 hidden w-56 rounded-[28px] p-4 lg:block"
+          >
+            <p className="text-sm font-medium text-slate-950">Operations pulse</p>
+            <div className="mt-3 flex items-center gap-2">
+              <div className="h-2 flex-1 rounded-full bg-slate-200">
+                <div className="h-2 w-[78%] rounded-full bg-[linear-gradient(90deg,#0f172a,#06b6d4)]" />
+              </div>
+              <span className="text-sm font-semibold text-slate-950">Live</span>
+            </div>
+          </motion.div>
+        </motion.div>
+      </div>
+    </section>
+  );
+}

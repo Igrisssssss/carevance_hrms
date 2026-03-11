@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Layout from '@/components/Layout';
@@ -14,6 +15,8 @@ import Attendance from '@/pages/Attendance';
 import Chat from '@/pages/Chat';
 import Payroll from '@/pages/Payroll';
 import UserManagement from '@/pages/UserManagement';
+
+const LandingPage = lazy(() => import('@/pages/LandingPage'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -71,48 +74,50 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <Routes>
-      <Route
-        path="/login"
-        element={
-          <PublicRoute>
-            <Login />
-          </PublicRoute>
-        }
-      />
-      <Route
-        path="/register"
-        element={
-          <PublicRoute>
-            <Register />
-          </PublicRoute>
-        }
-      />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Layout />
-          </ProtectedRoute>
-        }
-      >
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={window.desktopTracker ? <Dashboard /> : <Reports />} />
-        <Route path="projects" element={<Projects />} />
-        <Route path="tasks" element={<Tasks />} />
-        <Route path="chat" element={<Chat />} />
-        <Route path="attendance" element={<Attendance />} />
-        <Route path="edit-time" element={<Attendance mode="time-edit" />} />
-        <Route path="team" element={<Navigate to="/user-management" replace />} />
-        <Route path="monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
-        <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
-        <Route path="invoices" element={<AdminRoute><Invoices /></AdminRoute>} />
-        <Route path="payroll" element={<AdminRoute><Payroll /></AdminRoute>} />
-        <Route path="user-management" element={<AdminRoute><UserManagement /></AdminRoute>} />
-        <Route path="settings" element={<Settings />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route
+          path="/login"
+          element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          }
+        />
+        <Route
+          path="/register"
+          element={
+            <PublicRoute>
+              <Register />
+            </PublicRoute>
+          }
+        />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="dashboard" element={window.desktopTracker ? <Dashboard /> : <Reports />} />
+          <Route path="projects" element={<Projects />} />
+          <Route path="tasks" element={<Tasks />} />
+          <Route path="chat" element={<Chat />} />
+          <Route path="attendance" element={<Attendance />} />
+          <Route path="edit-time" element={<Attendance mode="time-edit" />} />
+          <Route path="team" element={<Navigate to="/user-management" replace />} />
+          <Route path="monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
+          <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
+          <Route path="invoices" element={<AdminRoute><Invoices /></AdminRoute>} />
+          <Route path="payroll" element={<AdminRoute><Payroll /></AdminRoute>} />
+          <Route path="user-management" element={<AdminRoute><UserManagement /></AdminRoute>} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 
