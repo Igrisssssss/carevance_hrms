@@ -1,6 +1,6 @@
 import { motion, Variants } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { ArrowRight, BarChart3, CalendarRange, Clock4, Download, Sparkles } from 'lucide-react';
+import { ArrowRight, BarChart3, CalendarRange, Clock4, Download } from 'lucide-react';
 
 const container: Variants = {
   hidden: { opacity: 0 },
@@ -31,13 +31,9 @@ export default function Hero() {
 
       <div className="mx-auto grid max-w-7xl items-center gap-18 lg:grid-cols-[1.03fr_0.97fr]">
         <motion.div variants={container} initial="hidden" animate="show" className="relative z-10">
-          <motion.div variants={item} className="premium-ring mb-7 inline-flex items-center gap-2 rounded-full border border-sky-200/80 bg-white/80 px-4 py-2 text-sm font-medium text-sky-900 shadow-[0_18px_40px_-20px_rgba(14,165,233,0.35)] backdrop-blur-xl">
-            <Sparkles className="h-4 w-4 text-sky-600" />
-            Built from the real CareVance HRMS modules
-          </motion.div>
           <motion.h1
             variants={item}
-            className="max-w-4xl text-5xl font-semibold tracking-[-0.065em] text-slate-950 sm:text-6xl lg:text-[5.2rem] lg:leading-[0.95]"
+            className="max-w-4xl text-5xl font-semibold tracking-[-0.065em] text-slate-950 sm:text-6xl lg:pt-2 lg:text-[5.2rem] lg:leading-[0.95]"
           >
             Monitor team productivity
             <span className="block bg-[linear-gradient(135deg,#020617_0%,#0f172a_18%,#0369a1_52%,#22d3ee_100%)] bg-clip-text pb-2 text-transparent">
@@ -119,7 +115,7 @@ export default function Hero() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-slate-300">Productivity score</p>
-                      <p className="mt-2 text-4xl font-semibold">Billable ratio</p>
+                      <p className="mt-2 text-4xl font-semibold">Working ratio</p>
                     </div>
                     <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-400/15 text-cyan-200">
                       <BarChart3 className="h-7 w-7" />

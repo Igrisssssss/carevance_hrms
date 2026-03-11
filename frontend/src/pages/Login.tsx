@@ -15,7 +15,6 @@ import {
   Mail,
   Monitor,
   ShieldCheck,
-  Sparkles,
 } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -216,11 +215,7 @@ export default function Login() {
               <div className="absolute inset-x-0 top-0 h-44 bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.28),transparent_70%)]" />
               <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.74),rgba(239,246,255,0.68))]" />
               <div className="relative">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/80 px-4 py-2 text-sm font-medium text-sky-900 shadow-[0_18px_40px_-22px_rgba(14,165,233,0.35)] backdrop-blur-xl">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Same visual system as the front page
-                </div>
-                <h2 className="mt-5 max-w-2xl text-4xl font-semibold leading-[0.97] tracking-[-0.06em] text-slate-950 sm:text-[3.5rem]">
+                <h2 className="max-w-2xl text-4xl font-semibold leading-[0.97] tracking-[-0.06em] text-slate-950 sm:text-[3.5rem]">
                   Access the real CareVance HRMS workflows after sign in.
                 </h2>
                 <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 sm:text-[1.08rem]">

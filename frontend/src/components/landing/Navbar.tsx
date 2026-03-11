@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Download, Menu, X, Clock3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -20,16 +20,50 @@ const desktopDownloadUrl =
 export default function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
+  const location = useLocation();
 
   useEffect(() => {
-    const handleScroll = () => setIsScrolled(window.scrollY > 12);
+    let lastScrollY = window.scrollY;
+
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      const scrollingUp = currentScrollY < lastScrollY;
+
+      setIsScrolled(currentScrollY > 12);
+
+      if (currentScrollY < 24) {
+        setIsVisible(true);
+      } else if (scrollingUp) {
+        setIsVisible(true);
+      } else if (currentScrollY > lastScrollY + 18) {
+        setIsVisible(false);
+        setIsOpen(false);
+      }
+
+      lastScrollY = currentScrollY;
+    };
+
     handleScroll();
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const handleLogoClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    setIsOpen(false);
+
+    if (location.pathname === '/') {
+      event.preventDefault();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
   return (
-    <header className="sticky top-0 z-50 px-4 pt-4 sm:px-6 lg:px-8">
+    <header
+      className={`sticky top-0 z-50 px-4 pt-4 transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:px-6 lg:px-8 ${
+        isVisible || isOpen ? 'translate-y-0' : '-translate-y-[115%]'
+      }`}
+    >
       <div
         className={`mx-auto max-w-7xl rounded-[24px] border transition-all duration-500 ${
           isScrolled
@@ -38,7 +72,7 @@ export default function Navbar() {
         }`}
       >
         <div className="flex items-center justify-between px-5 py-4 lg:px-7">
-          <Link to="/" className="flex items-center gap-3 text-slate-950">
+          <Link to="/" onClick={handleLogoClick} className="flex items-center gap-3 text-slate-950">
             <div className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_75%,#67e8f9_100%)] shadow-[0_18px_35px_-14px_rgba(14,165,233,0.8)]">
               <Clock3 className="h-5 w-5 text-white" />
             </div>
