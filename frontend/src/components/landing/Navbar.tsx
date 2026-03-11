@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Download, Menu, X, Clock3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
+import AutoContrastText from '@/components/ui/AutoContrastText';
 
 const navItems = [
   { label: 'Product', href: '#product' },
@@ -9,7 +11,6 @@ const navItems = [
   { label: 'Workflow', href: '#workflow' },
   { label: 'Screens', href: '#screenshots' },
   { label: 'Security', href: '#security' },
-  { label: 'Login', href: '/login', external: true },
 ];
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -28,7 +29,8 @@ export default function Navbar() {
 
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
-      const scrollingUp = currentScrollY < lastScrollY;
+      const scrollDelta = currentScrollY - lastScrollY;
+      const scrollingUp = scrollDelta < 0;
 
       setIsScrolled(currentScrollY > 12);
 
@@ -36,7 +38,7 @@ export default function Navbar() {
         setIsVisible(true);
       } else if (scrollingUp) {
         setIsVisible(true);
-      } else if (currentScrollY > lastScrollY + 18) {
+      } else if (scrollDelta > 3) {
         setIsVisible(false);
         setIsOpen(false);
       }
@@ -64,44 +66,40 @@ export default function Navbar() {
         isVisible || isOpen ? 'translate-y-0' : '-translate-y-[115%]'
       }`}
     >
-      <div
+      <AdaptiveSurface
         className={`mx-auto max-w-7xl rounded-[24px] border transition-all duration-500 ${
           isScrolled
-            ? 'border-white/80 bg-white/78 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.38)] backdrop-blur-2xl'
-            : 'border-white/55 bg-white/58 shadow-[0_12px_40px_-30px_rgba(14,165,233,0.35)] backdrop-blur-xl'
+            ? 'border-slate-200/95 bg-white/98 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.2)] backdrop-blur-2xl'
+            : 'border-slate-200/90 bg-white/96 shadow-[0_12px_40px_-30px_rgba(14,165,233,0.18)] backdrop-blur-xl'
         }`}
+        tone="light"
+        backgroundColor={isScrolled ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.96)'}
       >
         <div className="flex items-center justify-between px-4 py-3 sm:px-5 sm:py-4 lg:px-7">
-          <Link to="/" onClick={handleLogoClick} className="flex min-w-0 items-center gap-3 text-slate-950">
+          <Link to="/" onClick={handleLogoClick} className="flex min-w-0 items-center gap-3 contrast-text-primary">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_75%,#67e8f9_100%)] shadow-[0_18px_35px_-14px_rgba(14,165,233,0.8)] sm:h-11 sm:w-11">
               <Clock3 className="h-5 w-5 text-white" />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-[10px] font-semibold uppercase tracking-[0.28em] text-sky-700 sm:text-[11px] sm:tracking-[0.32em]">CareVance HRMS</p>
-              <p className="text-base font-semibold tracking-[-0.04em] sm:text-lg">TimeTrack</p>
+              <AutoContrastText as="p" priority="accent" className="truncate text-[10px] font-semibold uppercase tracking-[0.28em] sm:text-[11px] sm:tracking-[0.32em]">
+                CareVance HRMS
+              </AutoContrastText>
+              <AutoContrastText as="p" className="text-base font-semibold tracking-[-0.04em] sm:text-lg">
+                TimeTrack
+              </AutoContrastText>
             </div>
           </Link>
 
           <nav className="hidden items-center gap-8 lg:flex">
-            {navItems.map((item) =>
-              item.external ? (
-                <Link
-                  key={item.label}
-                  to={item.href}
-                  className="text-sm font-medium text-slate-600 transition duration-300 hover:text-slate-950"
-                >
-                  {item.label}
-                </Link>
-              ) : (
-                <a
-                  key={item.label}
-                  href={item.href}
-                  className="text-sm font-medium text-slate-600 transition duration-300 hover:text-slate-950"
-                >
-                  {item.label}
-                </a>
-              )
-            )}
+            {navItems.map((item) => (
+              <a
+                key={item.label}
+                href={item.href}
+                className="rounded-full px-3.5 py-2 text-sm font-semibold text-slate-900 transition duration-300 hover:-translate-y-0.5 hover:text-sky-700"
+              >
+                {item.label}
+              </a>
+            ))}
           </nav>
 
           <div className="hidden items-center gap-3 lg:flex">
@@ -109,14 +107,14 @@ export default function Navbar() {
               href={desktopDownloadUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-300/80 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 transition duration-300 hover:-translate-y-0.5 hover:border-slate-950 hover:text-slate-950"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-300/90 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition duration-300 hover:-translate-y-0.5 hover:border-slate-950 hover:text-slate-950"
             >
               <Download className="h-4 w-4" />
               Download
             </a>
             <Link
               to="/login"
-              className="rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition duration-300 hover:bg-slate-950/5 hover:text-slate-950"
+              className="rounded-full px-4 py-2 text-sm font-semibold text-slate-900 transition duration-300 hover:-translate-y-0.5 hover:text-sky-700"
             >
               Login
             </Link>
@@ -131,7 +129,7 @@ export default function Navbar() {
           <button
             type="button"
             onClick={() => setIsOpen((prev) => !prev)}
-            className="inline-flex rounded-full border border-slate-200 bg-white/80 p-2 text-slate-700 shadow-sm lg:hidden"
+            className="inline-flex rounded-full border border-slate-200/90 bg-white/95 p-2 text-slate-800 shadow-sm lg:hidden"
             aria-label="Toggle navigation"
           >
             {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -157,25 +155,14 @@ export default function Navbar() {
                   Download Desktop App
                 </a>
                 {navItems.map((item) =>
-                  item.external ? (
-                    <Link
-                      key={item.label}
-                      to={item.href}
-                      onClick={() => setIsOpen(false)}
-                      className="block rounded-2xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-950/5 hover:text-slate-950"
-                    >
-                      {item.label}
-                    </Link>
-                  ) : (
-                    <a
-                      key={item.label}
-                      href={item.href}
-                      onClick={() => setIsOpen(false)}
-                      className="block rounded-2xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-950/5 hover:text-slate-950"
-                    >
-                      {item.label}
-                    </a>
-                  )
+                  <a
+                    key={item.label}
+                    href={item.href}
+                    onClick={() => setIsOpen(false)}
+                    className="block rounded-2xl px-3 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-950/5 hover:text-sky-700"
+                  >
+                    {item.label}
+                  </a>
                 )}
                 <Link
                   to="/register"
@@ -188,7 +175,7 @@ export default function Navbar() {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
+      </AdaptiveSurface>
     </header>
   );
 }

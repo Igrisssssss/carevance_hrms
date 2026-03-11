@@ -1,6 +1,7 @@
 import { motion, Variants } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BarChart3, CalendarRange, Clock4, Download } from 'lucide-react';
+import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 
 const container: Variants = {
   hidden: { opacity: 0 },
@@ -99,13 +100,18 @@ export default function Hero() {
           <div className="absolute -right-6 top-10 hidden h-36 w-36 rounded-full bg-sky-300/30 blur-3xl lg:block" />
           <div className="glass-panel premium-ring noise-overlay relative overflow-hidden rounded-[28px] border border-white/70 p-3 shadow-[0_45px_140px_-56px_rgba(14,165,233,0.55)] sm:rounded-[36px] sm:p-6">
             <div className="absolute inset-x-0 top-0 h-32 bg-[linear-gradient(180deg,rgba(125,211,252,0.18),transparent)]" />
-            <div className="relative rounded-[24px] border border-slate-200/80 bg-[linear-gradient(180deg,#06111f_0%,#020617_100%)] p-4 text-white shadow-2xl shadow-slate-950/20 sm:rounded-[30px] sm:p-5">
+            <AdaptiveSurface
+              className="relative rounded-[24px] border border-slate-200/80 bg-[linear-gradient(180deg,#06111f_0%,#020617_100%)] p-4 text-white shadow-2xl shadow-slate-950/20 sm:rounded-[30px] sm:p-5"
+              tone="dark"
+              backgroundColor="#020617"
+              data-navbar-contrast="dark"
+            >
               <div className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/70">Live overview</p>
-                  <p className="mt-2 text-lg font-semibold sm:text-xl">Time, attendance, and monitoring dashboard</p>
+                  <p className="contrast-text-accent text-xs uppercase tracking-[0.3em]">Live overview</p>
+                  <p className="contrast-text-primary mt-2 text-lg font-semibold sm:text-xl">Time, attendance, and monitoring dashboard</p>
                 </div>
-                <div className="w-fit rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-cyan-100">
+                <div className="w-fit rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs contrast-text-secondary">
                   Web + desktop sync
                 </div>
               </div>
@@ -114,8 +120,8 @@ export default function Hero() {
                 <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
                   <div className="flex items-center justify-between">
                     <div className="min-w-0">
-                      <p className="text-sm text-slate-300">Productivity score</p>
-                      <p className="mt-2 text-3xl font-semibold sm:text-4xl">Working ratio</p>
+                      <p className="text-sm contrast-text-secondary">Productivity score</p>
+                      <p className="contrast-text-primary mt-2 text-3xl font-semibold sm:text-4xl">Working ratio</p>
                     </div>
                     <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-400/15 text-cyan-200">
                       <BarChart3 className="h-7 w-7" />
@@ -141,8 +147,8 @@ export default function Hero() {
                         <Clock4 className="h-5 w-5" />
                       </div>
                       <div>
-                        <p className="text-sm text-slate-300">Attendance worked</p>
-                        <p className="text-lg font-semibold sm:text-xl">Open shift tracking</p>
+                        <p className="text-sm contrast-text-secondary">Attendance worked</p>
+                        <p className="contrast-text-primary text-lg font-semibold sm:text-xl">Open shift tracking</p>
                       </div>
                     </div>
                   </div>
@@ -152,13 +158,13 @@ export default function Hero() {
                         <CalendarRange className="h-5 w-5" />
                       </div>
                       <div>
-                        <p className="text-sm text-slate-300">Attendance & leave</p>
-                        <p className="text-lg font-semibold sm:text-xl">Calendar and approval workflows</p>
+                        <p className="text-sm contrast-text-secondary">Attendance & leave</p>
+                        <p className="contrast-text-primary text-lg font-semibold sm:text-xl">Calendar and approval workflows</p>
                       </div>
                     </div>
                   </div>
                   <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-sm text-slate-300">Activity timeline</p>
+                    <p className="text-sm contrast-text-secondary">Activity timeline</p>
                     <div className="mt-4 space-y-3">
                       {[
                         ['09:10', 'Punch in', 'Attendance record and primary timer start together'],
@@ -168,8 +174,8 @@ export default function Hero() {
                         <div key={time} className="flex gap-3">
                           <div className="w-12 shrink-0 pt-1 text-xs font-medium text-cyan-200">{time}</div>
                           <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                            <p className="text-sm font-medium">{title}</p>
-                            <p className="mt-1 text-xs text-slate-400">{meta}</p>
+                            <p className="contrast-text-primary text-sm font-medium">{title}</p>
+                            <p className="contrast-text-muted mt-1 text-xs">{meta}</p>
                           </div>
                         </div>
                       ))}
@@ -177,31 +183,9 @@ export default function Hero() {
                   </div>
                 </div>
               </div>
-            </div>
+            </AdaptiveSurface>
           </div>
 
-          <motion.div
-            animate={{ y: [-6, 6, -6] }}
-            transition={{ repeat: Infinity, duration: 5.5, ease: 'easeInOut' }}
-            className="glass-panel premium-ring absolute -left-4 top-10 hidden w-48 rounded-[28px] p-4 lg:block"
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Admin view</p>
-            <p className="mt-3 text-sm font-medium text-slate-950">See active employees, current tools, and recent screenshots from one monitoring surface.</p>
-          </motion.div>
-
-          <motion.div
-            animate={{ y: [8, -8, 8] }}
-            transition={{ repeat: Infinity, duration: 6.2, ease: 'easeInOut' }}
-            className="glass-panel premium-ring absolute -bottom-4 right-2 hidden w-56 rounded-[28px] p-4 lg:block"
-          >
-            <p className="text-sm font-medium text-slate-950">Operations pulse</p>
-            <div className="mt-3 flex items-center gap-2">
-              <div className="h-2 flex-1 rounded-full bg-slate-200">
-                <div className="h-2 w-[78%] rounded-full bg-[linear-gradient(90deg,#0f172a,#06b6d4)]" />
-              </div>
-              <span className="text-sm font-semibold text-slate-950">Live</span>
-            </div>
-          </motion.div>
         </motion.div>
       </div>
     </section>

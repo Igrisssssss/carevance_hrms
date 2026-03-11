@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Download } from 'lucide-react';
+import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 const API_BASE_URL = API_URL.replace(/\/api\/?$/, '');
@@ -10,21 +11,25 @@ const desktopDownloadUrl =
 export default function CTA() {
   return (
     <section className="px-4 py-18 sm:px-6 sm:py-24 lg:px-8">
-      <motion.div
+      <AdaptiveSurface
+        as={motion.div}
         initial={{ opacity: 0, y: 24 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, amount: 0.35 }}
         transition={{ duration: 0.6 }}
         className="premium-ring noise-overlay mx-auto max-w-7xl overflow-hidden rounded-[32px] bg-[linear-gradient(135deg,#020617_0%,#0f172a_22%,#075985_60%,#22d3ee_100%)] px-6 py-10 text-white shadow-[0_42px_120px_-56px_rgba(2,6,23,0.95)] sm:rounded-[44px] sm:px-12 sm:py-18"
+        tone="dark"
+        backgroundColor="#0f172a"
+        data-navbar-contrast="dark"
       >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.2),transparent_30%)]" />
         <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative max-w-2xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-100/80">Start now</p>
-            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.05em] sm:text-6xl sm:leading-[0.95]">
+            <p className="contrast-text-accent text-sm font-semibold uppercase tracking-[0.28em]">Start now</p>
+            <h2 className="contrast-text-primary mt-4 text-3xl font-semibold tracking-[-0.05em] sm:text-6xl sm:leading-[0.95]">
               Start monitoring work activity with the modules already built in CareVance HRMS
             </h2>
-            <p className="mt-4 text-base leading-7 text-cyan-50/80 sm:text-lg sm:leading-8">
+            <p className="contrast-text-secondary mt-4 text-base leading-7 sm:text-lg sm:leading-8">
               Create the organization, add users, open the dashboard, and use the monitoring, attendance, reporting, and payroll workflows from the existing product.
             </p>
           </div>
@@ -52,7 +57,7 @@ export default function CTA() {
             </a>
           </div>
         </div>
-      </motion.div>
+      </AdaptiveSurface>
     </section>
   );
 }

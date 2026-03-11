@@ -18,6 +18,7 @@ import {
   User,
   Users,
 } from 'lucide-react';
+import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 const API_BASE_URL = API_URL.replace(/\/api\/?$/, '');
@@ -78,7 +79,11 @@ export default function Register() {
       <div className="relative mx-auto flex min-h-screen w-full max-w-[1600px] flex-col lg:flex-row">
         <section className="order-1 flex w-full items-center justify-center px-4 py-10 sm:px-6 lg:w-1/2 lg:px-10">
           <div className="w-full max-w-lg animate-fade-in">
-            <div className="glass-panel premium-ring rounded-[34px] p-6 shadow-[0_40px_120px_-56px_rgba(15,23,42,0.45)] sm:p-8">
+            <AdaptiveSurface
+              className="glass-panel premium-ring rounded-[34px] p-6 shadow-[0_40px_120px_-56px_rgba(15,23,42,0.45)] sm:p-8"
+              tone="light"
+              backgroundColor="rgba(255,255,255,0.8)"
+            >
               <div className="mb-6">
                 <div className="mb-6 flex items-center">
                   <Link
@@ -303,7 +308,7 @@ export default function Register() {
                   </div>
                 </div>
               ) : null}
-            </div>
+            </AdaptiveSurface>
           </div>
         </section>
 
@@ -343,13 +348,17 @@ export default function Register() {
                   </li>
                 </ul>
 
-                <div className="mt-8 rounded-[30px] border border-slate-200/80 bg-[linear-gradient(180deg,#06111f_0%,#020617_100%)] p-5 text-white shadow-[0_36px_90px_-42px_rgba(15,23,42,0.8)]">
+                <AdaptiveSurface
+                  className="mt-8 rounded-[30px] border border-slate-200/80 bg-[linear-gradient(180deg,#06111f_0%,#020617_100%)] p-5 text-white shadow-[0_36px_90px_-42px_rgba(15,23,42,0.8)]"
+                  tone="dark"
+                  backgroundColor="#020617"
+                >
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-200/75">Account Flow</p>
-                      <p className="mt-2 text-lg font-semibold tracking-[-0.04em]">Three steps from signup to daily use</p>
+                      <p className="contrast-text-accent text-xs font-semibold uppercase tracking-[0.3em]">Account Flow</p>
+                      <p className="contrast-text-primary mt-2 text-lg font-semibold tracking-[-0.04em]">Three steps from signup to daily use</p>
                     </div>
-                    <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-100">
+                    <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold contrast-text-secondary">
                       Admin or employee
                     </div>
                   </div>
@@ -364,16 +373,16 @@ export default function Register() {
                           {step}
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-white">{title}</p>
-                          <p className="mt-1 text-sm leading-6 text-slate-300">{description}</p>
+                          <p className="contrast-text-primary text-sm font-semibold">{title}</p>
+                          <p className="contrast-text-secondary mt-1 text-sm leading-6">{description}</p>
                         </div>
                       </div>
                     ))}
                   </div>
-                  <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
+                  <p className="contrast-text-secondary mt-4 max-w-2xl text-sm leading-6">
                     After registration, you land in the dashboard and can continue with attendance, reports, payroll, approvals, and related workflows.
                   </p>
-                </div>
+                </AdaptiveSurface>
               </div>
             </div>
           </div>
