@@ -382,3 +382,88 @@ export interface PayrollTransaction {
   created_at: string;
   updated_at: string;
 }
+
+export interface AppNotificationItem {
+  id: number;
+  type: 'announcement' | 'news' | 'salary_credited' | string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+  sender?: {
+    id: number;
+    name: string;
+    email: string;
+  } | null;
+  meta?: Record<string, any> | null;
+}
+
+export interface UserProfile360 {
+  user: User;
+  range: {
+    start_date: string;
+    end_date: string;
+  };
+  summary: {
+    entries_count: number;
+    total_duration: number;
+    billable_duration: number;
+    non_billable_duration: number;
+    attendance_days: number;
+    present_days: number;
+    approved_leave_days: number;
+    approved_time_edit_seconds: number;
+    payslips_count: number;
+  };
+  status: {
+    is_working: boolean;
+    current_project?: string | null;
+    current_timer_started_at?: string | null;
+    last_seen_at?: string | null;
+    latest_attendance?: {
+      attendance_date: string;
+      status: string;
+      worked_seconds: number;
+      late_minutes: number;
+      check_in_at?: string | null;
+      check_out_at?: string | null;
+    } | null;
+    latest_notification?: AppNotificationItem | null;
+  };
+  recent_time_entries: TimeEntry[];
+  attendance_records: Array<{
+    id: number;
+    attendance_date: string;
+    status: string;
+    worked_seconds: number;
+    late_minutes: number;
+    check_in_at?: string | null;
+    check_out_at?: string | null;
+  }>;
+  leave_requests: Array<{
+    id: number;
+    start_date: string;
+    end_date: string;
+    reason?: string | null;
+    status: string;
+    revoke_status?: string | null;
+    created_at: string;
+  }>;
+  time_edit_requests: Array<{
+    id: number;
+    attendance_date: string;
+    extra_seconds: number;
+    message?: string | null;
+    status: string;
+    created_at: string;
+  }>;
+  payslips: Array<{
+    id: number;
+    period_month: string;
+    currency: string;
+    net_salary: number;
+    payment_status?: 'pending' | 'paid';
+    generated_at?: string | null;
+    paid_at?: string | null;
+  }>;
+}

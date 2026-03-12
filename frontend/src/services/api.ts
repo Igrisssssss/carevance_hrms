@@ -3,6 +3,7 @@ import type {
   LoginRequest, 
   RegisterRequest, 
   AuthResponse,
+  ApiResponse,
   User,
   Organization,
   Project,
@@ -24,6 +25,8 @@ import type {
   PayrollComponent,
   PayrollRecord,
   PayrollTransaction,
+  AppNotificationItem,
+  UserProfile360,
 } from '@/types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -53,7 +56,7 @@ api.interceptors.response.use(
       sessionStorage.removeItem('token');
       sessionStorage.removeItem('user');
       sessionStorage.removeItem('organization');
-      window.location.href = '/login';
+      window.dispatchEvent(new Event('app:auth-cleared'));
     }
     return Promise.reject(error);
   }
@@ -71,7 +74,7 @@ export const authApi = {
     api.post('/auth/logout'),
   
   me: () => 
-    api.get<User>('/auth/me'),
+    api.get<ApiResponse<User> | User>('/auth/me'),
 };
 
 // Organization API
@@ -125,6 +128,9 @@ export const userApi = {
   
   getStats: (id: number, params?: { start_date?: string; end_date?: string }) => 
     api.get(`/users/${id}/stats`, { params }),
+
+  getProfile360: (id: number, params?: { start_date?: string; end_date?: string }) =>
+    api.get<UserProfile360>(`/users/${id}/profile-360`, { params }),
 };
 
 // Project API
@@ -303,7 +309,7 @@ export const reportApi = {
   project: (projectId: number, params?: { start_date?: string; end_date?: string }) => 
     api.get(`/reports/project/${projectId}`, { params }),
   
-  export: (params?: { start_date?: string; end_date?: string }) => 
+  export: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[] }) => 
     api.get('/reports/export', { 
       params, 
       responseType: 'blob' as AxiosRequestConfig['responseType'] 
@@ -618,18 +624,9 @@ export const payrollApi = {
 };
 
 export const notificationApi = {
-  list: (params?: { limit?: number }) =>
+  list: (params?: { limit?: number; type?: string; q?: string; unread_only?: boolean }) =>
     api.get<{
-      data: Array<{
-        id: number;
-        type: 'announcement' | 'news' | 'salary_credited';
-        title: string;
-        message: string;
-        is_read: boolean;
-        created_at: string;
-        sender?: { id: number; name: string; email: string } | null;
-        meta?: Record<string, any> | null;
-      }>;
+      data: AppNotificationItem[];
       unread_count: number;
     }>('/notifications', { params }),
 
@@ -693,6 +690,38 @@ export const settingsApi = {
 
   billing: () =>
     api.get<{ plan: { name: string; status: string; renewal_date?: string | null } | null }>('/settings/billing'),
+};
+
+export const auditApi = {
+  list: (params?: {
+    action?: string;
+    actor_user_id?: number;
+    target_type?: string;
+    target_id?: number;
+    date_from?: string;
+    date_to?: string;
+    per_page?: number;
+  }) =>
+    api.get<{
+      success: boolean;
+      data: Array<{
+        id: number;
+        action: string;
+        target_type?: string | null;
+        target_id?: number | null;
+        metadata?: Record<string, any> | null;
+        ip_address?: string | null;
+        user_agent?: string | null;
+        created_at: string;
+        actor?: { id: number; name: string; email: string; role: string } | null;
+      }>;
+      pagination: {
+        current_page: number;
+        last_page: number;
+        per_page: number;
+        total: number;
+      } | null;
+    }>('/audit-logs', { params }),
 };
 
 export default api;
