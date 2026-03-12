@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { hasAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { settingsApi } from '@/services/api';
 import { User, Bell, Lock, CreditCard, Building } from 'lucide-react';
+import PageHeader from '@/components/dashboard/PageHeader';
+import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import Button from '@/components/ui/Button';
+import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
+import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
+import StatusBadge from '@/components/ui/StatusBadge';
 
 export default function SettingsPage() {
   const { user, organization, updateUser, updateOrganization } = useAuth();
@@ -29,8 +36,8 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const isEmployee = user?.role === 'employee';
-  const isOrgEditable = canManageOrg && !isEmployee;
+  const isEmployee = isEmployeeUser(user);
+  const isOrgEditable = canManageOrg && hasAdminAccess(user) && !isEmployee;
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
@@ -157,78 +164,76 @@ export default function SettingsPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-      </div>
-    );
+    return <PageLoadingState label="Loading settings..." />;
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-500 mt-1">Manage your account settings</p>
-      </div>
+      <PageHeader
+        eyebrow="Account controls"
+        title="Settings"
+        description="Manage your profile, organization preferences, notifications, security, and billing details."
+      />
 
-      {message ? <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{message}</div> : null}
-      {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+      {message ? <FeedbackBanner tone="success" message={message} /> : null}
+      {error ? <FeedbackBanner tone="error" message={error} /> : null}
 
       <div className="flex flex-col lg:flex-row gap-6">
         <div className="lg:w-64 shrink-0">
-          <nav className="bg-white rounded-xl border border-gray-200 p-2 shadow-sm">
+          <SurfaceCard className="p-2">
             {tabs.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === tab.id ? 'bg-primary-50 text-primary-600' : 'text-gray-600 hover:bg-gray-50'}`}
+                className={`w-full flex items-center gap-3 rounded-[20px] px-4 py-3 text-sm font-medium transition ${activeTab === tab.id ? 'bg-sky-50 text-sky-700 shadow-[0_16px_34px_-26px_rgba(14,165,233,0.45)]' : 'text-gray-600 hover:bg-slate-50'}`}
               >
                 <tab.icon className="h-5 w-5" />
                 {tab.name}
               </button>
             ))}
-          </nav>
+          </SurfaceCard>
         </div>
 
-        <div className="flex-1 bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <SurfaceCard className="flex-1 p-6">
           {activeTab === 'profile' && (
             <div className="space-y-6">
               <h2 className="text-lg font-semibold text-gray-900">Profile Settings</h2>
-              <div className="flex items-center gap-6">
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
                 <div className="h-20 w-20 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 text-2xl font-bold">
                   {user?.name?.charAt(0)}
                 </div>
-                <div>
-                  <input
+                <div className="flex-1">
+                  <FieldLabel>Avatar URL</FieldLabel>
+                  <TextInput
                     type="text"
                     value={profileAvatar}
                     onChange={(e) => setProfileAvatar(e.target.value)}
                     placeholder="Avatar URL (optional)"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
                   <p className="text-sm text-gray-500 mt-2">Paste image URL for avatar</p>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                  <input
+                  <FieldLabel>Full Name</FieldLabel>
+                  <TextInput
                     type="text"
                     value={profileName}
                     onChange={(e) => setProfileName(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input type="email" value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                  <FieldLabel>Email</FieldLabel>
+                  <TextInput type="email" value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                  <input type="text" value={user?.role || ''} disabled className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-50" />
+                  <FieldLabel>Role</FieldLabel>
+                  <div className="flex min-h-11 items-center rounded-[20px] border border-slate-200 bg-slate-50 px-3.5">
+                    <StatusBadge tone="info">{user?.role || 'Unknown'}</StatusBadge>
+                  </div>
                 </div>
               </div>
-              <button onClick={saveProfile} className="px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700">Save Changes</button>
+              <Button onClick={saveProfile}>Save Changes</Button>
             </div>
           )}
 
@@ -237,16 +242,16 @@ export default function SettingsPage() {
               <h2 className="text-lg font-semibold text-gray-900">Organization Settings</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Organization Name</label>
-                  <input type="text" value={orgName} onChange={(e) => setOrgName(e.target.value)} disabled={!isOrgEditable} className={`w-full border border-gray-300 rounded-lg px-3 py-2 ${!isOrgEditable ? 'bg-gray-50 text-gray-500' : ''}`} />
+                  <FieldLabel>Organization Name</FieldLabel>
+                  <TextInput type="text" value={orgName} onChange={(e) => setOrgName(e.target.value)} disabled={!isOrgEditable} className={!isOrgEditable ? 'bg-slate-50 text-slate-500' : ''} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Slug</label>
-                  <input type="text" value={orgSlug} onChange={(e) => setOrgSlug(e.target.value)} disabled={!isOrgEditable} className={`w-full border border-gray-300 rounded-lg px-3 py-2 ${!isOrgEditable ? 'bg-gray-50 text-gray-500' : ''}`} />
+                  <FieldLabel>Slug</FieldLabel>
+                  <TextInput type="text" value={orgSlug} onChange={(e) => setOrgSlug(e.target.value)} disabled={!isOrgEditable} className={!isOrgEditable ? 'bg-slate-50 text-slate-500' : ''} />
                 </div>
               </div>
               {isOrgEditable ? (
-                <button onClick={saveOrganization} className="px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700">Save Changes</button>
+                <Button onClick={saveOrganization}>Save Changes</Button>
               ) : (
                 <p className="text-sm text-gray-500">Only admin/manager can update organization settings.</p>
               )}
@@ -257,12 +262,12 @@ export default function SettingsPage() {
             <div className="space-y-6">
               <h2 className="text-lg font-semibold text-gray-900">Notification Preferences</h2>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
-                <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className="w-full md:w-72 border border-gray-300 rounded-lg px-3 py-2">
+                <FieldLabel>Timezone</FieldLabel>
+                <SelectInput value={timezone} onChange={(e) => setTimezone(e.target.value)} className="w-full md:w-72">
                   {timezoneOptions.map((tz) => (
                     <option key={tz} value={tz}>{tz}</option>
                   ))}
-                </select>
+                </SelectInput>
               </div>
               {[
                 { label: 'Email notifications', value: notifyEmail, set: setNotifyEmail },
@@ -270,39 +275,39 @@ export default function SettingsPage() {
                 { label: 'Project updates', value: notifyProject, set: setNotifyProject },
                 { label: 'Task assignments', value: notifyTask, set: setNotifyTask },
               ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between py-3 border-b border-gray-100">
+                <div key={item.label} className="flex items-center justify-between rounded-[22px] border border-slate-100 bg-slate-50/65 px-4 py-3">
                   <span className="text-gray-700">{item.label}</span>
-                  <input type="checkbox" checked={item.value} onChange={(e) => item.set(e.target.checked)} className="h-5 w-5 text-primary-600 rounded" />
+                  <ToggleInput checked={item.value} onChange={item.set} />
                 </div>
               ))}
-              <button onClick={savePreferences} className="px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700">Save Preferences</button>
+              <Button onClick={savePreferences}>Save Preferences</Button>
             </div>
           )}
 
           {activeTab === 'security' && (
             <div className="space-y-6">
               <h2 className="text-lg font-semibold text-gray-900">Security Settings</h2>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label><input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2" /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">New Password</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2" /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2" /></div>
-              <button onClick={updatePassword} className="px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700">Update Password</button>
+              <div><FieldLabel>Current Password</FieldLabel><TextInput type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /></div>
+              <div><FieldLabel>New Password</FieldLabel><TextInput type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /></div>
+              <div><FieldLabel>Confirm Password</FieldLabel><TextInput type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /></div>
+              <Button onClick={updatePassword}>Update Password</Button>
             </div>
           )}
 
           {activeTab === 'billing' && (
             <div className="space-y-6">
               <h2 className="text-lg font-semibold text-gray-900">Billing & Subscription</h2>
-              <div className="bg-primary-50 rounded-xl p-4">
+              <div className="rounded-[24px] border border-sky-200/80 bg-sky-50/80 p-4">
                 <p className="text-sm text-primary-600">Current Plan: <span className="font-semibold">{billingPlan?.name || 'Basic'}</span></p>
                 <p className="text-xs text-primary-500 mt-1">
                   Status: {billingPlan?.status || 'N/A'}
                   {billingPlan?.renewal_date ? ` | Renewal: ${new Date(billingPlan.renewal_date).toLocaleDateString()}` : ''}
                 </p>
               </div>
-              <button disabled className="px-4 py-2 border border-gray-300 rounded-lg font-medium bg-gray-50 text-gray-500">Manage Subscription (Coming soon)</button>
+              <Button disabled variant="secondary">Manage Subscription (Coming soon)</Button>
             </div>
           )}
-        </div>
+        </SurfaceCard>
       </div>
     </div>
   );

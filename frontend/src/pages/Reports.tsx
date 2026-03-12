@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { reportApi, reportGroupApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { hasAdminAccess } from '@/lib/permissions';
+import { queryKeys } from '@/lib/queryKeys';
+import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
+import DataTable from '@/components/dashboard/DataTable';
+import FilterPanel from '@/components/dashboard/FilterPanel';
+import MetricCard from '@/components/dashboard/MetricCard';
+import PageHeader from '@/components/dashboard/PageHeader';
+import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { BarChart3, Calendar, Clock, Download, TrendingUp, Users } from 'lucide-react';
 
 type OrgUser = { id: number; name: string; email: string; role: string };
@@ -23,46 +32,53 @@ const formatLastActivity = (value?: string | null) => {
 
 export default function Reports() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+  const isAdmin = hasAdminAccess(user);
   const [startDate, setStartDate] = useState(toDate(new Date(new Date().setDate(1))));
   const [endDate, setEndDate] = useState(toDate(new Date()));
   const [reportType, setReportType] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
   const [filterMode, setFilterMode] = useState<'team' | 'user' | 'group'>(isAdmin ? 'team' : 'user');
-  const [users, setUsers] = useState<OrgUser[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([]);
-  const [reportData, setReportData] = useState<any>(null);
-  const [overallData, setOverallData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [exportError, setExportError] = useState('');
 
   const reportScope: 'self' | 'organization' = isAdmin ? 'organization' : 'self';
 
   useEffect(() => {
-    const loadFilters = async () => {
-      try {
-        const [uRes, gRes] = await Promise.all([
-          userApi.getAll({ period: 'all' }),
-          isAdmin ? reportGroupApi.list() : Promise.resolve({ data: { data: [] as any[] } }),
-        ]);
-        setUsers((uRes.data || []).map((u: any) => ({ id: u.id, name: u.name, email: u.email, role: u.role })));
-        setGroups((gRes.data?.data || []).map((g: any) => ({ id: g.id, name: g.name, users: g.users || [] })));
-      } catch (e) {
-        console.error(e);
-      }
-    };
-    loadFilters();
+    if (!isAdmin) {
+      setFilterMode('user');
+      setSelectedGroupIds([]);
+    }
   }, [isAdmin]);
 
-  useEffect(() => {
-    fetchReports();
-  }, [startDate, endDate, reportType, filterMode, JSON.stringify(selectedUserIds), JSON.stringify(selectedGroupIds)]);
+  const usersQuery = useQuery({
+    queryKey: queryKeys.users({ period: 'all' }),
+    queryFn: async () => {
+      const response = await userApi.getAll({ period: 'all' });
+      return (response.data || []).map((u: any) => ({ id: u.id, name: u.name, email: u.email, role: u.role })) as OrgUser[];
+    },
+  });
 
-  const fetchReports = async () => {
-    setIsLoading(true);
-    setError('');
-    try {
+  const groupsQuery = useQuery({
+    queryKey: queryKeys.reportGroups,
+    queryFn: async () => {
+      const response = await reportGroupApi.list();
+      return (response.data?.data || []).map((g: any) => ({ id: g.id, name: g.name, users: g.users || [] })) as Group[];
+    },
+    enabled: isAdmin,
+  });
+
+  const reportsQuery = useQuery({
+    queryKey: queryKeys.reports({
+      startDate,
+      endDate,
+      reportType,
+      reportScope,
+      filterMode,
+      selectedUserIds,
+      selectedGroupIds,
+      isAdmin,
+    }),
+    queryFn: async () => {
       const commonParams = { start_date: startDate, end_date: endDate, scope: reportScope };
       const reportPromise =
         reportType === 'daily'
@@ -81,19 +97,24 @@ export default function Reports() {
         }
       }
 
-      const [rRes, oRes] = await Promise.all([reportPromise, reportApi.overall(overallParams)]);
-      setReportData(rRes.data);
-      setOverallData(oRes.data);
-    } catch (e: any) {
-      setError(e?.response?.data?.message || 'Failed to load report');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      const [reportResponse, overallResponse] = await Promise.all([reportPromise, reportApi.overall(overallParams)]);
+
+      return {
+        reportData: reportResponse.data,
+        overallData: overallResponse.data,
+      };
+    },
+  });
 
   const handleExport = async () => {
     try {
-      const response = await reportApi.export({ start_date: startDate, end_date: endDate });
+      setExportError('');
+      const response = await reportApi.export({
+        start_date: startDate,
+        end_date: endDate,
+        user_ids: isAdmin && filterMode === 'user' && selectedUserIds.length > 0 ? selectedUserIds : undefined,
+        group_ids: isAdmin && filterMode === 'group' && selectedGroupIds.length > 0 ? selectedGroupIds : undefined,
+      });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -101,8 +122,9 @@ export default function Reports() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch (e) {
-      console.error(e);
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setExportError(e?.response?.data?.message || 'Failed to export report.');
     }
   };
 
@@ -113,25 +135,64 @@ export default function Reports() {
     return 'Team report';
   }, [isAdmin, filterMode]);
 
+  const users = usersQuery.data || [];
+  const groups = groupsQuery.data || [];
+  const reportData = reportsQuery.data?.reportData || null;
+  const overallData = reportsQuery.data?.overallData || null;
+  const reportTotals = reportData as any;
+  const byUser = overallData?.by_user || [];
+  const topContributor = [...byUser].sort((a: any, b: any) => Number(b.total_duration || 0) - Number(a.total_duration || 0))[0];
+  const highestIdle = [...byUser].sort((a: any, b: any) => Number(b.idle_percentage || 0) - Number(a.idle_percentage || 0))[0];
+  const billableShare = Number(overallData?.summary?.total_duration || 0) > 0
+    ? (Number(overallData?.summary?.billable_duration || 0) / Number(overallData?.summary?.total_duration || 0)) * 100
+    : 0;
+
+  if (usersQuery.isLoading || (isAdmin && groupsQuery.isLoading) || reportsQuery.isLoading) {
+    return <PageLoadingState label="Loading reports..." />;
+  }
+
+  if (usersQuery.isError || groupsQuery.isError || reportsQuery.isError) {
+    const message =
+      (usersQuery.error as any)?.response?.data?.message ||
+      (groupsQuery.error as any)?.response?.data?.message ||
+      (reportsQuery.error as any)?.response?.data?.message ||
+      'Failed to load report data.';
+
+    return (
+      <PageErrorState
+        message={message}
+        onRetry={() => {
+          void usersQuery.refetch();
+          void groupsQuery.refetch();
+          void reportsQuery.refetch();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Report Dashboard</h1>
-          <p className="text-gray-500 mt-1">{filteredLabel}</p>
-        </div>
-        <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-          <Download className="h-4 w-4" />
-          Export
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="Analytics"
+        title="Report Dashboard"
+        description={filteredLabel}
+        actions={
+          <button
+            onClick={handleExport}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-5 py-3 text-sm font-semibold text-white shadow-[0_22px_50px_-20px_rgba(14,165,233,0.55)]"
+          >
+            <Download className="h-4 w-4" />
+            Export
+          </button>
+        }
+      />
 
-      {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
+      {exportError ? <FeedbackBanner tone="error" message={exportError} /> : null}
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+      <FilterPanel className="space-y-3">
         <div className="flex flex-wrap gap-2">
           {(['daily', 'weekly', 'monthly'] as const).map((type) => (
-            <button key={type} onClick={() => setReportType(type)} className={`px-3 py-1.5 text-sm rounded-lg ${reportType === type ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-600'}`}>
+            <button key={type} onClick={() => setReportType(type)} className={`rounded-full px-3.5 py-1.5 text-sm font-medium ${reportType === type ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600'}`}>
               {type}
             </button>
           ))}
@@ -140,16 +201,16 @@ export default function Reports() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-white/80 px-3 py-2.5 text-sm" />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-white/80 px-3 py-2.5 text-sm" />
           </div>
           {isAdmin ? (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Report Type</label>
-              <select value={filterMode} onChange={(e) => setFilterMode(e.target.value as 'team' | 'user' | 'group')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <select value={filterMode} onChange={(e) => setFilterMode(e.target.value as 'team' | 'user' | 'group')} className="w-full rounded-2xl border border-slate-200 bg-white/80 px-3 py-2.5 text-sm">
                 <option value="team">Team Report</option>
                 <option value="user">User Report</option>
                 <option value="group">Group Report</option>
@@ -165,7 +226,7 @@ export default function Reports() {
         {isAdmin && filterMode === 'user' ? (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Select Users</label>
-            <div className="max-h-36 overflow-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 border border-gray-200 rounded-lg p-2">
+            <div className="grid max-h-36 grid-cols-1 gap-2 overflow-auto rounded-2xl border border-slate-200 p-3 md:grid-cols-2 lg:grid-cols-3">
               {users.map((u) => (
                 <label key={u.id} className="text-sm flex items-center gap-2">
                   <input
@@ -183,7 +244,7 @@ export default function Reports() {
         {isAdmin && filterMode === 'group' ? (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Select Groups</label>
-            <div className="max-h-36 overflow-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 border border-gray-200 rounded-lg p-2">
+            <div className="grid max-h-36 grid-cols-1 gap-2 overflow-auto rounded-2xl border border-slate-200 p-3 md:grid-cols-2 lg:grid-cols-3">
               {groups.map((g) => (
                 <label key={g.id} className="text-sm flex items-center gap-2">
                   <input
@@ -197,66 +258,76 @@ export default function Reports() {
             </div>
           </div>
         ) : null}
-      </div>
+      </FilterPanel>
 
-      {isLoading ? <div className="text-sm text-gray-500">Loading reports...</div> : (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <StatCard label="Total Work" value={formatDuration(overallData?.summary?.total_duration || reportData?.total_duration || 0)} icon={<Calendar className="h-4 w-4 text-primary-600" />} />
-            <StatCard label="Billable Work" value={formatDuration(overallData?.summary?.billable_duration || reportData?.billable_duration || 0)} icon={<TrendingUp className="h-4 w-4 text-green-600" />} />
-            <StatCard label="Idle Time" value={formatDuration(overallData?.summary?.idle_duration || 0)} icon={<Clock className="h-4 w-4 text-amber-600" />} />
-            <StatCard label="Users" value={String(overallData?.summary?.users_count || 0)} icon={<Users className="h-4 w-4 text-blue-600" />} />
-            <StatCard label="Active Users" value={String(overallData?.summary?.active_users || 0)} icon={<BarChart3 className="h-4 w-4 text-purple-600" />} />
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-200 font-semibold text-gray-900">Working Details</div>
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-4 py-2">User</th>
-                  <th className="text-left px-4 py-2">Total</th>
-                  <th className="text-left px-4 py-2">Billable</th>
-                  <th className="text-left px-4 py-2">Idle</th>
-                  <th className="text-left px-4 py-2">Idle %</th>
-                  <th className="text-left px-4 py-2">Last Activity</th>
-                  <th className="text-left px-4 py-2">Working</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(overallData?.by_user || []).length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-4 text-gray-500">No report rows found.</td></tr>
-                ) : (
-                  (overallData?.by_user || []).map((row: any) => (
-                    <tr key={row.user.id} className="border-b border-gray-100">
-                      <td className="px-4 py-2">{row.user.name}</td>
-                      <td className="px-4 py-2">{formatDuration(row.total_duration || 0)}</td>
-                      <td className="px-4 py-2">{formatDuration(row.billable_duration || 0)}</td>
-                      <td className="px-4 py-2">{formatDuration(row.idle_duration || 0)}</td>
-                      <td className="px-4 py-2">{Number(row.idle_percentage || 0).toFixed(1)}%</td>
-                      <td className="px-4 py-2">{formatLastActivity(row.last_activity_at)}</td>
-                      <td className="px-4 py-2">{row.is_working ? 'Yes' : 'No'}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <MetricCard label="Total Work" value={formatDuration(overallData?.summary?.total_duration || reportTotals?.total_duration || 0)} icon={Calendar} accent="sky" />
+          <MetricCard label="Billable Work" value={formatDuration(overallData?.summary?.billable_duration || reportTotals?.billable_duration || 0)} icon={TrendingUp} accent="emerald" />
+          <MetricCard label="Idle Time" value={formatDuration(overallData?.summary?.idle_duration || 0)} icon={Clock} accent="amber" />
+          <MetricCard label="Users" value={String(overallData?.summary?.users_count || 0)} icon={Users} accent="violet" />
+          <MetricCard label="Active Users" value={String(overallData?.summary?.active_users || 0)} icon={BarChart3} accent="slate" />
         </div>
-      )}
-    </div>
-  );
-}
 
-function StatCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-gray-500">{label}</p>
-          <p className="text-xl font-bold text-gray-900 mt-1">{value}</p>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <SurfaceCard className="p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Top Contributor</p>
+            <p className="mt-3 text-lg font-semibold text-slate-950">{topContributor?.user?.name || 'No data'}</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {topContributor ? `${formatDuration(topContributor.total_duration || 0)} logged in range` : 'No tracked duration in this range.'}
+            </p>
+          </SurfaceCard>
+
+          <SurfaceCard className="p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Highest Idle Share</p>
+            <p className="mt-3 text-lg font-semibold text-slate-950">{highestIdle?.user?.name || 'No data'}</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {highestIdle ? `${Number(highestIdle.idle_percentage || 0).toFixed(1)}% idle share` : 'No idle analytics available.'}
+            </p>
+          </SurfaceCard>
+
+          <SurfaceCard className="p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Billable Share</p>
+            <p className="mt-3 text-lg font-semibold text-slate-950">{billableShare.toFixed(1)}%</p>
+            <p className="mt-1 text-sm text-slate-500">Useful for operations, payroll review, and team-level planning.</p>
+          </SurfaceCard>
         </div>
-        <div className="h-8 w-8 rounded-lg bg-gray-100 flex items-center justify-center">{icon}</div>
+
+        <DataTable
+          title="Working Details"
+          description="Totals, idle share, and recent activity per user."
+          rows={overallData?.by_user || []}
+          emptyMessage="No report rows found."
+          columns={[
+            { key: 'user', header: 'User', render: (row: any) => <span className="font-medium text-slate-950">{row.user.name}</span> },
+            { key: 'total', header: 'Total', render: (row: any) => formatDuration(row.total_duration || 0) },
+            { key: 'billable', header: 'Billable', render: (row: any) => formatDuration(row.billable_duration || 0) },
+            { key: 'idle', header: 'Idle', render: (row: any) => formatDuration(row.idle_duration || 0) },
+            { key: 'idle_percentage', header: 'Idle %', render: (row: any) => `${Number(row.idle_percentage || 0).toFixed(1)}%` },
+            { key: 'activity', header: 'Last Activity', render: (row: any) => formatLastActivity(row.last_activity_at) },
+            {
+              key: 'working',
+              header: 'Working',
+              render: (row: any) => (
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.is_working ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                  {row.is_working ? 'Yes' : 'No'}
+                </span>
+              ),
+            },
+          ]}
+        />
+
+        <DataTable
+          title="Daily Summary"
+          description="Day-by-day totals for the current reporting scope."
+          rows={overallData?.by_day || []}
+          emptyMessage="No daily summary rows found."
+          columns={[
+            { key: 'date', header: 'Date', render: (row: any) => row.date },
+            { key: 'total_duration', header: 'Total', render: (row: any) => formatDuration(row.total_duration || 0) },
+            { key: 'billable_duration', header: 'Billable', render: (row: any) => formatDuration(row.billable_duration || 0) },
+          ]}
+        />
       </div>
     </div>
   );

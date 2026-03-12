@@ -6,15 +6,15 @@ import SectionHeading from './SectionHeading';
 const faqs = [
   {
     question: 'Is employee data secure?',
-    answer: 'Yes. TimeTrack encrypts data in transit and at rest, supports role-based access, and is designed for enterprise security review workflows.',
+    answer: 'Yes. CareVance encrypts data in transit and at rest, supports role-based access, and is designed for enterprise security review workflows.',
   },
   {
-    question: 'Does TimeTrack track screenshots?',
+    question: 'Does CareVance track screenshots?',
     answer: 'Teams can configure privacy controls based on policy. The platform is designed to emphasize activity insights and focus patterns over invasive monitoring.',
   },
   {
     question: 'Does it work for remote teams?',
-    answer: 'Yes. TimeTrack is built specifically for distributed teams that need visibility across home, office, and hybrid environments.',
+    answer: 'Yes. CareVance is built specifically for distributed teams that need visibility across home, office, and hybrid environments.',
   },
   {
     question: 'Can we export reports?',

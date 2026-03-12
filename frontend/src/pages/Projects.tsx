@@ -1,15 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { projectApi } from '@/services/api';
-import { FolderKanban, Plus, Edit2, Trash2, Clock, DollarSign } from 'lucide-react';
+import { queryKeys } from '@/lib/queryKeys';
+import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
+import { Plus, Edit2, Trash2, Clock, DollarSign } from 'lucide-react';
 import type { Project } from '@/types';
 
 const defaultColors = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6'];
 
 export default function Projects() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [formData, setFormData] = useState<{
     name: string;
     description: string;
@@ -24,50 +27,75 @@ export default function Projects() {
     status: 'active'
   });
 
-  useEffect(() => {
-    fetchProjects();
-  }, []);
-
-  const fetchProjects = async () => {
-    try {
+  const {
+    data: projects = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: queryKeys.projects,
+    queryFn: async () => {
       const response = await projectApi.getAll();
-      setProjects(response.data);
-    } catch (error) {
-      console.error('Error fetching projects:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      return response.data;
+    },
+  });
+
+  const saveProjectMutation = useMutation({
+    mutationFn: async (data: Partial<Project>) => {
+      if (editingProject) {
+        await projectApi.update(editingProject.id, data);
+        return 'Project updated';
+      }
+
+      await projectApi.create(data);
+      return 'Project created';
+    },
+    onSuccess: async (message) => {
+      setFeedback({ tone: 'success', message });
+      setShowModal(false);
+      resetForm();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+    },
+    onError: (mutationError: any) => {
+      setFeedback({
+        tone: 'error',
+        message: mutationError?.response?.data?.message || 'Failed to save project.',
+      });
+    },
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await projectApi.delete(id);
+    },
+    onSuccess: async () => {
+      setFeedback({ tone: 'success', message: 'Project deleted' });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+    },
+    onError: (mutationError: any) => {
+      setFeedback({
+        tone: 'error',
+        message: mutationError?.response?.data?.message || 'Failed to delete project.',
+      });
+    },
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      const data: Partial<Project> = {
-        ...formData,
-        status: formData.status as Project['status'],
-        budget: formData.budget ? parseFloat(formData.budget) : undefined,
-      };
-      if (editingProject) {
-        await projectApi.update(editingProject.id, data);
-      } else {
-        await projectApi.create(data);
-      }
-      setShowModal(false);
-      resetForm();
-      fetchProjects();
-    } catch (error) {
-      console.error('Error saving project:', error);
-    }
+    setFeedback(null);
+    const data: Partial<Project> = {
+      ...formData,
+      status: formData.status as Project['status'],
+      budget: formData.budget ? parseFloat(formData.budget) : undefined,
+    };
+    await saveProjectMutation.mutateAsync(data);
   };
 
   const handleDelete = async (id: number) => {
     if (!confirm('Are you sure you want to delete this project?')) return;
-    try {
-      await projectApi.delete(id);
-      fetchProjects();
-    } catch (error) {
-      console.error('Error deleting project:', error);
-    }
+    setFeedback(null);
+    await deleteProjectMutation.mutateAsync(id);
   };
 
   const resetForm = () => {
@@ -88,15 +116,22 @@ export default function Projects() {
   };
 
   if (isLoading) {
+    return <PageLoadingState label="Loading projects..." />;
+  }
+
+  if (isError) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-      </div>
+      <PageErrorState
+        message={(error as any)?.response?.data?.message || 'Failed to load projects.'}
+        onRetry={() => refetch()}
+      />
     );
   }
 
   return (
     <div className="space-y-6">
+      {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -115,10 +150,11 @@ export default function Projects() {
       {/* Projects Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {projects.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-gray-500">
-            <FolderKanban className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-            <p>No projects yet</p>
-            <p className="text-sm">Create your first project to get started</p>
+          <div className="col-span-full">
+            <PageEmptyState
+              title="No projects yet"
+              description="Create your first project to get started."
+            />
           </div>
         ) : (
           projects.map((project) => (
@@ -219,9 +255,10 @@ export default function Projects() {
                 </button>
                 <button
                   type="submit"
+                  disabled={saveProjectMutation.isPending}
                   className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
                 >
-                  {editingProject ? 'Update' : 'Create'}
+                  {saveProjectMutation.isPending ? 'Saving...' : editingProject ? 'Update' : 'Create'}
                 </button>
               </div>
             </form>

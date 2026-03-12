@@ -16,9 +16,9 @@ const variantClasses: Record<ButtonVariant, string> = {
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: 'min-h-9 rounded-full px-3.5 text-xs font-semibold',
-  md: 'min-h-11 rounded-full px-4.5 text-sm font-semibold',
-  lg: 'min-h-12 rounded-full px-5 text-sm font-semibold',
+  sm: 'min-h-10 rounded-full px-4 text-xs font-semibold',
+  md: 'min-h-11 rounded-full px-5 text-sm font-semibold',
+  lg: 'min-h-12 rounded-full px-5.5 text-sm font-semibold',
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -44,16 +44,16 @@ export default function Button({
       type={type}
       disabled={disabled}
       className={cn(
-        'inline-flex items-center justify-center gap-2 whitespace-nowrap transition duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-60',
+        'inline-flex items-center justify-center gap-2.5 whitespace-nowrap leading-none transition duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-60',
         variantClasses[variant],
         sizeClasses[size],
         className
       )}
       {...props}
     >
-      {iconLeft}
+      {iconLeft ? <span className="shrink-0">{iconLeft}</span> : null}
       {children}
-      {iconRight}
+      {iconRight ? <span className="shrink-0">{iconRight}</span> : null}
     </button>
   );
 }

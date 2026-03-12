@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react';
 import { reportApi, screenshotApi } from '@/services/api';
+import FilterPanel from '@/components/dashboard/FilterPanel';
+import MetricCard from '@/components/dashboard/MetricCard';
+import PageHeader from '@/components/dashboard/PageHeader';
+import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import Button from '@/components/ui/Button';
+import { PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
+import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
+import StatusBadge from '@/components/ui/StatusBadge';
 import { Activity, Camera, Search, Users } from 'lucide-react';
 
 const PIE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2'];
@@ -94,110 +102,81 @@ export default function Monitoring() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Monitoring</h1>
-        <p className="text-gray-500 mt-1">Admin-only employee stats, screenshots, and idle analysis</p>
-      </div>
+      <PageHeader
+        eyebrow="Monitoring"
+        title="Employee Monitoring"
+        description="Review live activity, productive vs unproductive tracking, screenshots, and team-wide efficiency signals."
+      />
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-5">
         <div className="md:col-span-2">
-          <label className="block text-xs font-medium text-gray-600 mb-1">Employee Name / Email</label>
+          <FieldLabel>Employee Name / Email</FieldLabel>
           <div className="relative">
             <Search className="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
+            <TextInput
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search employee..."
-              className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm"
+              className="py-2.5 pl-9 pr-3"
             />
           </div>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
-          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <FieldLabel>Start Date</FieldLabel>
+          <TextInput type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="py-2.5" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
-          <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <FieldLabel>End Date</FieldLabel>
+          <TextInput type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="py-2.5" />
         </div>
         <div className="flex items-end">
-          <button onClick={() => fetchData()} className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">
+          <Button onClick={() => fetchData()} className="w-full">
             Apply
-          </button>
+          </Button>
         </div>
-      </div>
+      </FilterPanel>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <label className="block text-xs font-medium text-gray-600 mb-1">Employee</label>
-        <select
+      <FilterPanel>
+        <FieldLabel>Employee</FieldLabel>
+        <SelectInput
           value={selectedUserId ?? ''}
           onChange={(e) => {
             const nextId = e.target.value ? Number(e.target.value) : undefined;
             setSelectedUserId(nextId);
             fetchData({ userId: nextId });
           }}
-          className="w-full md:w-96 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          className="md:w-96"
         >
           {(data?.matched_users || []).map((u: any) => (
             <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
           ))}
-        </select>
-      </div>
+        </SelectInput>
+      </FilterPanel>
 
       {isLoading ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-        </div>
+        <PageLoadingState label="Loading monitoring data..." />
       ) : !selectedUser ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">No employee found</div>
+        <PageEmptyState title="No employee found" description="Adjust the search or date range to inspect another employee." />
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex items-center justify-between"><p className="text-sm text-gray-500">Employee</p><Users className="h-5 w-5 text-gray-400" /></div>
-              <p className="text-lg font-bold text-gray-900 mt-1">{selectedUser.name}</p>
-              <p className="text-xs text-gray-500">{selectedUser.email}</p>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex items-center justify-between"><p className="text-sm text-gray-500">Total Worked</p><Activity className="h-5 w-5 text-green-500" /></div>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{formatDuration(stats?.total_duration || 0)}</p>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex items-center justify-between"><p className="text-sm text-gray-500">Total Idle</p><Activity className="h-5 w-5 text-orange-500" /></div>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{formatDuration(stats?.idle_total_duration || 0)}</p>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex items-center justify-between"><p className="text-sm text-gray-500">Average Idle</p><Activity className="h-5 w-5 text-amber-500" /></div>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{Math.round(stats?.idle_avg_duration || 0)}s</p>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex items-center justify-between"><p className="text-sm text-gray-500">Screenshots</p><Camera className="h-5 w-5 text-blue-500" /></div>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{screenshots.length}</p>
-            </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <MetricCard label="Employee" value={selectedUser.name} hint={selectedUser.email} icon={Users} accent="slate" />
+            <MetricCard label="Total Worked" value={formatDuration(stats?.total_duration || 0)} icon={Activity} accent="emerald" />
+            <MetricCard label="Total Idle" value={formatDuration(stats?.idle_total_duration || 0)} icon={Activity} accent="amber" />
+            <MetricCard label="Average Idle" value={`${Math.round(stats?.idle_avg_duration || 0)}s`} icon={Activity} accent="rose" />
+            <MetricCard label="Screenshots" value={screenshots.length} icon={Camera} accent="sky" />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <p className="text-sm text-gray-500">Org Productive Share</p>
-              <p className="text-2xl font-bold text-green-700 mt-1">{Number(organizationSummary?.productive_share || 0).toFixed(1)}%</p>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <p className="text-sm text-gray-500">Org Unproductive Share</p>
-              <p className="text-2xl font-bold text-red-700 mt-1">{Number(organizationSummary?.unproductive_share || 0).toFixed(1)}%</p>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <p className="text-sm text-gray-500">Tracked Productive Time</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{formatDuration(Number(organizationSummary?.productive_duration || 0))}</p>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <p className="text-sm text-gray-500">Tracked Unproductive Time</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{formatDuration(Number(organizationSummary?.unproductive_duration || 0))}</p>
-            </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="Org Productive Share" value={`${Number(organizationSummary?.productive_share || 0).toFixed(1)}%`} icon={Activity} accent="emerald" />
+            <MetricCard label="Org Unproductive Share" value={`${Number(organizationSummary?.unproductive_share || 0).toFixed(1)}%`} icon={Activity} accent="rose" />
+            <MetricCard label="Tracked Productive Time" value={formatDuration(Number(organizationSummary?.productive_duration || 0))} icon={Users} accent="sky" />
+            <MetricCard label="Tracked Unproductive Time" value={formatDuration(Number(organizationSummary?.unproductive_duration || 0))} icon={Users} accent="amber" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <SurfaceCard className="p-4">
               <h2 className="font-semibold text-gray-900 mb-3">Live Activity (Selected Employee)</h2>
               {!selectedUserLive ? (
                 <p className="text-sm text-gray-500">No live activity found.</p>
@@ -213,21 +192,21 @@ export default function Monitoring() {
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-gray-600">Classification</p>
-                    <span className={`text-xs px-2 py-1 rounded-full ${selectedUserLive.classification === 'unproductive' ? 'bg-red-100 text-red-700' : selectedUserLive.classification === 'productive' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                    <StatusBadge tone={selectedUserLive.classification === 'unproductive' ? 'danger' : selectedUserLive.classification === 'productive' ? 'success' : 'neutral'}>
                       {selectedUserLive.classification || 'neutral'}
-                    </span>
+                    </StatusBadge>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-gray-600">Working Now</p>
-                    <span className={`text-xs px-2 py-1 rounded-full ${selectedUserLive.is_working ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                    <StatusBadge tone={selectedUserLive.is_working ? 'success' : 'neutral'}>
                       {selectedUserLive.is_working ? 'Yes' : 'No'}
-                    </span>
+                    </StatusBadge>
                   </div>
                 </div>
               )}
-            </div>
+            </SurfaceCard>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <SurfaceCard className="p-4">
               <div className="flex items-center justify-between">
                 <h2 className="font-semibold text-gray-900">Employee Status (Live)</h2>
                 <p className="text-xs text-gray-500">{employeesActive.length + employeesInactive.length + employeesOnLeave.length} employees</p>
@@ -236,7 +215,7 @@ export default function Monitoring() {
                 <div className="rounded-lg border border-green-200 bg-green-50 p-3">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-semibold text-green-800">Active</p>
-                    <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">{employeesActive.length}</span>
+                    <StatusBadge tone="success">{employeesActive.length}</StatusBadge>
                   </div>
                   <div className="mt-2 space-y-1 max-h-44 overflow-auto">
                     {employeesActive.length === 0 ? (
@@ -252,7 +231,7 @@ export default function Monitoring() {
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-semibold text-gray-800">Inactive</p>
-                    <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">{employeesInactive.length}</span>
+                    <StatusBadge>{employeesInactive.length}</StatusBadge>
                   </div>
                   <div className="mt-2 space-y-1 max-h-44 overflow-auto">
                     {employeesInactive.length === 0 ? (
@@ -268,7 +247,7 @@ export default function Monitoring() {
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-semibold text-amber-800">On Leave</p>
-                    <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">{employeesOnLeave.length}</span>
+                    <StatusBadge tone="warning">{employeesOnLeave.length}</StatusBadge>
                   </div>
                   <div className="mt-2 space-y-1 max-h-44 overflow-auto">
                     {employeesOnLeave.length === 0 ? (
@@ -281,11 +260,11 @@ export default function Monitoring() {
                   </div>
                 </div>
               </div>
-            </div>
+            </SurfaceCard>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <SurfaceCard className="p-4">
               <h2 className="font-semibold text-gray-900 mb-3">Activity Breakdown</h2>
               {activityBreakdown.length === 0 || totalActivityDuration <= 0 ? (
                 <p className="text-sm text-gray-500">No activity logs found.</p>
@@ -329,9 +308,9 @@ export default function Monitoring() {
                   </div>
                 </div>
               )}
-            </div>
+            </SurfaceCard>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <SurfaceCard className="p-4">
               <h2 className="font-semibold text-gray-900 mb-3">Selected Employee Tool Usage</h2>
               <div className="space-y-4">
                 <div>
@@ -372,11 +351,11 @@ export default function Monitoring() {
                   )}
                 </div>
               </div>
-            </div>
+            </SurfaceCard>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <SurfaceCard className="p-4">
               <div className="flex items-center justify-between">
                 <h2 className="font-semibold text-gray-900">Organization Top Productive Tools</h2>
                 <p className="text-xs text-gray-500">Avg across {analyticsUsersCount} employees</p>
@@ -389,7 +368,7 @@ export default function Monitoring() {
                     <div key={`org-prod-${item.type}-${item.label}`} className="rounded-lg border border-gray-100 p-3">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-medium text-gray-900">{item.label}</p>
-                        <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 capitalize">{item.type}</span>
+                        <StatusBadge tone="success" className="capitalize">{item.type}</StatusBadge>
                       </div>
                       <p className="text-xs text-gray-600 mt-1">
                         Total: {formatDuration(item.total_duration)} | Avg/Employee: {formatDuration(Math.round(item.avg_duration_per_employee || 0))}
@@ -398,9 +377,9 @@ export default function Monitoring() {
                   ))}
                 </div>
               )}
-            </div>
+            </SurfaceCard>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <SurfaceCard className="p-4">
               <div className="flex items-center justify-between">
                 <h2 className="font-semibold text-gray-900">Organization Top Unproductive Tools</h2>
                 <p className="text-xs text-gray-500">Avg across {analyticsUsersCount} employees</p>
@@ -413,7 +392,7 @@ export default function Monitoring() {
                     <div key={`org-unprod-${item.type}-${item.label}`} className="rounded-lg border border-gray-100 p-3">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-medium text-gray-900">{item.label}</p>
-                        <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 capitalize">{item.type}</span>
+                        <StatusBadge tone="danger" className="capitalize">{item.type}</StatusBadge>
                       </div>
                       <p className="text-xs text-gray-600 mt-1">
                         Total: {formatDuration(item.total_duration)} | Avg/Employee: {formatDuration(Math.round(item.avg_duration_per_employee || 0))}
@@ -422,11 +401,11 @@ export default function Monitoring() {
                   ))}
                 </div>
               )}
-            </div>
+            </SurfaceCard>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <SurfaceCard className="p-4">
               <h2 className="font-semibold text-gray-900 mb-1">Employee Productivity Ranking</h2>
               <p className="text-xs text-gray-500 mb-3">Employees only, ordered from most productive to least productive</p>
               {productiveEmployeeRanking.length === 0 ? (
@@ -454,9 +433,9 @@ export default function Monitoring() {
                   })}
                 </div>
               )}
-            </div>
+            </SurfaceCard>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <SurfaceCard className="p-4">
               <h2 className="font-semibold text-gray-900 mb-1">Team Productivity Efficiency</h2>
               <p className="text-xs text-gray-500 mb-3">Higher score means more productive time share</p>
               {teamEfficiencyRanking.length === 0 ? (
@@ -495,11 +474,11 @@ export default function Monitoring() {
                   </div>
                 </div>
               )}
-            </div>
+            </SurfaceCard>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <SurfaceCard className="p-4">
               <h2 className="font-semibold text-gray-900 mb-3">Recent Screenshots</h2>
               <div className="grid grid-cols-2 gap-2 max-h-80 overflow-auto">
                 {screenshots.length === 0 ? <p className="text-sm text-gray-500 col-span-2">No screenshots found.</p> : screenshots.map((s: any) => (
@@ -509,14 +488,14 @@ export default function Monitoring() {
                     </a>
                     <button
                       onClick={() => handleDeleteScreenshot(s.id)}
-                      className="absolute top-1 right-1 px-2 py-1 text-xs bg-red-600 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute right-1 top-1 rounded-full bg-rose-600 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100"
                     >
                       Delete
                     </button>
                   </div>
                 ))}
               </div>
-            </div>
+            </SurfaceCard>
           </div>
         </>
       )}

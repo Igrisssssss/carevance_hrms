@@ -1,41 +1,110 @@
-import { useState, useEffect } from 'react';
-import { invoiceApi, timeEntryApi } from '@/services/api';
-import { FileText, Plus, Send, CheckCircle, Clock, Download } from 'lucide-react';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { invoiceApi } from '@/services/api';
+import { queryKeys } from '@/lib/queryKeys';
+import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
+import { Plus, Send, CheckCircle } from 'lucide-react';
 import type { Invoice } from '@/types';
 
 export default function Invoices() {
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
+  const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [formData, setFormData] = useState({
     client_name: '', client_email: '', client_address: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', notes: ''
   });
 
-  useEffect(() => { fetchInvoices(); }, []);
+  const {
+    data: invoices = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: queryKeys.invoices,
+    queryFn: async () => {
+      const res = await invoiceApi.getAll();
+      return res.data.data || [];
+    },
+  });
 
-  const fetchInvoices = async () => {
-    try { const res = await invoiceApi.getAll(); setInvoices(res.data.data || []); }
-    catch (e) { console.error(e); }
-    finally { setIsLoading(false); }
-  };
+  const createInvoiceMutation = useMutation({
+    mutationFn: async () => {
+      await invoiceApi.create(formData as any);
+    },
+    onSuccess: async () => {
+      setFeedback({ tone: 'success', message: 'Invoice created' });
+      setShowModal(false);
+      setFormData({ client_name: '', client_email: '', client_address: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', notes: '' });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.invoices });
+    },
+    onError: (mutationError: any) => {
+      setFeedback({
+        tone: 'error',
+        message: mutationError?.response?.data?.message || 'Failed to create invoice.',
+      });
+    },
+  });
+
+  const updateInvoiceStatusMutation = useMutation({
+    mutationFn: async ({ id, action }: { id: number; action: 'send' | 'paid' }) => {
+      if (action === 'send') {
+        await invoiceApi.send(id);
+        return 'Invoice sent';
+      }
+
+      await invoiceApi.markPaid(id);
+      return 'Invoice marked as paid';
+    },
+    onSuccess: async (message) => {
+      setFeedback({ tone: 'success', message });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.invoices });
+    },
+    onError: (mutationError: any) => {
+      setFeedback({
+        tone: 'error',
+        message: mutationError?.response?.data?.message || 'Failed to update invoice.',
+      });
+    },
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try { await invoiceApi.create(formData as any); setShowModal(false); setFormData({ client_name: '', client_email: '', client_address: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', notes: '' }); fetchInvoices(); }
-    catch (e) { console.error(e); }
+    setFeedback(null);
+    await createInvoiceMutation.mutateAsync();
   };
 
-  const handleSend = async (id: number) => { try { await invoiceApi.send(id); fetchInvoices(); } catch (e) { console.error(e); } };
-  const handleMarkPaid = async (id: number) => { try { await invoiceApi.markPaid(id); fetchInvoices(); } catch (e) { console.error(e); } };
+  const handleSend = async (id: number) => {
+    setFeedback(null);
+    await updateInvoiceStatusMutation.mutateAsync({ id, action: 'send' });
+  };
+
+  const handleMarkPaid = async (id: number) => {
+    setFeedback(null);
+    await updateInvoiceStatusMutation.mutateAsync({ id, action: 'paid' });
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) { case 'paid': return 'bg-green-100 text-green-700'; case 'sent': return 'bg-blue-100 text-blue-700'; case 'overdue': return 'bg-red-100 text-red-700'; default: return 'bg-gray-100 text-gray-700'; }
   };
 
-  if (isLoading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>;
+  if (isLoading) {
+    return <PageLoadingState label="Loading invoices..." />;
+  }
+
+  if (isError) {
+    return (
+      <PageErrorState
+        message={(error as any)?.response?.data?.message || 'Failed to load invoices.'}
+        onRetry={() => refetch()}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
+      {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
+
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-bold text-gray-900">Invoices</h1><p className="text-gray-500 mt-1">Manage your invoices</p></div>
         <button onClick={() => setShowModal(true)} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus className="h-5 w-5" />New Invoice</button>
@@ -46,7 +115,7 @@ export default function Invoices() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200"><tr><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th></tr></thead>
             <tbody className="divide-y divide-gray-200">
-              {invoices.length === 0 ? <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-500"><FileText className="h-12 w-12 mx-auto mb-3 text-gray-300" /><p>No invoices yet</p></td></tr> : invoices.map(inv => (
+              {invoices.length === 0 ? <tr><td colSpan={6} className="px-6 py-8"><PageEmptyState title="No invoices yet" description="Create your first invoice to get started." /></td></tr> : invoices.map(inv => (
                 <tr key={inv.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{inv.invoice_number}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-gray-600">{inv.client_name}</td>
@@ -75,7 +144,7 @@ export default function Invoices() {
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Client Email</label><input type="email" required value={formData.client_email} onChange={e => setFormData({...formData, client_email: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Invoice Date</label><input type="date" required value={formData.invoice_date} onChange={e => setFormData({...formData, invoice_date: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label><input type="date" required value={formData.due_date} onChange={e => setFormData({...formData, due_date: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" /></div>
-              <div className="flex gap-3 pt-2"><button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg">Cancel</button><button type="submit" className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg">Create</button></div>
+              <div className="flex gap-3 pt-2"><button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg">Cancel</button><button type="submit" disabled={createInvoiceMutation.isPending} className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg disabled:opacity-60">{createInvoiceMutation.isPending ? 'Creating...' : 'Create'}</button></div>
             </form>
           </div>
         </div>

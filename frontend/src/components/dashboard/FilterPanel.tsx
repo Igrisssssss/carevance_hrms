@@ -7,5 +7,5 @@ interface FilterPanelProps {
 }
 
 export default function FilterPanel({ children, className = '' }: FilterPanelProps) {
-  return <SurfaceCard className={`p-4 sm:p-5 ${className}`.trim()}>{children}</SurfaceCard>;
+  return <SurfaceCard className={`relative z-20 overflow-visible p-4 sm:p-5 ${className}`.trim()}>{children}</SurfaceCard>;
 }

@@ -28,6 +28,7 @@ vi.mock('@/pages/Login', () => ({ default: () => <div>Login Page</div> }));
 vi.mock('@/pages/Register', () => ({ default: () => <div>Register Page</div> }));
 vi.mock('@/pages/LandingPage', () => ({ default: () => <div>Landing Page</div> }));
 vi.mock('@/pages/Dashboard', () => ({ default: () => <div>Dashboard Page</div> }));
+vi.mock('@/pages/AdminDashboard', () => ({ default: () => <div>Admin Dashboard Page</div> }));
 vi.mock('@/pages/Projects', () => ({ default: () => <div>Projects Page</div> }));
 vi.mock('@/pages/Tasks', () => ({ default: () => <div>Tasks Page</div> }));
 vi.mock('@/pages/Reports', () => ({ default: () => <div>Reports Page</div> }));
@@ -108,5 +109,33 @@ describe('App routes', () => {
 
     expect(screen.getByText('Dashboard Page')).toBeInTheDocument();
     expect(screen.queryByText('Reports Page')).not.toBeInTheDocument();
+  });
+
+  it('renders the admin dashboard for admins on /dashboard', () => {
+    authState.value = {
+      isAuthenticated: true,
+      isLoading: false,
+      user: {
+        id: 1,
+        name: 'Admin',
+        email: 'admin@example.com',
+        role: 'admin',
+        organization_id: 1,
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Routes>
+          <Route path="*" element={<App />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('Admin Dashboard Page')).toBeInTheDocument();
+    expect(screen.queryByText('Dashboard Page')).not.toBeInTheDocument();
   });
 });

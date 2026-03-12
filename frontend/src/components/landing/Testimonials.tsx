@@ -3,7 +3,7 @@ import SectionHeading from './SectionHeading';
 
 const testimonials = [
   {
-    quote: 'TimeTrack increased our team productivity by 35%.',
+    quote: 'CareVance increased our team productivity by 35%.',
     author: 'CEO',
     company: 'Remote Agency',
     initials: 'RA',
@@ -28,7 +28,7 @@ export default function Testimonials() {
       <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="Customers"
-          title="Teams use TimeTrack to improve execution without adding management drag"
+          title="Teams use CareVance to improve execution without adding management drag"
           description="Customer stories consistently point to the same outcome: clearer visibility, faster planning, and better focus."
         />
         <div className="mt-12 grid gap-6 lg:grid-cols-3">

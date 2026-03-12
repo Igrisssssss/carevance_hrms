@@ -10,7 +10,7 @@ export default function LogoCloud() {
         <SectionHeading
           eyebrow="Trusted by"
           title="Trusted by 5,000+ teams worldwide"
-          description="High-performing product, support, and operations teams rely on TimeTrack to see where work moves and where it slows down."
+          description="High-performing product, support, and operations teams rely on CareVance to see where work moves and where it slows down."
         />
         <div className="mt-12 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {logos.map((logo, index) => (

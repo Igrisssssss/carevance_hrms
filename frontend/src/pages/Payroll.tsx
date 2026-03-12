@@ -2,21 +2,28 @@ import { useEffect, useMemo, useState } from 'react';
 import { payrollApi } from '@/services/api';
 import type { PayrollRecord, PayrollTransaction } from '@/types';
 import { RefreshCw, Wallet } from 'lucide-react';
+import PageHeader from '@/components/dashboard/PageHeader';
+import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import FilterPanel from '@/components/dashboard/FilterPanel';
+import Button from '@/components/ui/Button';
+import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
+import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
+import StatusBadge from '@/components/ui/StatusBadge';
 
 type OrgEmployee = { id: number; name: string; email: string; role: string };
 
-const statusBadgeClass = (status: string) => {
+const statusBadgeTone = (status: string) => {
   switch (status) {
     case 'paid':
     case 'success':
-      return 'bg-green-100 text-green-700';
+      return 'success' as const;
     case 'processed':
     case 'pending':
-      return 'bg-amber-100 text-amber-700';
+      return 'warning' as const;
     case 'failed':
-      return 'bg-red-100 text-red-700';
+      return 'danger' as const;
     default:
-      return 'bg-gray-100 text-gray-700';
+      return 'neutral' as const;
   }
 };
 
@@ -239,113 +246,111 @@ export default function Payroll() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Payroll Management</h1>
-        <p className="text-gray-500 mt-1">Generate payroll, review salary breakdown, and complete payouts in mock or Stripe mode.</p>
-      </div>
+      <PageHeader
+        eyebrow="Finance operations"
+        title="Payroll Management"
+        description="Generate payroll, review salary breakdowns, and complete payouts in mock or Stripe mode."
+      />
 
-      {message ? <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{message}</div> : null}
-      {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+      {message ? <FeedbackBanner tone="success" message={message} /> : null}
+      {error ? <FeedbackBanner tone="error" message={error} /> : null}
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4 grid grid-cols-1 md:grid-cols-6 gap-3">
+      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-6">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Month</label>
-          <input type="month" value={generateMonth} onChange={(e) => setGenerateMonth(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <FieldLabel>Month</FieldLabel>
+          <TextInput type="month" value={generateMonth} onChange={(e) => setGenerateMonth(e.target.value)} />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Employee</label>
-          <select value={generateEmployeeId} onChange={(e) => setGenerateEmployeeId(e.target.value ? Number(e.target.value) : '')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <FieldLabel>Employee</FieldLabel>
+          <SelectInput value={generateEmployeeId} onChange={(e) => setGenerateEmployeeId(e.target.value ? Number(e.target.value) : '')}>
             <option value="">All Employees</option>
             {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </select>
+          </SelectInput>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Payout Method</label>
-          <select value={generatePayoutMethod} onChange={(e) => setGeneratePayoutMethod(e.target.value as 'mock' | 'stripe')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <FieldLabel>Payout Method</FieldLabel>
+          <SelectInput value={generatePayoutMethod} onChange={(e) => setGeneratePayoutMethod(e.target.value as 'mock' | 'stripe')}>
             <option value="mock">Mock</option>
             <option value="stripe">Stripe</option>
-          </select>
+          </SelectInput>
         </div>
         <div className="flex items-end">
-          <label className="flex items-center gap-2 text-sm text-gray-700">
+          <label className="flex min-h-11 items-center gap-2 rounded-[20px] border border-slate-200/90 bg-white/85 px-3.5 text-sm text-slate-700 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.25)]">
             <input type="checkbox" checked={allowOverwrite} onChange={(e) => setAllowOverwrite(e.target.checked)} />
             Allow overwrite
           </label>
         </div>
         <div className="flex items-end md:col-span-2">
-          <button onClick={generate} disabled={isGenerating} className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-50">
+          <Button onClick={generate} disabled={isGenerating} className="w-full">
             {isGenerating ? 'Generating...' : 'Generate Payroll'}
-          </button>
+          </Button>
         </div>
-      </div>
+      </FilterPanel>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4 grid grid-cols-1 md:grid-cols-6 gap-3">
+      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-6">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Filter Employee</label>
-          <select value={filterEmployeeId} onChange={(e) => setFilterEmployeeId(e.target.value ? Number(e.target.value) : '')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <FieldLabel>Filter Employee</FieldLabel>
+          <SelectInput value={filterEmployeeId} onChange={(e) => setFilterEmployeeId(e.target.value ? Number(e.target.value) : '')}>
             <option value="">All</option>
             {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </select>
+          </SelectInput>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Filter Month</label>
-          <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <FieldLabel>Filter Month</FieldLabel>
+          <TextInput type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Payroll Status</label>
-          <select value={filterPayrollStatus} onChange={(e) => setFilterPayrollStatus(e.target.value as any)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <FieldLabel>Payroll Status</FieldLabel>
+          <SelectInput value={filterPayrollStatus} onChange={(e) => setFilterPayrollStatus(e.target.value as any)}>
             <option value="">All</option>
             <option value="draft">Draft</option>
             <option value="processed">Processed</option>
             <option value="paid">Paid</option>
-          </select>
+          </SelectInput>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Payout Status</label>
-          <select value={filterPayoutStatus} onChange={(e) => setFilterPayoutStatus(e.target.value as any)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <FieldLabel>Payout Status</FieldLabel>
+          <SelectInput value={filterPayoutStatus} onChange={(e) => setFilterPayoutStatus(e.target.value as any)}>
             <option value="">All</option>
             <option value="pending">Pending</option>
             <option value="success">Success</option>
             <option value="failed">Failed</option>
-          </select>
+          </SelectInput>
         </div>
         <div className="flex items-end">
-          <button onClick={() => { setFilterEmployeeId(''); setFilterMonth(''); setFilterPayrollStatus(''); setFilterPayoutStatus(''); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">
+          <Button onClick={() => { setFilterEmployeeId(''); setFilterMonth(''); setFilterPayrollStatus(''); setFilterPayoutStatus(''); }} variant="secondary" className="w-full">
             Clear Filters
-          </button>
+          </Button>
         </div>
         <div className="flex items-end">
-          <button onClick={load} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 flex items-center justify-center gap-2">
-            <RefreshCw className="h-4 w-4" />
+          <Button onClick={load} variant="secondary" className="w-full" iconLeft={<RefreshCw className="h-4 w-4" />}>
             Refresh
-          </button>
+          </Button>
         </div>
-      </div>
+      </FilterPanel>
 
       {isLoading ? (
-        <div className="flex items-center justify-center h-56">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-        </div>
+        <PageLoadingState label="Loading payroll records..." />
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          <div className="xl:col-span-2 bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <SurfaceCard className="xl:col-span-2 overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="border-b border-slate-200 bg-slate-50/80">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Employee</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Month</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Net Salary</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Payroll</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Payout</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Employee</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Month</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Net Salary</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Payroll</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Payout</th>
                 </tr>
               </thead>
               <tbody>
                 {records.length === 0 ? (
-                  <tr><td className="px-4 py-6 text-gray-500" colSpan={5}>No payroll records found.</td></tr>
+                  <tr><td className="px-4 py-6" colSpan={5}><PageEmptyState title="No payroll records found" description="Generate payroll or adjust the filters to view records." /></td></tr>
                 ) : records.map((record) => (
                   <tr
                     key={record.id}
-                    className={`border-b border-gray-100 cursor-pointer ${selectedRecord?.id === record.id ? 'bg-primary-50' : ''}`}
+                    className={`cursor-pointer border-b border-slate-100 transition hover:bg-slate-50/70 ${selectedRecord?.id === record.id ? 'bg-sky-50/80' : ''}`}
                     onClick={() => onSelectRecord(record)}
                   >
                     <td className="px-4 py-3">
@@ -355,18 +360,18 @@ export default function Payroll() {
                     <td className="px-4 py-3 text-gray-700">{record.payroll_month}</td>
                     <td className="px-4 py-3 text-gray-700">{money(record.net_salary)}</td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-1 rounded-full ${statusBadgeClass(record.payroll_status)}`}>{record.payroll_status}</span>
+                      <StatusBadge tone={statusBadgeTone(record.payroll_status)}>{record.payroll_status}</StatusBadge>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-1 rounded-full ${statusBadgeClass(record.payout_status)}`}>{record.payout_status}</span>
+                      <StatusBadge tone={statusBadgeTone(record.payout_status)}>{record.payout_status}</StatusBadge>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </SurfaceCard>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+          <SurfaceCard className="p-4 space-y-3">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
               <Wallet className="h-4 w-4" />
               Payroll Detail
@@ -382,15 +387,15 @@ export default function Payroll() {
                   <Field label="Deductions" value={selectedRecord.deductions} onChange={(v) => updateSelectedField('deductions', v)} />
                   <Field label="Tax" value={selectedRecord.tax} onChange={(v) => updateSelectedField('tax', v)} />
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Payout Method</label>
-                    <select value={selectedRecord.payout_method} onChange={(e) => updateSelectedField('payout_method', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    <FieldLabel>Payout Method</FieldLabel>
+                    <SelectInput value={selectedRecord.payout_method} onChange={(e) => updateSelectedField('payout_method', e.target.value)}>
                       <option value="mock">Mock</option>
                       <option value="stripe">Stripe</option>
-                    </select>
+                    </SelectInput>
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
                   <p className="text-xs text-gray-600">Gross Salary</p>
                   <p className="text-sm font-medium text-gray-900">{money(Number(selectedRecord.basic_salary || 0) + Number(selectedRecord.allowances || 0) + Number(selectedRecord.bonus || 0))}</p>
                   <p className="text-xs text-gray-600 mt-2">Total Deductions</p>
@@ -400,16 +405,16 @@ export default function Payroll() {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={saveSelected} disabled={isSaving} className="px-3 py-2 text-xs rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50">Save Draft</button>
-                  <button onClick={() => updateStatus('processed')} disabled={isSaving} className="px-3 py-2 text-xs rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50">Mark Processed</button>
-                  <button onClick={() => payout()} disabled={isSaving} className="px-3 py-2 text-xs rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50">Run Payout</button>
+                  <Button onClick={saveSelected} disabled={isSaving} variant="secondary" size="sm">Save Draft</Button>
+                  <Button onClick={() => updateStatus('processed')} disabled={isSaving} size="sm" className="bg-amber-600 shadow-[0_18px_40px_-24px_rgba(217,119,6,0.6)] hover:bg-amber-700">Mark Processed</Button>
+                  <Button onClick={() => payout()} disabled={isSaving} size="sm">Run Payout</Button>
                 </div>
 
                 {payrollMode === 'mock' ? (
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={() => payout('success')} disabled={isSaving} className="px-3 py-1.5 text-xs rounded-md bg-green-600 text-white hover:bg-green-700">Simulate Success</button>
-                    <button onClick={() => payout('failed')} disabled={isSaving} className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700">Simulate Failure</button>
-                    <button onClick={() => payout('pending')} disabled={isSaving} className="px-3 py-1.5 text-xs rounded-md bg-amber-600 text-white hover:bg-amber-700">Simulate Pending</button>
+                    <Button onClick={() => payout('success')} disabled={isSaving} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Simulate Success</Button>
+                    <Button onClick={() => payout('failed')} disabled={isSaving} variant="danger" size="sm">Simulate Failure</Button>
+                    <Button onClick={() => payout('pending')} disabled={isSaving} size="sm" className="bg-amber-600 shadow-[0_18px_40px_-24px_rgba(217,119,6,0.6)] hover:bg-amber-700">Simulate Pending</Button>
                   </div>
                 ) : null}
 
@@ -422,7 +427,7 @@ export default function Payroll() {
                       <div key={tx.id} className="rounded-lg border border-gray-100 p-2">
                         <div className="flex items-center justify-between">
                           <p className="text-xs text-gray-700">{tx.provider} {tx.transaction_id ? `(${tx.transaction_id})` : ''}</p>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full ${statusBadgeClass(tx.status)}`}>{tx.status}</span>
+                          <StatusBadge tone={statusBadgeTone(tx.status)}>{tx.status}</StatusBadge>
                         </div>
                         <p className="text-[11px] text-gray-600 mt-1">{money(tx.amount)} - {new Date(tx.created_at).toLocaleString()}</p>
                       </div>
@@ -431,7 +436,7 @@ export default function Payroll() {
                 </div>
               </>
             )}
-          </div>
+          </SurfaceCard>
         </div>
       )}
     </div>
@@ -441,13 +446,12 @@ export default function Payroll() {
 function Field({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-      <input
+      <FieldLabel>{label}</FieldLabel>
+      <TextInput
         type="number"
         min={0}
         value={Number(value || 0)}
         onChange={(e) => onChange(Number(e.target.value || 0))}
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
       />
     </div>
   );

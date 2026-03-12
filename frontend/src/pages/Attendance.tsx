@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { attendanceApi, attendanceTimeEditApi, leaveApi, reportApi } from '@/services/api';
+import { attendanceApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, reportGroupApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { hasAdminAccess } from '@/lib/permissions';
+import PageHeader from '@/components/dashboard/PageHeader';
+import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import FilterPanel from '@/components/dashboard/FilterPanel';
+import MetricCard from '@/components/dashboard/MetricCard';
+import Button from '@/components/ui/Button';
+import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
+import { FieldLabel, TextInput, TextareaInput } from '@/components/ui/FormField';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { Briefcase, CalendarDays, Clock, FolderKanban, Layers3, Users } from 'lucide-react';
+import type { UserProfile360 } from '@/types';
 
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
@@ -53,7 +64,7 @@ type AttendanceProps = {
 };
 
 export default function Attendance({ mode = 'full' }: AttendanceProps) {
-  const { user } = useAuth();
+  const { user, organization } = useAuth();
   const [query, setQuery] = useState('');
   const [startDate, setStartDate] = useState(formatLocalDate(new Date(new Date().setDate(1))));
   const [endDate, setEndDate] = useState(formatLocalDate(new Date()));
@@ -104,8 +115,18 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [timeEditDate, setTimeEditDate] = useState(formatLocalDate(new Date()));
   const [extraMinutes, setExtraMinutes] = useState(60);
   const [timeEditMessage, setTimeEditMessage] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [employeeProfile, setEmployeeProfile] = useState<UserProfile360 | null>(null);
+  const [employeeGroups, setEmployeeGroups] = useState<Array<{ id: number; name: string }>>([]);
+  const [organizationMembersCount, setOrganizationMembersCount] = useState(0);
+  const [isEmployeePanelLoading, setIsEmployeePanelLoading] = useState(false);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+  const isAdmin = hasAdminAccess(user);
+  const setFeedback = (nextMessage = '', nextError = '') => {
+    setMessage(nextMessage);
+    setError(nextError);
+  };
 
   const fetchAttendance = async () => {
     setIsLoading(true);
@@ -143,6 +164,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const doCheckIn = async () => {
     setIsPunchLoading(true);
+    setFeedback();
     try {
       const res = await attendanceApi.checkIn();
       const payload = res.data as any;
@@ -150,7 +172,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       await Promise.all([fetchAttendance(), fetchCalendar(), fetchToday()]);
     } catch (e) {
       console.error('Check-in failed:', e);
-      alert((e as any)?.response?.data?.message || 'Check-in failed');
+      setFeedback('', (e as any)?.response?.data?.message || 'Check-in failed');
     } finally {
       setIsPunchLoading(false);
     }
@@ -158,6 +180,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const doCheckOut = async () => {
     setIsPunchLoading(true);
+    setFeedback();
     try {
       const res = await attendanceApi.checkOut();
       const payload = res.data as any;
@@ -165,7 +188,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       await Promise.all([fetchAttendance(), fetchCalendar(), fetchToday()]);
     } catch (e) {
       console.error('Check-out failed:', e);
-      alert((e as any)?.response?.data?.message || 'Check-out failed');
+      setFeedback('', (e as any)?.response?.data?.message || 'Check-out failed');
     } finally {
       setIsPunchLoading(false);
     }
@@ -202,11 +225,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const submitLeaveRequest = async () => {
     if (!leaveStartDate || !leaveEndDate) {
-      alert('Please select start and end date');
+      setFeedback('', 'Please select start and end date');
       return;
     }
 
     setIsLeaveSubmitting(true);
+    setFeedback();
     try {
       await leaveApi.create({
         start_date: leaveStartDate,
@@ -215,63 +239,72 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       });
       setLeaveReason('');
       await fetchLeaveRequests();
-      alert('Leave request submitted');
+      setFeedback('Leave request submitted');
     } catch (e) {
       console.error('Leave request submit failed:', e);
-      alert((e as any)?.response?.data?.message || 'Failed to submit leave request');
+      setFeedback('', (e as any)?.response?.data?.message || 'Failed to submit leave request');
     } finally {
       setIsLeaveSubmitting(false);
     }
   };
 
   const approveLeave = async (id: number) => {
+    setFeedback();
     try {
       await leaveApi.approve(id);
       await Promise.all([fetchLeaveRequests(), fetchAttendance(), fetchCalendar(), fetchToday()]);
+      setFeedback('Leave request approved');
     } catch (e) {
       console.error('Approve leave failed:', e);
-      alert((e as any)?.response?.data?.message || 'Failed to approve leave request');
+      setFeedback('', (e as any)?.response?.data?.message || 'Failed to approve leave request');
     }
   };
 
   const rejectLeave = async (id: number) => {
+    setFeedback();
     try {
       await leaveApi.reject(id);
       await fetchLeaveRequests();
+      setFeedback('Leave request rejected');
     } catch (e) {
       console.error('Reject leave failed:', e);
-      alert((e as any)?.response?.data?.message || 'Failed to reject leave request');
+      setFeedback('', (e as any)?.response?.data?.message || 'Failed to reject leave request');
     }
   };
 
   const requestLeaveRevoke = async (id: number) => {
+    setFeedback();
     try {
       await leaveApi.requestRevoke(id);
       await fetchLeaveRequests();
-      alert('Leave revoke request submitted');
+      setFeedback('Leave revoke request submitted');
     } catch (e) {
       console.error('Leave revoke request failed:', e);
-      alert((e as any)?.response?.data?.message || 'Failed to request leave revoke');
+      setFeedback('', (e as any)?.response?.data?.message || 'Failed to request leave revoke');
     }
   };
 
   const approveLeaveRevoke = async (id: number) => {
+    setFeedback();
     try {
       await leaveApi.approveRevoke(id);
       await Promise.all([fetchLeaveRequests(), fetchCalendar(), fetchAttendance(), fetchToday()]);
+      setFeedback('Leave revoke approved');
     } catch (e) {
       console.error('Approve leave revoke failed:', e);
-      alert((e as any)?.response?.data?.message || 'Failed to approve leave revoke');
+      setFeedback('', (e as any)?.response?.data?.message || 'Failed to approve leave revoke');
     }
   };
 
   const rejectLeaveRevoke = async (id: number) => {
+    setFeedback();
     try {
       await leaveApi.rejectRevoke(id);
       await fetchLeaveRequests();
+      setFeedback('Leave revoke rejected');
     } catch (e) {
       console.error('Reject leave revoke failed:', e);
-      alert((e as any)?.response?.data?.message || 'Failed to reject leave revoke');
+      setFeedback('', (e as any)?.response?.data?.message || 'Failed to reject leave revoke');
     }
   };
 
@@ -289,11 +322,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const submitTimeEditRequest = async () => {
     if (!timeEditDate || !extraMinutes || extraMinutes <= 0) {
-      alert('Please enter a valid date and extra minutes');
+      setFeedback('', 'Please enter a valid date and extra minutes');
       return;
     }
 
     setIsTimeEditSubmitting(true);
+    setFeedback();
     try {
       await attendanceTimeEditApi.create({
         attendance_date: timeEditDate,
@@ -302,32 +336,36 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       });
       setTimeEditMessage('');
       await fetchTimeEditRequests();
-      alert('Time edit request submitted');
+      setFeedback('Time edit request submitted');
     } catch (e) {
       console.error('Time edit request submit failed:', e);
-      alert((e as any)?.response?.data?.message || 'Failed to submit time edit request');
+      setFeedback('', (e as any)?.response?.data?.message || 'Failed to submit time edit request');
     } finally {
       setIsTimeEditSubmitting(false);
     }
   };
 
   const approveTimeEdit = async (id: number) => {
+    setFeedback();
     try {
       await attendanceTimeEditApi.approve(id);
       await Promise.all([fetchTimeEditRequests(), fetchAttendance(), fetchCalendar(), fetchToday()]);
+      setFeedback('Time edit request approved');
     } catch (e) {
       console.error('Approve time edit failed:', e);
-      alert((e as any)?.response?.data?.message || 'Failed to approve time edit request');
+      setFeedback('', (e as any)?.response?.data?.message || 'Failed to approve time edit request');
     }
   };
 
   const rejectTimeEdit = async (id: number) => {
+    setFeedback();
     try {
       await attendanceTimeEditApi.reject(id);
       await fetchTimeEditRequests();
+      setFeedback('Time edit request rejected');
     } catch (e) {
       console.error('Reject time edit failed:', e);
-      alert((e as any)?.response?.data?.message || 'Failed to reject time edit request');
+      setFeedback('', (e as any)?.response?.data?.message || 'Failed to reject time edit request');
     }
   };
 
@@ -348,9 +386,59 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     if (selectedUserId || !isAdmin) {
       fetchCalendar();
     }
-  }, [calendarMonth, selectedUserId, mode]);
+  }, [calendarMonth, isAdmin, mode, selectedUserId]);
+
+  useEffect(() => {
+    if (mode !== 'full' || isAdmin || !user?.id) return;
+
+    let active = true;
+
+    const fetchEmployeePanel = async () => {
+      setIsEmployeePanelLoading(true);
+      try {
+        const requests: Promise<any>[] = [
+          userApi.getProfile360(user.id, { start_date: startDate, end_date: endDate }),
+          reportGroupApi.list(),
+        ];
+
+        if (organization?.id) {
+          requests.push(organizationApi.getMembers(organization.id));
+        }
+
+        const [profileResponse, groupsResponse, membersResponse] = await Promise.all(requests);
+
+        if (!active) return;
+
+        setEmployeeProfile(profileResponse.data || null);
+        setEmployeeGroups(
+          ((groupsResponse.data?.data || []) as any[])
+            .filter((group) => (group.users || []).some((member: any) => member.id === user.id))
+            .map((group) => ({ id: group.id, name: group.name }))
+        );
+        setOrganizationMembersCount(Array.isArray((membersResponse as any)?.data) ? (membersResponse as any).data.length : 0);
+      } catch (fetchError) {
+        console.error('Employee attendance panel fetch failed:', fetchError);
+        if (active) {
+          setEmployeeProfile(null);
+          setEmployeeGroups([]);
+          setOrganizationMembersCount(0);
+        }
+      } finally {
+        if (active) {
+          setIsEmployeePanelLoading(false);
+        }
+      }
+    };
+
+    void fetchEmployeePanel();
+
+    return () => {
+      active = false;
+    };
+  }, [endDate, isAdmin, mode, organization?.id, startDate, user?.id]);
 
   const selectedRow = rows.find((row) => row.user.id === selectedUserId) || rows[0];
+  const employeePanelUser = employeeProfile?.user || user;
   const pendingLeaveRequests = useMemo(
     () => leaveRequests.filter((item) => item.status === 'pending'),
     [leaveRequests]
@@ -383,82 +471,108 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     for (const d of calendarDays) map.set(d.date, d);
     return map;
   }, [calendarDays]);
+  const employeeSummaryStats = useMemo(
+    () => [
+      {
+        label: 'Workspace Users',
+        value: String(organizationMembersCount || 0),
+        hint: 'People in your organization',
+        icon: Users,
+      },
+      {
+        label: 'Groups',
+        value: String(employeeGroups.length),
+        hint: employeeGroups.length ? employeeGroups.map((group) => group.name).join(', ') : 'No group assigned yet',
+        icon: Layers3,
+      },
+      {
+        label: 'Current Project',
+        value: employeeProfile?.status.current_project || 'No active project',
+        hint: employeeProfile?.status.is_working ? 'You are currently working' : 'No active timer right now',
+        icon: Briefcase,
+      },
+      {
+        label: 'Recent Projects',
+        value: String(new Set((employeeProfile?.recent_time_entries || []).map((entry) => entry.project?.id).filter(Boolean)).size),
+        hint:
+          (employeeProfile?.recent_time_entries || [])
+            .map((entry) => entry.project?.name)
+            .filter(Boolean)
+            .filter((value, index, list) => list.indexOf(value) === index)
+            .slice(0, 3)
+            .join(', ') || 'Projects will appear here after time is tracked',
+        icon: FolderKanban,
+      },
+    ],
+    [employeeGroups, employeeProfile, organizationMembersCount]
+  );
 
   if (mode === 'time-edit') {
     return (
       <div className="space-y-6 animate-fade-in">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Edit Time</h1>
-          <p className="text-gray-500 mt-1">Request overtime or attendance time adjustments</p>
-        </div>
+        <PageHeader eyebrow="Attendance adjustments" title="Edit Time" description="Request overtime or attendance time adjustments and review approval status." />
+        {message ? <FeedbackBanner tone="success" message={message} /> : null}
+        {error ? <FeedbackBanner tone="error" message={error} /> : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <SurfaceCard className="p-4">
             <h2 className="font-semibold text-gray-900 mb-3">Request Time Edit / Overtime</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Attendance Date</label>
-                <input type="date" value={timeEditDate} onChange={(e) => setTimeEditDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                <FieldLabel>Attendance Date</FieldLabel>
+                <TextInput type="date" value={timeEditDate} onChange={(e) => setTimeEditDate(e.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Extra Minutes</label>
-                <input
+                <FieldLabel>Extra Minutes</FieldLabel>
+                <TextInput
                   type="number"
                   min={1}
                   max={600}
                   value={extraMinutes}
                   onChange={(e) => setExtraMinutes(Number(e.target.value))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
               </div>
             </div>
             <div className="mt-3">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Message to Admin</label>
-              <textarea
+              <FieldLabel>Message to Admin</FieldLabel>
+              <TextareaInput
                 value={timeEditMessage}
                 onChange={(e) => setTimeEditMessage(e.target.value)}
                 rows={3}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 placeholder="Example: I worked 1 hour extra after shift due to release deployment."
               />
             </div>
             <div className="mt-3">
-              <button
-                onClick={submitTimeEditRequest}
-                disabled={isTimeEditSubmitting}
-                className="px-4 py-2 rounded-lg text-sm bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-60"
-              >
+              <Button onClick={submitTimeEditRequest} disabled={isTimeEditSubmitting}>
                 {isTimeEditSubmitting ? 'Submitting...' : 'Submit Time Edit Request'}
-              </button>
+              </Button>
             </div>
-          </div>
+          </SurfaceCard>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <SurfaceCard className="p-4">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-gray-900">Time Edit Requests</h2>
-              <button onClick={fetchTimeEditRequests} className="text-sm text-primary-700 hover:underline">Refresh</button>
+              <Button onClick={fetchTimeEditRequests} variant="ghost" size="sm">Refresh</Button>
             </div>
             {isTimeEditLoading ? (
-              <p className="text-sm text-gray-500 mt-3">Loading...</p>
+              <PageLoadingState label="Loading requests..." />
             ) : timeEditRequests.length === 0 ? (
-              <p className="text-sm text-gray-500 mt-3">No time edit requests found.</p>
+              <PageEmptyState title="No time edit requests found" description="Submitted overtime and time adjustments will appear here." />
             ) : (
               <div className="mt-3 space-y-2 max-h-72 overflow-auto">
                 {timeEditRequests.map((item) => (
-                  <div key={item.id} className="border border-gray-200 rounded-lg p-3">
+                  <div key={item.id} className="rounded-[22px] border border-slate-200 p-3">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-medium text-gray-900">
                         {item.user?.name || 'You'}: {item.attendance_date} (+{formatDuration(item.extra_seconds)})
                       </p>
-                      <span className={`text-xs px-2 py-1 rounded-full ${item.status === 'approved' ? 'bg-green-100 text-green-700' : item.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {item.status}
-                      </span>
+                      <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : 'warning'}>{item.status}</StatusBadge>
                     </div>
                     {item.message ? <p className="text-xs text-gray-600 mt-1">{item.message}</p> : null}
                     {isAdmin && item.status === 'pending' ? (
                       <div className="mt-2 flex gap-2">
-                        <button onClick={() => approveTimeEdit(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-green-600 text-white hover:bg-green-700">Approve</button>
-                        <button onClick={() => rejectTimeEdit(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700">Reject</button>
+                        <Button onClick={() => approveTimeEdit(item.id)} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Approve</Button>
+                        <Button onClick={() => rejectTimeEdit(item.id)} variant="danger" size="sm">Reject</Button>
                       </div>
                     ) : null}
                   </div>
@@ -468,7 +582,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             {isAdmin && pendingTimeEditRequests.length > 0 ? (
               <p className="text-xs text-gray-500 mt-2">Pending approvals: {pendingTimeEditRequests.length}</p>
             ) : null}
-          </div>
+          </SurfaceCard>
         </div>
       </div>
     );
@@ -476,52 +590,91 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Attendance</h1>
-        <p className="text-gray-500 mt-1">{isAdmin ? 'Track attendance for all employees' : 'Your attendance records'}</p>
-      </div>
+      <PageHeader eyebrow="Attendance operations" title="Attendance" description={isAdmin ? 'Track attendance, punches, leave, and overtime requests across the team.' : 'Review your attendance, punches, leave requests, and overtime history.'} />
+      {message ? <FeedbackBanner tone="success" message={message} /> : null}
+      {error ? <FeedbackBanner tone="error" message={error} /> : null}
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-4">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
-          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <FieldLabel>Start Date</FieldLabel>
+          <TextInput type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
-          <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <FieldLabel>End Date</FieldLabel>
+          <TextInput type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
         </div>
         {isAdmin && (
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Employee Name/Email</label>
-            <input
+            <FieldLabel>Employee Name/Email</FieldLabel>
+            <TextInput
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search employee..."
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
             />
           </div>
         )}
         <div className="flex items-end">
-          <button onClick={fetchAttendance} className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">Apply</button>
+          <Button onClick={fetchAttendance} className="w-full">Apply</Button>
         </div>
-      </div>
+      </FilterPanel>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-sm text-gray-500">Working Days (Excl. Weekend)</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{workingDays}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-sm text-gray-500">Weekend Days</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{weekendDays}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-sm text-gray-500">Employees in View</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{rows.length}</p>
-        </div>
+        <MetricCard label="Working Days" value={workingDays} hint="Excluding weekends" icon={CalendarDays} accent="sky" />
+        <MetricCard label="Weekend Days" value={weekendDays} hint="Within selected range" icon={Clock} accent="amber" />
+        <MetricCard label="Employees in View" value={rows.length} hint={isAdmin ? 'Based on current filter' : 'Your own attendance view'} icon={Users} accent="emerald" />
 
-        <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 p-4">
+        {!isAdmin ? (
+          <SurfaceCard className="lg:col-span-3 p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-700">Attendance Workspace</p>
+                <h2 className="mt-2 text-xl font-semibold text-slate-950">
+                  {employeePanelUser?.name || 'Your profile'}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  {employeePanelUser?.email || 'No email available'}
+                  {employeePanelUser?.role ? <span className="ml-2 capitalize">• {employeePanelUser.role}</span> : null}
+                </p>
+                <p className="mt-2 text-sm text-slate-600">
+                  {organization?.name || 'Organization workspace'}
+                </p>
+              </div>
+              <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+                {isEmployeePanelLoading ? (
+                  <p>Loading workspace details...</p>
+                ) : (
+                  <>
+                    <p>
+                      Working now: <span className="font-semibold text-slate-950">{employeeProfile?.status.is_working ? 'Yes' : 'No'}</span>
+                    </p>
+                    <p className="mt-1">
+                      Last seen:{' '}
+                      <span className="font-semibold text-slate-950">
+                        {employeeProfile?.status.last_seen_at ? new Date(employeeProfile.status.last_seen_at).toLocaleString() : 'Unavailable'}
+                      </span>
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {employeeSummaryStats.map((item) => (
+                <div key={item.label} className="rounded-[24px] border border-slate-200 bg-white/85 p-4 shadow-[0_18px_38px_-28px_rgba(15,23,42,0.25)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+                    <item.icon className="h-4 w-4 text-sky-700" />
+                  </div>
+                  <p className="mt-3 text-lg font-semibold text-slate-950">{item.value}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{item.hint}</p>
+                </div>
+              ))}
+            </div>
+          </SurfaceCard>
+        ) : null}
+
+        <SurfaceCard className="lg:col-span-3 p-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-gray-900">Today</p>
@@ -565,20 +718,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             </div>
 
             <div className="flex gap-2">
-              <button
-                onClick={doCheckIn}
-                disabled={isPunchLoading || !!todayRecord?.is_checked_in || hasApprovedLeaveToday}
-                className="px-4 py-2 rounded-lg text-sm border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-60"
-              >
+              <Button onClick={doCheckIn} disabled={isPunchLoading || !!todayRecord?.is_checked_in || hasApprovedLeaveToday} variant="secondary">
                 Punch In
-              </button>
-              <button
-                onClick={doCheckOut}
-                disabled={isPunchLoading || !todayRecord?.is_checked_in}
-                className="px-4 py-2 rounded-lg text-sm bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-60"
-              >
+              </Button>
+              <Button onClick={doCheckOut} disabled={isPunchLoading || !todayRecord?.is_checked_in}>
                 Punch Out
-              </button>
+              </Button>
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-3">
@@ -587,36 +732,36 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           {todayRecord?.punches?.length ? (
             <div className="mt-2 flex flex-wrap gap-2">
               {todayRecord.punches.map((punch) => (
-                <span key={punch.id} className="text-xs px-2 py-1 border border-gray-200 rounded-md text-gray-700 bg-gray-50">
+                <span key={punch.id} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
                   {new Date(punch.punch_in_at).toLocaleTimeString()} - {punch.punch_out_at ? new Date(punch.punch_out_at).toLocaleTimeString() : 'Active'}
                 </span>
               ))}
             </div>
           ) : null}
-        </div>
+        </SurfaceCard>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <SurfaceCard className="overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="border-b border-slate-200 bg-slate-50/80">
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Employee</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Present Days</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Leave Days</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Attendance %</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Worked</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Employee</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Present Days</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Leave Days</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Attendance %</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Worked</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Status</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td className="px-4 py-6 text-gray-500" colSpan={6}>Loading...</td></tr>
+              <tr><td className="px-4 py-6" colSpan={6}><PageLoadingState label="Loading attendance records..." /></td></tr>
             ) : rows.length === 0 ? (
-              <tr><td className="px-4 py-6 text-gray-500" colSpan={6}>No attendance records</td></tr>
+              <tr><td className="px-4 py-6" colSpan={6}><PageEmptyState title="No attendance records" description="Attendance data will appear here for the selected date range." /></td></tr>
             ) : rows.map((row) => (
               <tr
                 key={row.user.id}
-                className={`border-b border-gray-100 cursor-pointer ${selectedRow?.user?.id === row.user.id ? 'bg-primary-50' : ''}`}
+                className={`cursor-pointer border-b border-slate-100 transition hover:bg-slate-50/70 ${selectedRow?.user?.id === row.user.id ? 'bg-sky-50/80' : ''}`}
                 onClick={() => setSelectedUserId(row.user.id)}
               >
                 <td className="px-4 py-3">
@@ -628,48 +773,48 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 <td className="px-4 py-3 text-gray-700">{row.attendance_rate}%</td>
                 <td className="px-4 py-3 text-gray-700">{formatDuration(row.worked_seconds)}</td>
                 <td className="px-4 py-3">
-                  <span className={`text-xs font-medium ${row.is_working ? 'text-green-600' : 'text-gray-500'}`}>
-                    {row.is_working ? 'Working' : 'Not Working'}
-                  </span>
+                  <StatusBadge tone={row.is_working ? 'success' : 'neutral'}>{row.is_working ? 'Working' : 'Not Working'}</StatusBadge>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </SurfaceCard>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-4">
+        <SurfaceCard className="lg:col-span-2 p-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold text-gray-900">Attendance Calendar</h2>
 
             <div className="flex items-center gap-2">
-              <button
+              <Button
                 onClick={() => {
                   const [y, m] = calendarMonth.split('-').map((v) => Number(v));
                   const d = new Date(y, (m || 1) - 2, 1);
                   setCalendarMonth(formatMonth(d));
                 }}
-                className="px-3 py-2 rounded-lg text-sm border border-gray-300 bg-white hover:bg-gray-50"
+                variant="secondary"
+                size="sm"
               >
                 Prev
-              </button>
-              <input
+              </Button>
+              <TextInput
                 type="month"
                 value={calendarMonth}
                 onChange={(e) => setCalendarMonth(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                className="max-w-[10rem]"
               />
-              <button
+              <Button
                 onClick={() => {
                   const [y, m] = calendarMonth.split('-').map((v) => Number(v));
                   const d = new Date(y, (m || 1), 1);
                   setCalendarMonth(formatMonth(d));
                 }}
-                className="px-3 py-2 rounded-lg text-sm border border-gray-300 bg-white hover:bg-gray-50"
+                variant="secondary"
+                size="sm"
               >
                 Next
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -731,9 +876,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               </div>
             </div>
           )}
-        </div>
+        </SurfaceCard>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <SurfaceCard className="p-4">
           <h2 className="font-semibold text-gray-900 mb-3">Monthly Summary</h2>
           {calendarSummary ? (
             <div className="space-y-3 text-sm">
@@ -761,63 +906,56 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           ) : (
             <p className="text-sm text-gray-500">No summary available.</p>
           )}
-        </div>
+        </SurfaceCard>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <SurfaceCard className="p-4">
           <h2 className="font-semibold text-gray-900 mb-3">Request Leave</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
-              <input type="date" value={leaveStartDate} onChange={(e) => setLeaveStartDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              <FieldLabel>Start Date</FieldLabel>
+              <TextInput type="date" value={leaveStartDate} onChange={(e) => setLeaveStartDate(e.target.value)} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
-              <input type="date" value={leaveEndDate} onChange={(e) => setLeaveEndDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              <FieldLabel>End Date</FieldLabel>
+              <TextInput type="date" value={leaveEndDate} onChange={(e) => setLeaveEndDate(e.target.value)} />
             </div>
           </div>
           <div className="mt-3">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Reason (Optional)</label>
-            <textarea
+            <FieldLabel>Reason (Optional)</FieldLabel>
+            <TextareaInput
               value={leaveReason}
               onChange={(e) => setLeaveReason(e.target.value)}
               rows={3}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               placeholder="Leave reason..."
             />
           </div>
           <div className="mt-3">
-            <button
-              onClick={submitLeaveRequest}
-              disabled={isLeaveSubmitting}
-              className="px-4 py-2 rounded-lg text-sm bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-60"
-            >
+            <Button onClick={submitLeaveRequest} disabled={isLeaveSubmitting}>
               {isLeaveSubmitting ? 'Submitting...' : 'Submit Leave Request'}
-            </button>
+            </Button>
           </div>
-        </div>
+        </SurfaceCard>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <SurfaceCard className="p-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-900">Leave Requests</h2>
-            <button onClick={fetchLeaveRequests} className="text-sm text-primary-700 hover:underline">Refresh</button>
+            <Button onClick={fetchLeaveRequests} variant="ghost" size="sm">Refresh</Button>
           </div>
           {isLeaveLoading ? (
-            <p className="text-sm text-gray-500 mt-3">Loading...</p>
+            <PageLoadingState label="Loading leave requests..." />
           ) : leaveRequests.length === 0 ? (
-            <p className="text-sm text-gray-500 mt-3">No leave requests found.</p>
+            <PageEmptyState title="No leave requests found" description="Submitted leave requests will appear here." />
           ) : (
             <div className="mt-3 space-y-2 max-h-72 overflow-auto">
               {leaveRequests.map((item) => (
-                <div key={item.id} className="border border-gray-200 rounded-lg p-3">
+                <div key={item.id} className="rounded-[22px] border border-slate-200 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-medium text-gray-900">
                       {item.user?.name || 'You'}: {item.start_date} to {item.end_date}
                     </p>
-                    <span className={`text-xs px-2 py-1 rounded-full ${item.status === 'approved' ? 'bg-green-100 text-green-700' : item.status === 'rejected' ? 'bg-red-100 text-red-700' : item.status === 'revoked' ? 'bg-gray-100 text-gray-700' : 'bg-amber-100 text-amber-700'}`}>
-                      {item.status}
-                    </span>
+                    <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : item.status === 'revoked' ? 'neutral' : 'warning'}>{item.status}</StatusBadge>
                   </div>
                   {item.reason ? <p className="text-xs text-gray-600 mt-1">{item.reason}</p> : null}
                   {item.revoke_status ? (
@@ -827,19 +965,19 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                   ) : null}
                   {isAdmin && item.status === 'pending' ? (
                     <div className="mt-2 flex gap-2">
-                      <button onClick={() => approveLeave(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-green-600 text-white hover:bg-green-700">Approve</button>
-                      <button onClick={() => rejectLeave(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700">Reject</button>
+                      <Button onClick={() => approveLeave(item.id)} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Approve</Button>
+                      <Button onClick={() => rejectLeave(item.id)} variant="danger" size="sm">Reject</Button>
                     </div>
                   ) : null}
                   {!isAdmin && canRequestRevoke(item) ? (
                     <div className="mt-2">
-                      <button onClick={() => requestLeaveRevoke(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700">Request Revoke</button>
+                      <Button onClick={() => requestLeaveRevoke(item.id)} variant="danger" size="sm">Request Revoke</Button>
                     </div>
                   ) : null}
                   {isAdmin && item.status === 'approved' && item.revoke_status === 'pending' ? (
                     <div className="mt-2 flex gap-2">
-                      <button onClick={() => approveLeaveRevoke(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-green-600 text-white hover:bg-green-700">Approve Revoke</button>
-                      <button onClick={() => rejectLeaveRevoke(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700">Reject Revoke</button>
+                      <Button onClick={() => approveLeaveRevoke(item.id)} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Approve Revoke</Button>
+                      <Button onClick={() => rejectLeaveRevoke(item.id)} variant="danger" size="sm">Reject Revoke</Button>
                     </div>
                   ) : null}
                 </div>
@@ -849,76 +987,68 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           {isAdmin && pendingLeaveRequests.length > 0 ? (
             <p className="text-xs text-gray-500 mt-2">Pending approvals: {pendingLeaveRequests.length}</p>
           ) : null}
-        </div>
+        </SurfaceCard>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <SurfaceCard className="p-4">
           <h2 className="font-semibold text-gray-900 mb-3">Request Time Edit / Overtime</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Attendance Date</label>
-              <input type="date" value={timeEditDate} onChange={(e) => setTimeEditDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              <FieldLabel>Attendance Date</FieldLabel>
+              <TextInput type="date" value={timeEditDate} onChange={(e) => setTimeEditDate(e.target.value)} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Extra Minutes</label>
-              <input
+              <FieldLabel>Extra Minutes</FieldLabel>
+              <TextInput
                 type="number"
                 min={1}
                 max={600}
                 value={extraMinutes}
                 onChange={(e) => setExtraMinutes(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               />
             </div>
           </div>
           <div className="mt-3">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Message to Admin</label>
-            <textarea
+            <FieldLabel>Message to Admin</FieldLabel>
+            <TextareaInput
               value={timeEditMessage}
               onChange={(e) => setTimeEditMessage(e.target.value)}
               rows={3}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               placeholder="Example: I worked 1 hour extra after shift due to release deployment."
             />
           </div>
           <div className="mt-3">
-            <button
-              onClick={submitTimeEditRequest}
-              disabled={isTimeEditSubmitting}
-              className="px-4 py-2 rounded-lg text-sm bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-60"
-            >
+            <Button onClick={submitTimeEditRequest} disabled={isTimeEditSubmitting}>
               {isTimeEditSubmitting ? 'Submitting...' : 'Submit Time Edit Request'}
-            </button>
+            </Button>
           </div>
-        </div>
+        </SurfaceCard>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <SurfaceCard className="p-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-900">Time Edit Requests</h2>
-            <button onClick={fetchTimeEditRequests} className="text-sm text-primary-700 hover:underline">Refresh</button>
+            <Button onClick={fetchTimeEditRequests} variant="ghost" size="sm">Refresh</Button>
           </div>
           {isTimeEditLoading ? (
-            <p className="text-sm text-gray-500 mt-3">Loading...</p>
+            <PageLoadingState label="Loading time edit requests..." />
           ) : timeEditRequests.length === 0 ? (
-            <p className="text-sm text-gray-500 mt-3">No time edit requests found.</p>
+            <PageEmptyState title="No time edit requests found" description="Attendance adjustment requests will appear here." />
           ) : (
             <div className="mt-3 space-y-2 max-h-72 overflow-auto">
               {timeEditRequests.map((item) => (
-                <div key={item.id} className="border border-gray-200 rounded-lg p-3">
+                <div key={item.id} className="rounded-[22px] border border-slate-200 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-medium text-gray-900">
                       {item.user?.name || 'You'}: {item.attendance_date} (+{formatDuration(item.extra_seconds)})
                     </p>
-                    <span className={`text-xs px-2 py-1 rounded-full ${item.status === 'approved' ? 'bg-green-100 text-green-700' : item.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                      {item.status}
-                    </span>
+                    <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : 'warning'}>{item.status}</StatusBadge>
                   </div>
                   {item.message ? <p className="text-xs text-gray-600 mt-1">{item.message}</p> : null}
                   {isAdmin && item.status === 'pending' ? (
                     <div className="mt-2 flex gap-2">
-                      <button onClick={() => approveTimeEdit(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-green-600 text-white hover:bg-green-700">Approve</button>
-                      <button onClick={() => rejectTimeEdit(item.id)} className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700">Reject</button>
+                      <Button onClick={() => approveTimeEdit(item.id)} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Approve</Button>
+                      <Button onClick={() => rejectTimeEdit(item.id)} variant="danger" size="sm">Reject</Button>
                     </div>
                   ) : null}
                 </div>
@@ -928,12 +1058,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           {isAdmin && pendingTimeEditRequests.length > 0 ? (
             <p className="text-xs text-gray-500 mt-2">Pending approvals: {pendingTimeEditRequests.length}</p>
           ) : null}
-        </div>
+        </SurfaceCard>
       </div>
 
       {selectedRow && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <SurfaceCard className="p-4">
             <h2 className="font-semibold text-gray-900 mb-3">
               {selectedRow.user.name} - Leave Dates (Weekend Excluded)
             </h2>
@@ -942,14 +1072,14 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 <p className="text-sm text-gray-500">No leave dates in selected range.</p>
               ) : (
                 selectedRow.leave_dates.map((date: string) => (
-                  <span key={date} className="px-2 py-1 bg-red-50 text-red-700 text-xs rounded-md border border-red-100">
+                  <span key={date} className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs text-rose-700">
                     {date}
                   </span>
                 ))
               )}
             </div>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
+          </SurfaceCard>
+          <SurfaceCard className="p-4">
             <h2 className="font-semibold text-gray-900 mb-3">
               {selectedRow.user.name} - Present Dates
             </h2>
@@ -958,13 +1088,13 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 <p className="text-sm text-gray-500">No present dates in selected range.</p>
               ) : (
                 selectedRow.present_dates.map((date: string) => (
-                  <span key={date} className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded-md border border-green-100">
+                  <span key={date} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs text-emerald-700">
                     {date}
                   </span>
                 ))
               )}
             </div>
-          </div>
+          </SurfaceCard>
         </div>
       )}
     </div>
