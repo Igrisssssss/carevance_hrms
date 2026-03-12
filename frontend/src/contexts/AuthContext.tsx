@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { User, Organization } from '@/types';
 import { authApi } from '@/services/api';
 
@@ -26,9 +26,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const isActiveRef = useRef(true);
+
+  const clearStoredAuth = () => {
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('user');
+    sessionStorage.removeItem('organization');
+  };
+
+  const clearAuthState = () => {
+    setUser(null);
+    setToken(null);
+    setOrganization(null);
+    clearStoredAuth();
+  };
+
+  const storeAuthState = (nextToken: string, nextUser: User, nextOrganization?: Organization | null) => {
+    setToken(nextToken);
+    setUser(nextUser);
+    setOrganization(nextOrganization ?? null);
+
+    sessionStorage.setItem('token', nextToken);
+    sessionStorage.setItem('user', JSON.stringify(nextUser));
+
+    if (nextOrganization) {
+      sessionStorage.setItem('organization', JSON.stringify(nextOrganization));
+      return;
+    }
+
+    sessionStorage.removeItem('organization');
+  };
+
+  const extractUserFromMeResponse = (payload: unknown): User | null => {
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    if ('data' in payload && payload.data && typeof payload.data === 'object') {
+      return payload.data as User;
+    }
+
+    if ('id' in payload && 'email' in payload) {
+      return payload as User;
+    }
+
+    const userPayload = { ...(payload as Record<string, unknown>) };
+    delete userPayload.success;
+    delete userPayload.message;
+    if ('id' in userPayload && 'email' in userPayload) {
+      return userPayload as unknown as User;
+    }
+
+    return null;
+  };
 
   useEffect(() => {
-    let active = true;
+    isActiveRef.current = true;
 
     const cleanDesktopTokenFromUrl = () => {
       const params = new URLSearchParams(window.location.search);
@@ -60,12 +113,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const nextOrg = payload?.organization;
 
             if (nextToken && nextUser) {
-              sessionStorage.setItem('token', nextToken);
-              sessionStorage.setItem('user', JSON.stringify(nextUser));
-              if (nextOrg) {
-                sessionStorage.setItem('organization', JSON.stringify(nextOrg));
+              if (isActiveRef.current) {
+                storeAuthState(nextToken, nextUser, nextOrg);
               } else {
-                sessionStorage.removeItem('organization');
+                sessionStorage.setItem('token', nextToken);
+                sessionStorage.setItem('user', JSON.stringify(nextUser));
+                if (nextOrg) {
+                  sessionStorage.setItem('organization', JSON.stringify(nextOrg));
+                } else {
+                  sessionStorage.removeItem('organization');
+                }
               }
             }
           }
@@ -83,17 +140,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const storedOrg = sessionStorage.getItem('organization');
 
       if (storedToken) {
-        setToken(storedToken);
+        if (isActiveRef.current) {
+          setToken(storedToken);
+        }
         if (storedUser) {
           try {
-            setUser(JSON.parse(storedUser));
+            if (isActiveRef.current) {
+              setUser(JSON.parse(storedUser));
+            }
           } catch {
             sessionStorage.removeItem('user');
           }
         }
         if (storedOrg) {
           try {
-            setOrganization(JSON.parse(storedOrg));
+            if (isActiveRef.current) {
+              setOrganization(JSON.parse(storedOrg));
+            }
           } catch {
             sessionStorage.removeItem('organization');
           }
@@ -103,26 +166,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      if (active) {
+      if (isActiveRef.current) {
         setIsLoading(false);
       }
     };
 
     bootstrapAuth();
 
+    const handleAuthCleared = () => {
+      if (isActiveRef.current) {
+        clearAuthState();
+        setIsLoading(false);
+      }
+    };
+
+    window.addEventListener('app:auth-cleared', handleAuthCleared);
+
     return () => {
-      active = false;
+      isActiveRef.current = false;
+      window.removeEventListener('app:auth-cleared', handleAuthCleared);
     };
   }, []);
 
   const fetchUser = async () => {
     try {
       const response = await authApi.me();
-      setUser(response.data);
-      sessionStorage.setItem('user', JSON.stringify(response.data));
+      const nextUser = extractUserFromMeResponse(response.data);
+
+      if (!nextUser) {
+        throw new Error('Invalid auth payload');
+      }
+
+      if (!isActiveRef.current) {
+        return;
+      }
+
+      setUser(nextUser);
+      sessionStorage.setItem('user', JSON.stringify(nextUser));
     } catch (error) {
       console.error('Failed to fetch user:', error);
-      logout();
+      if (isActiveRef.current) {
+        clearAuthState();
+      }
     }
   };
 
@@ -146,29 +231,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      
-      setUser(demoUser);
-      setOrganization(demoOrg);
-      setToken('demo-token-12345');
-      
-      sessionStorage.setItem('token', 'demo-token-12345');
-      sessionStorage.setItem('user', JSON.stringify(demoUser));
-      sessionStorage.setItem('organization', JSON.stringify(demoOrg));
+
+      storeAuthState('demo-token-12345', demoUser, demoOrg);
       return;
     }
 
     const response = await authApi.login({ email, password });
     const { user: userData, token: authToken, organization: org } = response.data;
-    
-    setUser(userData);
-    setToken(authToken);
-    if (org) {
-      setOrganization(org);
-      sessionStorage.setItem('organization', JSON.stringify(org));
-    }
-    
-    sessionStorage.setItem('token', authToken);
-    sessionStorage.setItem('user', JSON.stringify(userData));
+
+    storeAuthState(authToken, userData, org);
   };
 
   const register = async (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => {
@@ -191,14 +262,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      
-      setUser(demoUser);
-      setOrganization(demoOrg);
-      setToken('demo-token-12345');
-      
-      sessionStorage.setItem('token', 'demo-token-12345');
-      sessionStorage.setItem('user', JSON.stringify(demoUser));
-      sessionStorage.setItem('organization', JSON.stringify(demoOrg));
+
+      storeAuthState('demo-token-12345', demoUser, demoOrg);
       return;
     }
 
@@ -212,16 +277,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     
     const { user: userData, token: authToken, organization: org } = response.data;
-    
-    setUser(userData);
-    setToken(authToken);
-    if (org) {
-      setOrganization(org);
-      sessionStorage.setItem('organization', JSON.stringify(org));
-    }
-    
-    sessionStorage.setItem('token', authToken);
-    sessionStorage.setItem('user', JSON.stringify(userData));
+
+    storeAuthState(authToken, userData, org);
   };
 
   const logout = async () => {
@@ -232,12 +289,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('Logout error:', error);
       }
     }
-    setUser(null);
-    setToken(null);
-    setOrganization(null);
-    sessionStorage.removeItem('token');
-    sessionStorage.removeItem('user');
-    sessionStorage.removeItem('organization');
+    clearAuthState();
   };
 
   const updateUser = (updatedUser: User) => {
