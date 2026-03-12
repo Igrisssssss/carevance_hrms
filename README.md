@@ -1,34 +1,27 @@
 # TimeTrack Pro
 
-TimeTrack Pro is a Laravel + React time tracking platform with a desktop shell for tracker workflows and a full-featured web app for management/reporting.
+TimeTrack Pro is a Laravel 12 API with a React 18 frontend and an optional Electron desktop shell for timer capture, screenshots, and desktop activity context.
 
-## Highlights
-
-- Desktop shell with focused actions: Timer, Dashboard (opens web), Edit Time, Settings, and admin-only Screenshot shortcut.
-- Web dashboard is report-first (role-based).
-- Attendance with punch in/out, leave requests, time-edit requests, and calendar.
-- Payroll structures, payslip generation, payment marking, and PDF download.
-- Admin user management with add/edit/delete users.
-- Report groups (teams) to filter reports by group or selected users.
-- Separate desktop/web tokens via auth handoff.
-- Tab-isolated web sessions (`sessionStorage`) so logout in one tab does not force logout in others.
-
-## Tech Stack
+## Stack
 
 ### Backend
-- Laravel 11
-- PostgreSQL
-- Token auth via `personal_access_tokens`
+- Laravel 12
+- PHP 8.2+
+- Token auth via the `personal_access_tokens` table and custom API middleware
+- Default queue connection: `database`
+- Private file storage for screenshots and chat attachments
 
 ### Frontend
 - React 18 + TypeScript
-- Vite
-- Tailwind CSS
-- React Router
+- Vite 5
+- Tailwind CSS 3
+- React Router 6
 - Axios
+- TanStack React Query 5
 
 ### Desktop
-- Electron shell (`desktop/`)
+- Electron 33
+- `active-win` for active window context
 
 ## Repository Structure
 
@@ -42,9 +35,7 @@ demo_laravel_2/
   README.md
 ```
 
-## Setup
-
-## 1) Backend
+## Backend Setup
 
 ```bash
 cd backend
@@ -53,81 +44,75 @@ copy .env.example .env
 php artisan key:generate
 ```
 
-Configure DB in `backend/.env`:
+Update `backend/.env` for your environment. The default example is PostgreSQL-based:
 
 ```env
+APP_NAME="TimeTrack Pro"
+APP_URL=http://localhost:8000
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+
 DB_CONNECTION=pgsql
 DB_HOST=127.0.0.1
 DB_PORT=5432
 DB_DATABASE=timetrackpro
 DB_USERNAME=postgres
 DB_PASSWORD=your_password
+
+QUEUE_CONNECTION=database
+SESSION_DRIVER=database
+CACHE_STORE=database
+FILESYSTEM_DISK=local
+API_TOKEN_TTL_MINUTES=10080
 ```
 
-Run migrations:
+Run the required bootstrap commands:
 
 ```bash
 php artisan migrate
 ```
 
-Start backend:
+Start the API:
 
 ```bash
 php artisan serve
 ```
 
-## 2) Frontend
+Queue processing:
+
+```bash
+php artisan queue:listen --tries=1 --timeout=0
+```
+
+Notes:
+- `storage:link` is not required for screenshots or chat attachments.
+- The repo uses the database queue driver by default. The migrations already include the `jobs` table, but Redis is the better production target for queue and cache.
+- No broadcasting server setup is required for the current codebase.
+
+## Frontend Setup
 
 ```bash
 cd frontend
 npm install
+copy .env.example .env
 ```
 
-Create/update `frontend/.env`:
+Recommended `frontend/.env` values for local development:
 
 ```env
 VITE_API_URL=http://localhost:8000/api
-# optional for desktop external-open target:
-# VITE_WEB_APP_URL=http://localhost:5173
-# optional installer/download button override on login page:
-# VITE_DESKTOP_DOWNLOAD_URL=https://your-domain.com/api/downloads/desktop/windows
-# VITE_DESKTOP_DOWNLOAD_LABEL=Download for Windows
+VITE_WEB_APP_URL=http://localhost:5173
+# Optional: overrides the backend-powered installer download endpoint
+# VITE_DESKTOP_DOWNLOAD_URL=http://localhost:8000/api/downloads/desktop/windows
+VITE_DESKTOP_DOWNLOAD_LABEL=Download for Windows
 ```
 
-Start frontend:
+Start the frontend:
 
 ```bash
 npm run dev
 ```
 
-## Live deployment
-
-For a deployed setup, configure the frontend and backend with public URLs.
-
-Example backend `.env`:
-
-```env
-APP_URL=https://your-backend-domain.com
-FRONTEND_URL=https://your-frontend-domain.com
-DESKTOP_WINDOWS_DOWNLOAD_URL=https://github.com/Igrisssssss/download_time_tracker/releases/download/v1.0.0/TimeTrack.Pro-Setup-1.0.0-x64.exe
-```
-
-Example frontend `.env`:
-
-```env
-VITE_API_URL=https://your-backend-domain.com/api
-VITE_WEB_APP_URL=https://your-frontend-domain.com
-```
-
-With that setup, the login page download button will call:
-
-```text
-https://your-backend-domain.com/api/downloads/desktop/windows
-```
-
-The browser will start downloading the installer directly through your backend endpoint.
-
-## 3) Desktop (optional)
+## Desktop Setup
 
 ```bash
 cd desktop
@@ -135,88 +120,150 @@ npm install
 npm start
 ```
 
-Optional desktop URL override:
+The desktop shell reads the target web app URL from the `APP_URL` process environment variable. If it is not set, it opens:
+
+```text
+http://localhost:5173
+```
+
+To point the desktop app at another frontend during the current shell session:
 
 ```powershell
 $env:APP_URL="http://localhost:5173"
 npm start
 ```
 
-If you want users to install the desktop app from the login page, host your installer somewhere public and set `VITE_DESKTOP_DOWNLOAD_URL` in `frontend/.env`. The login page will then show a download button automatically.
+## Shared/Deployed Setup
 
-To make the download start from your own app domain instead of sending users to GitHub, set this in `backend/.env`:
+Backend example:
 
 ```env
-DESKTOP_WINDOWS_DOWNLOAD_URL=https://github.com/Igrisssssss/download_time_tracker/releases/latest/download/TimeTrack%20Pro-Setup-1.0.0-x64.exe
+APP_URL=https://your-backend-domain.com
+CORS_ALLOWED_ORIGINS=https://your-frontend-domain.com
+API_TOKEN_TTL_MINUTES=10080
+SESSION_SECURE_COOKIE=true
+QUEUE_CONNECTION=redis
+CACHE_STORE=redis
+DESKTOP_WINDOWS_DOWNLOAD_URL=https://github.com/<owner>/<repo>/releases/latest/download/TimeTrack%20Pro-Setup-1.0.0-x64.exe
+PAYROLL_STRIPE_RETURN_URL=https://your-frontend-domain.com/payroll
+PAYROLL_STRIPE_SUCCESS_URL=https://your-frontend-domain.com/payroll?payment=success
+PAYROLL_STRIPE_CANCEL_URL=https://your-frontend-domain.com/payroll?payment=cancelled
 ```
 
-The public endpoint will then be:
+Frontend example:
 
-```text
-http://localhost:8000/api/downloads/desktop/windows
+```env
+VITE_API_URL=https://your-backend-domain.com/api
+VITE_WEB_APP_URL=https://your-frontend-domain.com
 ```
 
-Your login page is already configured to use that backend endpoint by default.
+## Render Deploy
 
-## Role-Based Behavior
+This repo now includes a Render Blueprint at [`render.yaml`](/d:/demo_laravel_2/render.yaml).
 
-- Employee:
-  - Web dashboard shows self report only.
-  - Desktop screenshot shortcut is hidden.
-- Admin/Manager:
-  - Web dashboard defaults to team report.
-  - Can filter reports by team, selected users, or groups.
-  - Can access User Management and manage groups.
+It covers the two deploy-critical pieces that were causing the dashboard to disappear after manual deploy:
+- The frontend static site includes an SPA rewrite from `/*` to `/index.html`, which React Router needs for `/dashboard` and other client routes.
+- The backend and frontend env vars are declared explicitly so Render prompts for production values instead of silently falling back to localhost defaults.
 
-## New Report Group Feature
+Use it like this:
 
-Backend endpoints:
+1. In Render, create a new Blueprint and point it at this repo.
+2. Let Render create:
+   - `carevance-frontend` as a Static Site
+   - `carevance-backend` as a Docker Web Service
+3. Enter the prompted values:
 
-- `GET /api/report-groups`
-- `POST /api/report-groups`
-- `PUT /api/report-groups/{id}`
-- `DELETE /api/report-groups/{id}`
+Frontend:
 
-Reports endpoint supports group filtering:
-
-- `GET /api/reports/overall?group_ids[]=1&group_ids[]=2`
-
-## Auth and Session Notes
-
-- Desktop -> web links pass `desktop_token` and web exchanges it via:
-  - `POST /api/auth/handoff`
-- Web auth state uses `sessionStorage` (tab/window isolated).
-
-## Important Migration Note
-
-If you pull latest changes and get `relation "report_groups" does not exist`, run:
-
-```bash
-cd backend
-php artisan migrate
+```env
+VITE_API_URL=https://YOUR-BACKEND.onrender.com/api
+VITE_WEB_APP_URL=https://YOUR-FRONTEND.onrender.com
+VITE_DESKTOP_DOWNLOAD_URL=https://YOUR-BACKEND.onrender.com/api/downloads/desktop/windows
 ```
 
-This creates:
+Backend:
 
-- `report_groups`
-- `report_group_user`
-
-## Build/Test
-
-### Frontend production build
-
-```bash
-cd frontend
-npm run build
+```env
+APP_URL=https://YOUR-BACKEND.onrender.com
+CORS_ALLOWED_ORIGINS=https://YOUR-FRONTEND.onrender.com
+DB_HOST=YOUR_RENDER_POSTGRES_HOST
+DB_DATABASE=YOUR_RENDER_POSTGRES_DB
+DB_USERNAME=YOUR_RENDER_POSTGRES_USER
+DB_PASSWORD=YOUR_RENDER_POSTGRES_PASSWORD
+DESKTOP_WINDOWS_DOWNLOAD_URL=https://github.com/<owner>/<repo>/releases/latest/download/CareVance-Setup-1.0.0-x64.exe
+PAYROLL_STRIPE_RETURN_URL=https://YOUR-FRONTEND.onrender.com/payroll
+PAYROLL_STRIPE_SUCCESS_URL=https://YOUR-FRONTEND.onrender.com/payroll?payment=success
+PAYROLL_STRIPE_CANCEL_URL=https://YOUR-FRONTEND.onrender.com/payroll?payment=cancelled
 ```
 
-### Backend tests
+If you keep deploying manually instead of using the Blueprint, you still need the same values and the same SPA rewrite. Without those, the dashboard can build successfully but still fail at runtime.
+
+Desktop example:
+
+```powershell
+$env:APP_URL="https://your-frontend-domain.com"
+npm start
+```
+
+Installer download behavior:
+- Frontend pages default to `VITE_API_URL` without `/api`, then call `/api/downloads/desktop/windows`.
+- Backend serves that endpoint by streaming the file behind `DESKTOP_WINDOWS_DOWNLOAD_URL`.
+- `VITE_DESKTOP_DOWNLOAD_URL` is only an optional frontend override.
+
+## Environment Variables In Use
+
+### Backend
+- `APP_NAME`
+- `APP_URL`
+- `CORS_ALLOWED_ORIGINS`
+- `DB_*`
+- `QUEUE_CONNECTION`
+- `SESSION_DRIVER`
+- `CACHE_STORE`
+- `FILESYSTEM_DISK`
+- `API_TOKEN_TTL_MINUTES`
+- `SCREENSHOT_URL_TTL_MINUTES`
+- `RATE_LIMIT_*`
+- `DESKTOP_WINDOWS_DOWNLOAD_URL`
+- `ATTENDANCE_LATE_AFTER`
+- `ATTENDANCE_SHIFT_SECONDS`
+- `PAYROLL_*`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+
+### Frontend
+- `VITE_API_URL`
+- `VITE_WEB_APP_URL`
+- `VITE_DESKTOP_DOWNLOAD_URL`
+- `VITE_DESKTOP_DOWNLOAD_LABEL`
+
+### Desktop
+- `APP_URL`
+
+## Operational Notes
+
+- `backend/.env.example` is aligned to the app's PostgreSQL-first setup and keeps permissive CORS scoped to localhost only.
+- The app uses a custom bearer-token middleware, not Laravel Sanctum middleware.
+- The desktop shell already supports opening web pages externally and desktop-only tracker APIs through `preload.cjs`.
+- The `/team` route redirects to `/user-management`.
+
+## Validation Commands
 
 ```bash
 cd backend
 php artisan test
 ```
 
+```bash
+cd frontend
+npm run build
+```
+
+```bash
+cd desktop
+npm run dist:win
+```
+
 ## License
 
-Commercial - All rights reserved.
+Commercial - all rights reserved.
