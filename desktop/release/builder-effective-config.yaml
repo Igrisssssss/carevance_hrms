@@ -1,0 +1,27 @@
+directories:
+  output: release
+  buildResources: build
+appId: com.timetrackpro.desktop
+productName: CareVance Tracker
+icon: assets/icon.ico
+files:
+  - filter:
+      - main.cjs
+      - preload.cjs
+      - assets/**/*
+      - package.json
+asar: true
+win:
+  target:
+    - nsis
+  icon: assets/icon.ico
+  signAndEditExecutable: false
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: CareVance Tracker
+electronVersion: 33.4.11
