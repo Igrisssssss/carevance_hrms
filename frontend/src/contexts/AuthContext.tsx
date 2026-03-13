@@ -21,6 +21,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const DEMO_MODE = false;
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
+const getResponseStatus = (error: unknown): number | null => {
+  if (!error || typeof error !== 'object' || !('response' in error)) {
+    return null;
+  }
+
+  const response = (error as { response?: { status?: number } }).response;
+  return typeof response?.status === 'number' ? response.status : null;
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -286,7 +295,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await authApi.logout();
       } catch (error) {
-        console.error('Logout error:', error);
+        const status = getResponseStatus(error);
+        if (status !== 401 && status !== 403) {
+          console.error('Logout error:', error);
+        }
       }
     }
     clearAuthState();
