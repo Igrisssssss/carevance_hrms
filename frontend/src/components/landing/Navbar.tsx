@@ -4,6 +4,7 @@ import { Download, Menu, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import BrandLogo from '@/components/branding/BrandLogo';
+import { desktopDownloadUrl } from '@/lib/runtimeConfig';
 
 const navItems = [
   { label: 'Product', href: '#product' },
@@ -12,11 +13,6 @@ const navItems = [
   { label: 'Screens', href: '#screenshots' },
   { label: 'Security', href: '#security' },
 ];
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-const API_BASE_URL = API_URL.replace(/\/api\/?$/, '');
-const desktopDownloadUrl =
-  import.meta.env.VITE_DESKTOP_DOWNLOAD_URL?.trim() || `${API_BASE_URL}/api/downloads/desktop/windows`;
 
 export default function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);

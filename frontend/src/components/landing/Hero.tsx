@@ -2,6 +2,7 @@ import { motion, Variants } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BarChart3, CalendarRange, Clock4, Download } from 'lucide-react';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
+import { desktopDownloadUrl } from '@/lib/runtimeConfig';
 
 const container: Variants = {
   hidden: { opacity: 0 },
@@ -17,11 +18,6 @@ const item: Variants = {
   hidden: { opacity: 0, y: 28 },
   show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: 'easeOut' } },
 };
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-const API_BASE_URL = API_URL.replace(/\/api\/?$/, '');
-const desktopDownloadUrl =
-  import.meta.env.VITE_DESKTOP_DOWNLOAD_URL?.trim() || `${API_BASE_URL}/api/downloads/desktop/windows`;
 
 export default function Hero() {
   return (

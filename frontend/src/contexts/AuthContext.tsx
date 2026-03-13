@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { User, Organization } from '@/types';
 import { authApi } from '@/services/api';
+import { apiUrl } from '@/lib/runtimeConfig';
 
 interface AuthContextType {
   user: User | null;
@@ -19,7 +20,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Demo mode - set to true to use mock data without backend
 const DEMO_MODE = false;
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_URL = apiUrl;
 
 const getResponseStatus = (error: unknown): number | null => {
   if (!error || typeof error !== 'object' || !('response' in error)) {

@@ -28,11 +28,10 @@ import type {
   AppNotificationItem,
   UserProfile360,
 } from '@/types';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+import { apiUrl } from '@/lib/runtimeConfig';
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: apiUrl,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',

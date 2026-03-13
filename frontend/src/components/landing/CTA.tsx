@@ -2,11 +2,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Download } from 'lucide-react';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-const API_BASE_URL = API_URL.replace(/\/api\/?$/, '');
-const desktopDownloadUrl =
-  import.meta.env.VITE_DESKTOP_DOWNLOAD_URL?.trim() || `${API_BASE_URL}/api/downloads/desktop/windows`;
+import { desktopDownloadUrl } from '@/lib/runtimeConfig';
 
 export default function CTA() {
   return (

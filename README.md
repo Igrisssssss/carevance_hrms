@@ -157,19 +157,25 @@ VITE_API_URL=https://your-backend-domain.com/api
 VITE_WEB_APP_URL=https://your-frontend-domain.com
 ```
 
+The frontend now ships with a production Nginx config and Dockerfile in [`frontend/Dockerfile`](/d:/demo_laravel_2/frontend/Dockerfile). That setup keeps clean React Router URLs working on refresh with:
+
+```nginx
+try_files $uri $uri/ /index.html;
+```
+
+It also injects frontend env vars at runtime through [`env-config.js`](/d:/demo_laravel_2/frontend/public/env-config.js), so the same image can be promoted across environments without rebuilding.
+
 ## Render Deploy
 
 This repo now includes a Render Blueprint at [`render.yaml`](/d:/demo_laravel_2/render.yaml).
 
-It covers the two deploy-critical pieces that were causing the dashboard to disappear after manual deploy:
-- The frontend static site includes an SPA rewrite from `/*` to `/index.html`, which React Router needs for `/dashboard` and other client routes.
-- The backend and frontend env vars are declared explicitly so Render prompts for production values instead of silently falling back to localhost defaults.
+It now uses Docker for both services so the frontend is served by Nginx with SPA fallback instead of depending on static-host rewrite behavior.
 
 Use it like this:
 
 1. In Render, create a new Blueprint and point it at this repo.
 2. Let Render create:
-   - `carevance-frontend` as a Static Site
+   - `carevance-frontend` as a Docker Web Service
    - `carevance-backend` as a Docker Web Service
 3. Enter the prompted values:
 
@@ -196,7 +202,7 @@ PAYROLL_STRIPE_SUCCESS_URL=https://YOUR-FRONTEND.onrender.com/payroll?payment=su
 PAYROLL_STRIPE_CANCEL_URL=https://YOUR-FRONTEND.onrender.com/payroll?payment=cancelled
 ```
 
-If you keep deploying manually instead of using the Blueprint, you still need the same values and the same SPA rewrite. Without those, the dashboard can build successfully but still fail at runtime.
+If you deploy the frontend manually on AWS, ECS, EC2, or another container platform, use the same [`frontend/Dockerfile`](/d:/demo_laravel_2/frontend/Dockerfile) and pass the same `VITE_*` env vars at container runtime. The included Nginx config handles `/dashboard`, `/payroll`, and the rest of the app on hard refresh without hash routes or host-specific rewrite hacks.
 
 Desktop example:
 

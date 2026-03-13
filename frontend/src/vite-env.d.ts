@@ -10,6 +10,14 @@ interface DesktopTrackerBridge {
   } | null>;
 }
 
+interface AppRuntimeConfig {
+  VITE_API_URL?: string;
+  VITE_WEB_APP_URL?: string;
+  VITE_DESKTOP_DOWNLOAD_URL?: string;
+  VITE_DESKTOP_DOWNLOAD_LABEL?: string;
+}
+
 interface Window {
   desktopTracker?: DesktopTrackerBridge;
+  __APP_CONFIG__?: AppRuntimeConfig;
 }

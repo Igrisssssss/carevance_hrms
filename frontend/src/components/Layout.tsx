@@ -2,6 +2,7 @@ import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { hasAdminAccess } from '@/lib/permissions';
+import { webAppUrl } from '@/lib/runtimeConfig';
 import { chatApi, notificationApi } from '@/services/api';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
@@ -30,7 +31,7 @@ export default function Layout() {
   const profileRef = useRef<HTMLDivElement | null>(null);
   const isAdminView = hasAdminAccess(user);
   const isDesktopShell = Boolean(window.desktopTracker);
-  const webAppBaseUrl = (import.meta.env.VITE_WEB_APP_URL || window.location.origin).replace(/\/+$/, '');
+  const webAppBaseUrl = webAppUrl.replace(/\/+$/, '');
 
   const openWebDashboard = (path: string) => {
     const target = path.startsWith('/') ? path : `/${path}`;

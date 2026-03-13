@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { payrollApi } from '@/services/api';
 import type { PayrollRecord, PayrollTransaction } from '@/types';
 import { RefreshCw, Wallet } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import FilterPanel from '@/components/dashboard/FilterPanel';
@@ -33,6 +34,8 @@ const money = (value: number) =>
 const defaultMonth = () => new Date().toISOString().slice(0, 7);
 
 export default function Payroll() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [employees, setEmployees] = useState<OrgEmployee[]>([]);
   const [records, setRecords] = useState<PayrollRecord[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<PayrollRecord | null>(null);
@@ -100,12 +103,17 @@ export default function Payroll() {
   }, [filterEmployeeId, filterMonth, filterPayrollStatus, filterPayoutStatus]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(location.search);
     const payment = params.get('payment');
     const payrollId = Number(params.get('payroll_id') || 0);
     const checkoutSessionId = params.get('checkout_session_id') || '';
+    const clearPaymentQuery = () => navigate(location.pathname, { replace: true });
 
     const run = async () => {
+      if (!payment) {
+        return;
+      }
+
       if (payment === 'success' && payrollId > 0 && checkoutSessionId) {
         try {
           await payrollApi.syncStripeCheckout(payrollId, checkoutSessionId);
@@ -113,6 +121,8 @@ export default function Payroll() {
           await load();
         } catch (e: any) {
           setError(e?.response?.data?.message || 'Stripe payment completed but status sync failed.');
+        } finally {
+          clearPaymentQuery();
         }
         return;
       }
@@ -122,10 +132,12 @@ export default function Payroll() {
       } else if (payment === 'cancelled') {
         setError('Stripe payment was cancelled.');
       }
+
+      clearPaymentQuery();
     };
 
-    run();
-  }, []);
+    void run();
+  }, [location.pathname, location.search, navigate]);
 
   const onSelectRecord = async (record: PayrollRecord) => {
     setSelectedRecord(record);

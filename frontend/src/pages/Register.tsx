@@ -19,11 +19,7 @@ import {
 } from 'lucide-react';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import BrandLogo from '@/components/branding/BrandLogo';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-const API_BASE_URL = API_URL.replace(/\/api\/?$/, '');
-const DEFAULT_DESKTOP_DOWNLOAD_URL = `${API_BASE_URL}/api/downloads/desktop/windows`;
-const DEFAULT_DESKTOP_DOWNLOAD_LABEL = 'Download for Windows';
+import { desktopDownloadLabel, desktopDownloadUrl } from '@/lib/runtimeConfig';
 
 export default function Register() {
   const [name, setName] = useState('');
@@ -37,9 +33,6 @@ export default function Register() {
   const [isLoading, setIsLoading] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
-  const desktopDownloadUrl = import.meta.env.VITE_DESKTOP_DOWNLOAD_URL?.trim() || DEFAULT_DESKTOP_DOWNLOAD_URL;
-  const desktopDownloadLabel = import.meta.env.VITE_DESKTOP_DOWNLOAD_LABEL?.trim() || DEFAULT_DESKTOP_DOWNLOAD_LABEL;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
