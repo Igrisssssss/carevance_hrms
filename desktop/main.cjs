@@ -10,7 +10,16 @@ try {
 
 const DEFAULT_APP_URL = 'http://localhost:5173';
 const APP_URL = process.env.APP_URL || DEFAULT_APP_URL;
-const APP_ICON = path.join(__dirname, 'assets', 'icon.png');
+const APP_ICON = process.platform === 'win32'
+  ? path.join(__dirname, 'assets', 'icon.ico')
+  : path.join(__dirname, 'assets', 'icon.png');
+const APP_ID = 'com.carevance.tracker';
+
+app.setName('CareVance Tracker');
+
+if (process.platform === 'win32') {
+  app.setAppUserModelId(APP_ID);
+}
 
 const createWindow = () => {
   const mainWindow = new BrowserWindow({
