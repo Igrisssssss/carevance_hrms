@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   ArrowRight,
   BarChart3,
-  CheckCircle2,
   Clock,
   Download,
   Eye,

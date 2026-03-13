@@ -6,6 +6,7 @@ use App\Models\AttendanceRecord;
 use App\Models\LeaveRequest;
 use App\Models\Organization;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -34,7 +35,12 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
 
         $employeeHeaders = $this->apiHeadersFor($employee);
         $adminHeaders = $this->apiHeadersFor($admin);
-        $date = now()->addDay()->toDateString();
+        $leaveDate = Carbon::tomorrow()->startOfDay();
+        while ($leaveDate->isWeekend()) {
+            $leaveDate->addDay();
+        }
+
+        $date = $leaveDate->toDateString();
 
         $createResponse = $this->postJson('/api/leave-requests', [
             'start_date' => $date,

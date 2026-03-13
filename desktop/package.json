@@ -1,6 +1,6 @@
 {
   "name": "carevance-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CareVance Tracker desktop timer and activity tracker",
   "private": true,
   "author": "CareVance",
@@ -31,7 +31,6 @@
         "nsis"
       ],
       "icon": "assets/icon.ico",
-      "signAndEditExecutable": false,
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "nsis": {

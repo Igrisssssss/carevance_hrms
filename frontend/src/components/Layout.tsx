@@ -1,8 +1,8 @@
-import { Link, Outlet } from 'react-router-dom';
+import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { hasAdminAccess } from '@/lib/permissions';
-import { notificationApi } from '@/services/api';
+import { chatApi, notificationApi } from '@/services/api';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import { topNavigation } from '@/navigation/dashboardNavigation';
@@ -19,9 +19,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 export default function Layout() {
   const { user, logout, token } = useAuth();
   useDesktopTracker();
+  const navigate = useNavigate();
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [unreadChatMessages, setUnreadChatMessages] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
@@ -73,17 +75,33 @@ export default function Layout() {
 
       return navigationGroups
         .filter((group) => (group.adminOnly ? isAdminView : true))
-        .map((group) => ({
-          ...group,
-          items: group.items?.filter((item) => (item.adminOnly ? isAdminView : true)),
-        }))
+        .map((group) => {
+          const filteredItems = group.items?.filter((item) => (item.adminOnly ? isAdminView : true));
+
+          if (group.label === 'Chat') {
+            return {
+              ...group,
+              unreadCount: unreadChatMessages,
+              items: filteredItems,
+            };
+          }
+
+          return {
+            ...group,
+            items: filteredItems,
+          };
+        })
         .filter((group) => group.to || (group.items?.length || 0) > 0);
     },
-    [isAdminView, isDesktopShell]
+    [isAdminView, isDesktopShell, unreadChatMessages]
   );
 
   const handleLogout = async () => {
     await logout();
+  };
+
+  const handleOpenAddUser = () => {
+    navigate('/add-user');
   };
 
   useEffect(() => {
@@ -112,22 +130,28 @@ export default function Layout() {
   useEffect(() => {
     let active = true;
 
-    const loadNotifications = async () => {
+    const loadAlerts = async () => {
       try {
-        const response = await notificationApi.list({ limit: 20 });
+        const [notificationResponse, chatUnreadResponse] = await Promise.all([
+          notificationApi.list({ limit: 20 }),
+          chatApi.getUnreadSummary(),
+        ]);
+
         if (!active) return;
-        setNotifications(response.data?.data || []);
-        setUnreadNotifications(Number(response.data?.unread_count || 0));
+        setNotifications(notificationResponse.data?.data || []);
+        setUnreadNotifications(Number(notificationResponse.data?.unread_count || 0));
+        setUnreadChatMessages(Number(chatUnreadResponse.data?.unread_messages || 0));
       } catch {
         if (active) {
           setNotifications([]);
           setUnreadNotifications(0);
+          setUnreadChatMessages(0);
         }
       }
     };
 
-    loadNotifications();
-    const interval = setInterval(loadNotifications, 8000);
+    loadAlerts();
+    const interval = setInterval(loadAlerts, 8000);
 
     return () => {
       active = false;
@@ -163,6 +187,8 @@ export default function Layout() {
           }}
           onCloseMobileNavigation={() => setMobileNavigationOpen(false)}
           onOpenExternal={openWebDashboard}
+          onOpenAddUser={handleOpenAddUser}
+          showAddUserButton={isAdminView && !isDesktopShell}
           notificationPanel={
             <div ref={notificationsRef}>
             {notificationsOpen && (

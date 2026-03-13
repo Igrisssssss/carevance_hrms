@@ -18,8 +18,8 @@ export default function DashboardHeader({
   children,
 }: DashboardHeaderProps) {
   return (
-    <div className="relative z-30 space-y-4">
-      <SurfaceCard className="relative z-30 overflow-visible border-white/80 bg-white/88 p-5 shadow-[0_18px_44px_-34px_rgba(15,23,42,0.24)] backdrop-blur-xl sm:p-6">
+    <div className="relative z-0 space-y-4">
+      <SurfaceCard className="relative z-0 overflow-visible border-white/90 bg-white/96 p-5 shadow-[0_18px_44px_-34px_rgba(15,23,42,0.24)] sm:p-6">
         <PageHeader eyebrow={eyebrow} title={title} description={description} actions={actions} />
         {children ? <div className="mt-5 border-t border-slate-200/80 pt-5">{children}</div> : null}
       </SurfaceCard>

@@ -2,30 +2,31 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess } from '@/lib/permissions';
-import Layout from '@/components/Layout';
-import Login from '@/pages/Login';
-import Register from '@/pages/Register';
-import Dashboard from '@/pages/Dashboard';
-import AdminDashboard from '@/pages/AdminDashboard';
-import DesktopTimerDashboard from '@/pages/DesktopTimerDashboard';
-import Projects from '@/pages/Projects';
-import Tasks from '@/pages/Tasks';
-import Reports from '@/pages/Reports';
-import Invoices from '@/pages/Invoices';
-import Settings from '@/pages/Settings';
-import Monitoring from '@/pages/Monitoring';
-import Attendance from '@/pages/Attendance';
-import Chat from '@/pages/Chat';
-import Payroll from '@/pages/Payroll';
-import UserManagement from '@/pages/UserManagement';
-import AuditLogs from '@/pages/AuditLogs';
-import ApprovalInbox from '@/pages/ApprovalInbox';
-import NotificationsCenter from '@/pages/NotificationsCenter';
-import ReportsWorkspace from '@/pages/ReportsWorkspace';
-import MonitoringWorkspace from '@/pages/MonitoringWorkspace';
-import EmployeeManagementWorkspace from '@/pages/EmployeeManagementWorkspace';
 
 const LandingPage = lazy(() => import('@/pages/LandingPage'));
+const Layout = lazy(() => import('@/components/Layout'));
+const Login = lazy(() => import('@/pages/Login'));
+const Register = lazy(() => import('@/pages/Register'));
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const AdminDashboard = lazy(() => import('@/pages/AdminDashboard'));
+const DesktopTimerDashboard = lazy(() => import('@/pages/DesktopTimerDashboard'));
+const Projects = lazy(() => import('@/pages/Projects'));
+const Tasks = lazy(() => import('@/pages/Tasks'));
+const Reports = lazy(() => import('@/pages/Reports'));
+const Invoices = lazy(() => import('@/pages/Invoices'));
+const Settings = lazy(() => import('@/pages/Settings'));
+const Monitoring = lazy(() => import('@/pages/Monitoring'));
+const Attendance = lazy(() => import('@/pages/Attendance'));
+const Chat = lazy(() => import('@/pages/Chat'));
+const Payroll = lazy(() => import('@/pages/Payroll'));
+const UserManagement = lazy(() => import('@/pages/UserManagement'));
+const AuditLogs = lazy(() => import('@/pages/AuditLogs'));
+const ApprovalInbox = lazy(() => import('@/pages/ApprovalInbox'));
+const NotificationsCenter = lazy(() => import('@/pages/NotificationsCenter'));
+const ReportsWorkspace = lazy(() => import('@/pages/ReportsWorkspace'));
+const MonitoringWorkspace = lazy(() => import('@/pages/MonitoringWorkspace'));
+const EmployeeManagementWorkspace = lazy(() => import('@/pages/EmployeeManagementWorkspace'));
+const AddUserPage = lazy(() => import('@/pages/AddUserPage'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -148,6 +149,7 @@ function App() {
           <Route path="employees/invitations" element={<AdminRoute><EmployeeManagementWorkspace mode="invitations" /></AdminRoute>} />
           <Route path="employees/roles" element={<AdminRoute><EmployeeManagementWorkspace mode="roles" /></AdminRoute>} />
           <Route path="audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
+          <Route path="add-user" element={<AdminRoute><AddUserPage /></AdminRoute>} />
           <Route path="notifications" element={<NotificationsCenter />} />
           <Route path="settings" element={<Settings />} />
           <Route path="legacy/reports" element={<AdminRoute><Reports /></AdminRoute>} />

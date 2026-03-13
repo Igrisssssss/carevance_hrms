@@ -24,6 +24,7 @@ export type NavLinkItem = {
   label: string;
   to: string;
   icon: LucideIcon;
+  unreadCount?: number;
   adminOnly?: boolean;
   external?: boolean;
   externalPath?: string;
@@ -33,6 +34,7 @@ export type NavGroup = {
   label: string;
   to?: string;
   icon: LucideIcon;
+  unreadCount?: number;
   adminOnly?: boolean;
   items?: NavLinkItem[];
   external?: boolean;

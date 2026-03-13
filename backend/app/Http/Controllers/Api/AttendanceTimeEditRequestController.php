@@ -102,6 +102,7 @@ class AttendanceTimeEditRequestController extends Controller
         $adminRecipientIds = User::query()
             ->where('organization_id', $currentUser->organization_id)
             ->whereIn('role', ['admin', 'manager'])
+            ->where('id', '!=', $currentUser->id)
             ->pluck('id');
 
         $this->notificationService->sendToUsers(
@@ -109,9 +110,9 @@ class AttendanceTimeEditRequestController extends Controller
             userIds: $adminRecipientIds,
             senderId: (int) $currentUser->id,
             type: 'announcement',
-            title: 'Overtime Proof Submitted',
+            title: 'Time Edit Request Submitted',
             message: sprintf(
-                '%s submitted overtime proof for %s. Worked: %s, Overtime: %s.',
+                '%s submitted a time edit request for %s. Worked: %s, Requested overtime: %s.',
                 (string) $currentUser->name,
                 $date,
                 $this->formatDuration($workedSeconds),
@@ -181,6 +182,12 @@ class AttendanceTimeEditRequestController extends Controller
         $record->manual_adjustment_seconds = (int) ($record->manual_adjustment_seconds ?? 0) + (int) $item->extra_seconds;
         $record->save();
 
+        $this->sendReviewNotification(
+            item: $item->fresh(['user:id,name,email,role', 'reviewer:id,name,email']),
+            reviewer: $currentUser,
+            status: 'approved'
+        );
+
         $this->auditLogService->log(
             action: 'attendance.time_edit_approved',
             actor: $currentUser,
@@ -225,6 +232,12 @@ class AttendanceTimeEditRequestController extends Controller
             'review_note' => $request->review_note,
         ]);
 
+        $this->sendReviewNotification(
+            item: $item->fresh(['user:id,name,email,role', 'reviewer:id,name,email']),
+            reviewer: $currentUser,
+            status: 'rejected'
+        );
+
         $this->auditLogService->log(
             action: 'attendance.time_edit_rejected',
             actor: $currentUser,
@@ -259,5 +272,40 @@ class AttendanceTimeEditRequestController extends Controller
         $minutes = intdiv(max(0, $seconds) % 3600, 60);
 
         return sprintf('%dh %02dm', $hours, $minutes);
+    }
+
+    private function sendReviewNotification(AttendanceTimeEditRequest $item, User $reviewer, string $status): void
+    {
+        $date = Carbon::parse($item->attendance_date)->toDateString();
+        $reviewerName = trim((string) $reviewer->name);
+        $reviewerLabel = $reviewerName !== '' && $reviewer->id !== $item->user_id
+            ? " by {$reviewerName}"
+            : '';
+        $note = filled($item->review_note)
+            ? ' Note: '.$item->review_note
+            : '';
+
+        $this->notificationService->sendToUsers(
+            organizationId: (int) $item->organization_id,
+            userIds: collect([(int) $item->user_id]),
+            senderId: (int) $reviewer->id,
+            type: 'announcement',
+            title: $status === 'approved' ? 'Time Edit Request Approved' : 'Time Edit Request Rejected',
+            message: sprintf(
+                'Your time edit request for %s (%s) was %s%s.%s',
+                $date,
+                $this->formatDuration((int) $item->extra_seconds),
+                $status,
+                $reviewerLabel,
+                $note
+            ),
+            meta: [
+                'request_id' => (int) $item->id,
+                'attendance_date' => $date,
+                'status' => $status,
+                'extra_seconds' => (int) $item->extra_seconds,
+                'review_note' => $item->review_note,
+            ]
+        );
     }
 }

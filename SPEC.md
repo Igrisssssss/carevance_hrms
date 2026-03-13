@@ -1,249 +1,91 @@
-# TimeTrack Pro - SaaS Time Tracking Software
+# TimeTrack Pro - Product and Technical Spec
 
 ## Project Overview
-- **Project Name**: TimeTrack Pro
-- **Type**: SaaS Web Application (Laravel Backend + React Frontend)
-- **Core Functionality**: Employee time tracking, productivity monitoring, invoicing, and reporting SaaS product similar to Time Doctor
-- **Target Users**: Companies of all sizes, freelancers, remote teams
+
+- Project Name: TimeTrack Pro
+- Type: SaaS web application with an optional Electron desktop shell
+- Core Functionality: employee time tracking, attendance, screenshots, chat, payroll, invoicing, reporting, and admin operations
 
 ## Recent Product Updates (March 10, 2026)
-- **Attendance navigation split**:
-  - Desktop `Edit Time` now opens a dedicated time-edit/overtime screen only.
-  - Full attendance calendar remains on `Attendance` screen.
-- **Monitoring upgraded**:
-  - Added productive/unproductive classification for website/software usage.
-  - Added organization-level tool summaries and employee productivity rankings.
-  - Added live monitoring payload + UI for current active tool/status per user.
-  - Improved desktop tracker frequency and first-tick behavior for faster visibility.
-- **Tracker context improvements**:
-  - Activity now captures richer active window context (app/title/url where available).
-  - Idle events now include context name to support better classification visibility.
-  - Idle duration is capped per interval to avoid inflated idle totals.
-- **Admin UX consolidation**:
-  - Team creation/invite flow removed from Team page.
-  - Team-style time/active status system moved into `User Management`.
-  - Sidebar Team item removed; `/team` now redirects to `/user-management`.
 
----
+- Desktop `Edit Time` opens the dedicated time-edit and overtime workflow.
+- Full attendance calendar remains on the `Attendance` screen.
+- Monitoring includes productive and unproductive classification, tool summaries, employee rankings, and live active-tool status.
+- Team-style activity management moved into `User Management`.
+- `/team` redirects to `/user-management`.
 
 ## Technology Stack
 
 ### Backend
-- **Framework**: Laravel 11.x
-- **Database**: PostgreSQL
-- **Authentication**: Laravel Sanctum (API tokens)
-- **Queue**: Laravel Queue (for background jobs)
-- **File Storage**: Laravel Flysystem
+- Framework: Laravel 12
+- Language: PHP 8.2+
+- Database: PostgreSQL by default
+- Authentication: bearer tokens stored in `personal_access_tokens`
+- Queue: Laravel database queue
+- File Storage: Laravel Flysystem `public` disk for browser-accessible assets
 
 ### Frontend
-- **Framework**: React 18 with TypeScript
-- **Build Tool**: Vite
-- **State Management**: React Query + Context API
-- **UI Framework**: Custom CSS with modern design
-- **HTTP Client**: Axios
+- Framework: React 18 with TypeScript
+- Build Tool: Vite 5
+- Routing: React Router 6
+- Data Fetching: Axios and TanStack React Query 5
+- Styling: Tailwind CSS 3 plus app-specific utility styling
 
----
+### Desktop
+- Framework: Electron 33
+- Desktop Context: `active-win`
 
-## Core Features (Time Doctor Clone)
+## Core Features
 
-### 1. Authentication & Authorization
-- [x] User Registration (with email verification)
-- [x] Login/Logout
-- [x] Password Reset
-- [x] Multi-factor Authentication (optional)
-- [x] Role-based Access Control (Admin, Manager, Employee)
+### Authentication and Access
+- User registration
+- Login and logout
+- Role-based access control for admin, manager, and employee
+- Desktop-to-web token handoff
 
-### 2. Organization Management
-- [x] Create/Manage Organizations
-- [x] Invite team members
-- [x] Organization settings
-- [x] Workspace management
+### Time and Attendance
+- Start and stop timers
+- Manual time entries
+- Attendance check-in and check-out
+- Attendance calendar and summaries
+- Overtime and time-edit requests
 
-### 3. Time Tracking
-- [x] Manual time entry
-- [x] Automatic time tracking (desktop app integration)
-- [x] Start/Stop timer
-- [x] Add time entries retroactively
-- [x] Edit/Delete time entries
-- [x] Billable/Non-billable time
+### Monitoring
+- Screenshot capture from the desktop shell
+- App and URL activity collection
+- Productive and unproductive classification
+- Live employee monitoring views
 
-### 4. Screenshot Monitoring
-- [x] Automatic screenshot capture
-- [x] Screenshot storage and retrieval
-- [x] Screenshot preview in reports
-- [x] Blur sensitive screenshots option
+### Collaboration and Operations
+- Projects and tasks
+- Private chat and group chat with attachments
+- Notifications
+- User management
+- Report groups for reporting filters
 
-### 5. App & URL Monitoring
-- [x] Track active applications
-- [x] Track visited URLs
-- [x] Activity levels (active, idle, offline)
-- [x] Productivity scoring
+### Finance
+- Invoices
+- Payroll structures, records, payslips, and Stripe-oriented payment flows
 
-### 6. Task Management
-- [x] Create tasks
-- [x] Assign tasks to employees
-- [x] Task status (todo, in-progress, done)
-- [x] Task deadlines
+## Setup Expectations
 
-### 7. Project Management
-- [x] Create projects
-- [x] Assign projects to team members
-- [x] Project budgets
-- [x] Project deadlines
+### Backend
+- Copy `backend/.env.example` to `.env`
+- Configure PostgreSQL credentials or another supported Laravel database driver
+- Run `php artisan migrate`
+- Run `php artisan storage:link`
+- Run a queue worker if queued jobs need processing
 
-### 8. Reports & Analytics
-- [x] Daily/Weekly/Monthly reports
-- [x] Time breakdown by project/task
-- [x] Productivity reports
-- [x] Export reports (PDF, CSV)
-- [x] Custom date range reports
+### Frontend
+- Copy `frontend/.env.example` to `.env`
+- Point `VITE_API_URL` at the backend API
+- Set `VITE_WEB_APP_URL` when the desktop shell should open a specific web base URL
 
-### 9. Invoicing
-- [x] Create invoices from time entries
-- [x] Invoice templates
-- [x] Invoice status tracking
-- [x] Export invoices (PDF)
+### Desktop
+- Set process env `APP_URL` only when the shell should point somewhere other than `http://localhost:5173`
 
-### 10. Billing & Subscriptions (SaaS)
-- [x] Multiple pricing plans
-- [x] Subscription management
-- [x] Payment integration (Stripe)
-- [x] Usage tracking
-- [x] Billing portal
+## Operational Notes
 
----
-
-## Database Schema
-
-### Users Table
-- id, name, email, password, role, organization_id, avatar, created_at, updated_at
-
-### Organizations Table
-- id, name, slug, settings, subscription_status, created_at, updated_at
-
-### TimeEntries Table
-- id, user_id, task_id, project_id, start_time, end_time, duration, description, billable, created_at, updated_at
-
-### Screenshots Table
-- id, time_entry_id, filename, thumbnail, created_at
-
-### Activities Table
-- id, user_id, type (app/url), name, duration, created_at
-
-### Tasks Table
-- id, project_id, title, description, status, assignee_id, due_date, created_at, updated_at
-
-### Projects Table
-- id, organization_id, name, description, budget, created_at, updated_at
-
-### Invoices Table
-- id, organization_id, client_name, client_email, amount, status, due_date, created_at, updated_at
-
----
-
-## API Endpoints Structure
-
-### Auth
-- POST /api/auth/register
-- POST /api/auth/login
-- POST /api/auth/logout
-- POST /api/auth/forgot-password
-
-### Organizations
-- GET /api/organizations
-- POST /api/organizations
-- GET /api/organizations/{id}
-- PUT /api/organizations/{id}
-
-### Time Entries
-- GET /api/time-entries
-- POST /api/time-entries
-- PUT /api/time-entries/{id}
-- DELETE /api/time-entries/{id}
-
-### Projects
-- GET /api/projects
-- POST /api/projects
-- PUT /api/projects/{id}
-- DELETE /api/projects/{id}
-
-### Tasks
-- GET /api/tasks
-- POST /api/tasks
-- PUT /api/tasks/{id}
-- DELETE /api/tasks/{id}
-
-### Reports
-- GET /api/reports/daily
-- GET /api/reports/weekly
-- GET /api/reports/monthly
-- GET /api/reports/productivity
-
-### Invoices
-- GET /api/invoices
-- POST /api/invoices
-- GET /api/invoices/{id}
-- PUT /api/invoices/{id}
-
----
-
-## Project Structure
-
-```
-demo_laravel_2/
-├── backend/                 # Laravel API
-│   ├── app/
-│   ├── config/
-│   ├── database/
-│   ├── routes/
-│   ├── .env
-│   └── composer.json
-│
-├── frontend/                 # React Frontend
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── hooks/
-│   │   ├── services/
-│   │   ├── types/
-│   │   └── App.tsx
-│   ├── package.json
-│   └── vite.config.ts
-│
-└── SPEC.md
-```
-
----
-
-## Implementation Phases
-
-### Phase 1: Setup & Authentication
-- Install Laravel & React
-- Configure PostgreSQL
-- User authentication system
-- Organization management
-
-### Phase 2: Core Time Tracking
-- Time entry CRUD
-- Timer functionality
-- Manual time entry
-
-### Phase 3: Monitoring Features
-- Screenshot management
-- Activity tracking
-- App/URL monitoring
-
-### Phase 4: Project & Task Management
-- Projects CRUD
-- Tasks CRUD
-- Task assignment
-
-### Phase 5: Reports & Invoicing
-- Report generation
-- Invoice creation
-- Export functionality
-
-### Phase 6: SaaS Features
-- Subscription management
-- Billing integration
-- Usage tracking
+- No dedicated broadcasting server is configured in this repository.
+- Public file access depends on Laravel's storage symlink.
+- The app structure is split into `backend/`, `frontend/`, and `desktop/`.

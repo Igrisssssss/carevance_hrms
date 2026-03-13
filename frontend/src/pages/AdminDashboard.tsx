@@ -1453,6 +1453,7 @@ export default function AdminDashboard() {
           Dashboard data is refreshing for the current filter selection.
         </div>
       ) : null}
+
     </div>
   );
 }

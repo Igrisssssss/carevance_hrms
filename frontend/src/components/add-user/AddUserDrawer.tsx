@@ -1,0 +1,500 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronDown, Loader2, UserPlus, X } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import Button from '@/components/ui/Button';
+import { FeedbackBanner, PageEmptyState } from '@/components/ui/PageState';
+import { FieldLabel, SelectInput, ToggleInput } from '@/components/ui/FormField';
+import EmailTagInput from '@/components/add-user/EmailTagInput';
+import RoleSelector from '@/components/add-user/RoleSelector';
+import GroupMultiSelect from '@/components/add-user/GroupMultiSelect';
+import ProjectMultiSelect from '@/components/add-user/ProjectMultiSelect';
+import InviteLinkPanel from '@/components/add-user/InviteLinkPanel';
+import CsvUploadPanel from '@/components/add-user/CsvUploadPanel';
+import {
+  addUserService,
+  AdditionalInviteSettings,
+  InviteUserRole,
+} from '@/services/addUser';
+
+type AddUserTab = 'email' | 'link' | 'csv';
+
+const tabOptions: Array<{ id: AddUserTab; label: string; description: string }> = [
+  { id: 'email', label: 'Invite by Email', description: 'Invite multiple people with their roles and access.' },
+  { id: 'link', label: 'Invite by Link', description: 'Generate a reusable onboarding link for self-serve joins.' },
+  { id: 'csv', label: 'Add by CSV', description: 'Bulk import employees, managers, admins, or clients.' },
+];
+
+const defaultSettings: AdditionalInviteSettings = {
+  monitoringInterval: 10,
+  canEditTime: false,
+  attendanceMonitoring: true,
+  payrollVisibility: false,
+  taskAssignmentAccess: true,
+};
+
+export default function AddUserDrawer({
+  open,
+  onClose,
+  onCompleted,
+  presentation = 'modal',
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCompleted?: () => void;
+  presentation?: 'modal' | 'inline';
+}) {
+  const { organization } = useAuth();
+  const queryClient = useQueryClient();
+  const storedDefaults = useMemo(() => addUserService.loadDefaults(), []);
+
+  const [activeTab, setActiveTab] = useState<AddUserTab>('email');
+  const [emails, setEmails] = useState<string[]>([]);
+  const [invalidEmails, setInvalidEmails] = useState<string[]>([]);
+  const [role, setRole] = useState<InviteUserRole>('employee');
+  const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>(storedDefaults.groupIds);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<number[]>(storedDefaults.projectIds);
+  const [rememberDefaults, setRememberDefaults] = useState(storedDefaults.remember);
+  const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
+  const [settings, setSettings] = useState<AdditionalInviteSettings>(defaultSettings);
+  const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const [inviteUrl, setInviteUrl] = useState('');
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvSummary, setCsvSummary] = useState<{ parsedCount: number; successCount: number; errorCount: number } | null>(null);
+  const [csvError, setCsvError] = useState<string | null>(null);
+
+  const groupsQuery = useQuery({
+    queryKey: ['add-user-groups'],
+    queryFn: addUserService.fetchGroups,
+    enabled: open,
+  });
+
+  const projectsQuery = useQuery({
+    queryKey: ['add-user-projects'],
+    queryFn: addUserService.fetchProjects,
+    enabled: open,
+  });
+
+  useEffect(() => {
+    if (!open || presentation !== 'modal') return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [onClose, open, presentation]);
+
+  useEffect(() => {
+    if (!open) return;
+    setFeedback(null);
+    setCsvError(null);
+    setCsvSummary(null);
+  }, [activeTab, open]);
+
+  const saveDefaultsIfNeeded = () => {
+    if (!rememberDefaults) {
+      addUserService.clearDefaults();
+      return;
+    }
+
+    addUserService.saveDefaults({
+      remember: true,
+      groupIds: selectedGroupIds,
+      projectIds: selectedProjectIds,
+    });
+  };
+
+  const inviteMutation = useMutation({
+    mutationFn: async () => {
+      if (!organization?.id) {
+        throw new Error('Organization context is required to invite users.');
+      }
+
+      return addUserService.inviteByEmail({
+        organizationId: organization.id,
+        emails,
+        role,
+        groupIds: selectedGroupIds,
+        projectIds: selectedProjectIds,
+        settings,
+      });
+    },
+    onSuccess: async (result) => {
+      saveDefaultsIfNeeded();
+      setFeedback({
+        tone: result.failed.length > 0 ? 'error' : 'success',
+        message:
+          result.failed.length > 0
+            ? `Sent ${result.invitedCount} invite(s). ${result.failed.length} failed.`
+            : `Sent ${result.invitedCount} invite(s) successfully.`,
+      });
+      setEmails([]);
+      setInvalidEmails([]);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-users'] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organization?.id] }),
+        queryClient.invalidateQueries({ queryKey: ['add-user-groups'] }),
+      ]);
+      onCompleted?.();
+    },
+    onError: (error: any) => {
+      setFeedback({
+        tone: 'error',
+        message: error?.response?.data?.message || error?.message || 'Failed to send invites.',
+      });
+    },
+  });
+
+  const linkMutation = useMutation({
+    mutationFn: async () =>
+      addUserService.generateInviteLink({
+        role,
+        groupIds: selectedGroupIds,
+        projectIds: selectedProjectIds,
+        settings,
+      }),
+    onSuccess: (result) => {
+      saveDefaultsIfNeeded();
+      setInviteUrl(result.url);
+      setFeedback({ tone: 'success', message: 'Invite link generated.' });
+    },
+    onError: (error: any) => {
+      setFeedback({ tone: 'error', message: error?.message || 'Failed to generate invite link.' });
+    },
+  });
+
+  const copyLinkMutation = useMutation({
+    mutationFn: async () => addUserService.copyInviteLink(inviteUrl),
+    onSuccess: () => setFeedback({ tone: 'success', message: 'Invite link copied.' }),
+    onError: () => setFeedback({ tone: 'error', message: 'Unable to copy invite link.' }),
+  });
+
+  const csvMutation = useMutation({
+    mutationFn: async () => {
+      if (!organization?.id) {
+        throw new Error('Organization context is required to import users.');
+      }
+      if (!csvFile) {
+        throw new Error('Select a CSV file first.');
+      }
+      if (!csvFile.name.toLowerCase().endsWith('.csv')) {
+        throw new Error('Only CSV files are supported.');
+      }
+
+      return addUserService.processCsvInvite(
+        csvFile,
+        {
+          organizationId: organization.id,
+          settings,
+        },
+        groupsQuery.data || [],
+        projectsQuery.data || []
+      );
+    },
+    onSuccess: async ({ parsed, result }) => {
+      saveDefaultsIfNeeded();
+      setCsvSummary({
+        parsedCount: parsed.rows.length,
+        successCount: result.invitedCount,
+        errorCount: result.failed.length,
+      });
+      setCsvError(result.failed.length > 0 ? result.failed.map((item) => item.message).join(' ') : null);
+      setFeedback({
+        tone: result.failed.length > 0 ? 'error' : 'success',
+        message:
+          result.failed.length > 0
+            ? `Imported ${result.invitedCount} row(s) with ${result.failed.length} issue(s).`
+            : `Imported ${result.invitedCount} row(s) successfully.`,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-users'] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organization?.id] }),
+      ]);
+      onCompleted?.();
+    },
+    onError: (error: any) => {
+      const message = error?.message || error?.response?.data?.message || 'Failed to process CSV import.';
+      setCsvError(message);
+      setFeedback({ tone: 'error', message });
+    },
+  });
+
+  const selectedRoleIsClient = role === 'client';
+
+  if (!open) return null;
+
+  return (
+    <div className={presentation === 'modal' ? 'fixed inset-0 z-50' : 'relative z-0'}>
+      {presentation === 'modal' ? (
+        <div className="absolute inset-0 bg-slate-950/35 backdrop-blur-sm" onClick={onClose} />
+      ) : null}
+      <aside className={presentation === 'modal' ? 'absolute inset-0 flex items-start justify-center overflow-y-auto p-4 sm:p-6 lg:p-8' : 'relative'}>
+        <div className={`flex w-full flex-col gap-6 rounded-[34px] border border-white/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.97),rgba(255,255,255,0.99))] p-4 shadow-[0_40px_120px_-48px_rgba(15,23,42,0.55)] sm:p-6 ${
+          presentation === 'modal' ? 'mt-16 max-w-[72rem] sm:mt-20' : ''
+        }`}>
+          <div className="flex items-start justify-between gap-4 rounded-[30px] border border-white/70 bg-white/85 p-5 shadow-[0_28px_70px_-42px_rgba(15,23,42,0.3)]">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
+                <UserPlus className="h-3.5 w-3.5" />
+                Add User
+              </div>
+              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-slate-950">Add User</h2>
+              <p className="mt-1 max-w-2xl text-sm text-slate-500">
+                Invite employees, managers, admins, or clients and configure their access.
+              </p>
+            </div>
+            <Button variant="ghost" className="h-11 w-11 rounded-full p-0" onClick={onClose} aria-label="Close add user drawer">
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+
+          {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
+
+          <div className="grid grid-cols-1 gap-3 rounded-[28px] border border-slate-200/80 bg-slate-50/80 p-3 sm:grid-cols-3">
+            {tabOptions.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`rounded-[22px] px-4 py-3 text-left transition ${
+                  activeTab === tab.id
+                    ? 'bg-white text-slate-950 shadow-[0_24px_50px_-36px_rgba(15,23,42,0.28)]'
+                    : 'text-slate-500 hover:bg-white/70 hover:text-slate-900'
+                }`}
+              >
+                <p className="text-sm font-semibold">{tab.label}</p>
+                <p className="mt-1 text-xs leading-5 text-inherit/80">{tab.description}</p>
+              </button>
+            ))}
+          </div>
+
+          <section className={`space-y-6 rounded-[30px] border border-white/70 bg-white/85 p-5 shadow-[0_28px_70px_-42px_rgba(15,23,42,0.3)] ${
+            presentation === 'modal' ? 'max-h-[calc(100vh-14rem)] overflow-y-auto' : ''
+          }`}>
+            {activeTab === 'email' ? (
+              <>
+                <EmailTagInput
+                  emails={emails}
+                  invalidEmails={invalidEmails}
+                  onChange={setEmails}
+                  onInvalidChange={setInvalidEmails}
+                />
+                <div className="h-px bg-slate-200" />
+              </>
+            ) : null}
+
+            <RoleSelector value={role} onChange={setRole} />
+
+            <div className="h-px bg-slate-200" />
+
+            <GroupMultiSelect
+              options={groupsQuery.data || []}
+              selectedIds={selectedGroupIds}
+              onChange={setSelectedGroupIds}
+              isLoading={groupsQuery.isLoading}
+              errorMessage={groupsQuery.isError ? 'Failed to load groups.' : undefined}
+            />
+
+            <div className="h-px bg-slate-200" />
+
+            <ProjectMultiSelect
+              options={projectsQuery.data || []}
+              selectedIds={selectedProjectIds}
+              onChange={setSelectedProjectIds}
+              isLoading={projectsQuery.isLoading}
+              errorMessage={projectsQuery.isError ? 'Failed to load projects.' : undefined}
+            />
+
+            <div className="h-px bg-slate-200" />
+
+            <div className="rounded-[26px] border border-slate-200/80 bg-slate-50/70">
+              <button
+                type="button"
+                onClick={() => setShowAdditionalSettings((current) => !current)}
+                className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">Additional settings</p>
+                  <p className="mt-1 text-sm text-slate-500">Optional permissions that fit the current HRMS workflow.</p>
+                </div>
+                <ChevronDown className={`h-5 w-5 text-slate-400 transition ${showAdditionalSettings ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showAdditionalSettings ? (
+                <div className="grid grid-cols-1 gap-4 border-t border-slate-200 px-5 py-5 md:grid-cols-2">
+                  <div>
+                    <FieldLabel>Monitoring Interval</FieldLabel>
+                    <SelectInput
+                      value={settings.monitoringInterval}
+                      onChange={(event) => setSettings((current) => ({ ...current, monitoringInterval: Number(event.target.value) as 10 | 15 | 30 }))}
+                    >
+                      <option value={10}>Every 10 minutes</option>
+                      <option value={15}>Every 15 minutes</option>
+                      <option value={30}>Every 30 minutes</option>
+                    </SelectInput>
+                  </div>
+
+                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">Can edit time</p>
+                        <p className="mt-1 text-sm text-slate-500">Allow manual correction requests and edits.</p>
+                      </div>
+                      <ToggleInput
+                        checked={settings.canEditTime}
+                        onChange={(checked) => setSettings((current) => ({ ...current, canEditTime: checked }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">Attendance monitoring</p>
+                        <p className="mt-1 text-sm text-slate-500">Include attendance status and check-in monitoring.</p>
+                      </div>
+                      <ToggleInput
+                        checked={settings.attendanceMonitoring}
+                        onChange={(checked) => setSettings((current) => ({ ...current, attendanceMonitoring: checked }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">Payroll visibility</p>
+                        <p className="mt-1 text-sm text-slate-500">Only useful for admin, manager, or approved client views.</p>
+                      </div>
+                      <ToggleInput
+                        checked={settings.payrollVisibility}
+                        onChange={(checked) => setSettings((current) => ({ ...current, payrollVisibility: checked }))}
+                        disabled={!selectedRoleIsClient && role === 'employee'}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3 md:col-span-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">Task assignment defaults</p>
+                        <p className="mt-1 text-sm text-slate-500">Grant access to task assignment workflows by default.</p>
+                      </div>
+                      <ToggleInput
+                        checked={settings.taskAssignmentAccess}
+                        onChange={(checked) => setSettings((current) => ({ ...current, taskAssignmentAccess: checked }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <label className="flex items-start gap-3 rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-4 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={rememberDefaults}
+                onChange={(event) => setRememberDefaults(event.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                <span className="font-semibold text-slate-950">Remember selected groups and projects for next invite</span>
+                <span className="mt-1 block text-slate-500">Saved locally in this browser so repeated onboarding stays faster.</span>
+              </span>
+            </label>
+
+            {activeTab === 'link' ? (
+              <InviteLinkPanel
+                inviteUrl={inviteUrl}
+                onGenerate={() => {
+                  setFeedback(null);
+                  linkMutation.mutate();
+                }}
+                onCopy={() => copyLinkMutation.mutate()}
+                isGenerating={linkMutation.isPending}
+                isCopying={copyLinkMutation.isPending}
+              />
+            ) : null}
+
+            {activeTab === 'csv' ? (
+              <CsvUploadPanel
+                file={csvFile}
+                summary={csvSummary}
+                errorMessage={csvError}
+                onSelectFile={setCsvFile}
+                onDownloadTemplate={addUserService.downloadCsvTemplate}
+              />
+            ) : null}
+
+            {groupsQuery.isLoading || projectsQuery.isLoading ? (
+              <div className="flex items-center gap-2 rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3 text-sm text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Preparing invite configuration data...
+              </div>
+            ) : null}
+
+            {!organization?.id ? (
+              <PageEmptyState
+                title="Organization context missing"
+                description="This invite flow needs an active organization before users can be added."
+              />
+            ) : null}
+
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-5">
+              <Button variant="secondary" onClick={onClose}>Cancel</Button>
+              {activeTab === 'email' ? (
+                <Button
+                  onClick={() => {
+                    setFeedback(null);
+                    inviteMutation.mutate();
+                  }}
+                  disabled={!organization?.id || emails.length === 0 || invalidEmails.length > 0 || inviteMutation.isPending}
+                  iconLeft={<UserPlus className="h-4 w-4" />}
+                >
+                  {inviteMutation.isPending ? 'Sending...' : 'Send Invite'}
+                </Button>
+              ) : null}
+              {activeTab === 'link' ? (
+                <Button
+                  onClick={() => {
+                    if (inviteUrl) {
+                      copyLinkMutation.mutate();
+                      return;
+                    }
+                    linkMutation.mutate();
+                  }}
+                  disabled={!organization?.id || linkMutation.isPending || copyLinkMutation.isPending}
+                >
+                  {inviteUrl ? 'Copy Invite Link' : 'Generate Invite Link'}
+                </Button>
+              ) : null}
+              {activeTab === 'csv' ? (
+                <Button
+                  onClick={() => {
+                    setFeedback(null);
+                    setCsvError(null);
+                    csvMutation.mutate();
+                  }}
+                  disabled={!organization?.id || !csvFile || csvMutation.isPending}
+                >
+                  {csvMutation.isPending ? 'Uploading CSV...' : 'Upload CSV'}
+                </Button>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
+  );
+}

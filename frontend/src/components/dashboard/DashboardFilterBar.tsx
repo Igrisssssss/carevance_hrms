@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import DashboardEmployeeSelector from '@/components/dashboard/DashboardEmployeeSelector';
 import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
@@ -22,6 +23,7 @@ interface DashboardFilterBarProps {
   onExport: () => void;
   isRefreshing?: boolean;
   isExporting?: boolean;
+  actionSlot?: ReactNode;
 }
 
 export default function DashboardFilterBar({
@@ -40,6 +42,7 @@ export default function DashboardFilterBar({
   onExport,
   isRefreshing = false,
   isExporting = false,
+  actionSlot,
 }: DashboardFilterBarProps) {
   return (
     <div className="grid grid-cols-1 gap-4 rounded-[24px] border border-slate-200/80 bg-slate-50/75 p-4 xl:grid-cols-[1.2fr_1.3fr_1fr_auto]">
@@ -89,6 +92,7 @@ export default function DashboardFilterBar({
           <Download className="h-4 w-4" />
           {isExporting ? 'Exporting...' : 'Export'}
         </Button>
+        {actionSlot}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Bell, Menu, X } from 'lucide-react';
+import { Bell, Menu, UserPlus, X } from 'lucide-react';
 import type { User } from '@/types';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import TopNavigation from '@/components/dashboard/TopNavigation';
@@ -19,8 +19,10 @@ interface DashboardTopbarProps {
   onToggleProfile: () => void;
   onCloseMobileNavigation: () => void;
   onOpenExternal?: (path: string) => void;
+  onOpenAddUser?: () => void;
   notificationPanel?: ReactNode;
   profilePanel?: ReactNode;
+  showAddUserButton?: boolean;
 }
 
 export default function DashboardTopbar({
@@ -35,8 +37,10 @@ export default function DashboardTopbar({
   onToggleProfile,
   onCloseMobileNavigation,
   onOpenExternal,
+  onOpenAddUser,
   notificationPanel,
   profilePanel,
+  showAddUserButton = false,
 }: DashboardTopbarProps) {
   const location = useLocation();
   const notificationsActive = location.pathname === '/notifications';
@@ -101,6 +105,17 @@ export default function DashboardTopbar({
           </div>
 
           <div className="ml-auto flex items-center justify-end gap-2 sm:gap-3 lg:flex-[0_1_auto]">
+            {showAddUserButton ? (
+              <button
+                type="button"
+                onClick={onOpenAddUser}
+                aria-label="Add user"
+                className="inline-flex items-center justify-center rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-3.5 py-2.5 text-white shadow-[0_22px_50px_-18px_rgba(14,165,233,0.6)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_28px_58px_-20px_rgba(14,165,233,0.7)]"
+              >
+                <UserPlus className="h-5 w-5" />
+              </button>
+            ) : null}
+
             <div className="relative">
               <button
                 onClick={onToggleNotifications}

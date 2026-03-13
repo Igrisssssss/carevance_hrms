@@ -4,7 +4,6 @@ import { invoiceApi } from '@/services/api';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { Plus, Send, CheckCircle } from 'lucide-react';
-import type { Invoice } from '@/types';
 
 export default function Invoices() {
   const queryClient = useQueryClient();

@@ -39,7 +39,7 @@ export default function Login() {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-
+    
     try {
       await login(email, password);
       navigate('/dashboard');

@@ -7,7 +7,6 @@ import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import { Users } from 'lucide-react';
 
 type OrgUser = {
   id: number;

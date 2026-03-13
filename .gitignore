@@ -20,6 +20,7 @@ yarn-error.log*
 **/dist/
 **/build/
 desktop/release/
+desktop/release-*/
 
 # Laravel
 backend/vendor/

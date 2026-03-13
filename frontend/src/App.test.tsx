@@ -4,6 +4,11 @@ import { Routes, Route, MemoryRouter, Outlet } from 'react-router-dom';
 import App from '@/App';
 import { render } from '@testing-library/react';
 
+const routerFuture = {
+  v7_startTransition: true,
+  v7_relativeSplatPath: true,
+} as const;
+
 const authState = vi.hoisted(() => ({
   value: {
     isAuthenticated: false,
@@ -46,17 +51,17 @@ describe('App routes', () => {
     authState.value = { isAuthenticated: false, isLoading: false, user: null };
   });
 
-  it('redirects unauthenticated users away from protected routes', () => {
+  it('redirects unauthenticated users away from protected routes', async () => {
     render(
-      <MemoryRouter initialEntries={['/dashboard']}>
+      <MemoryRouter future={routerFuture} initialEntries={['/dashboard']}>
         <App />
       </MemoryRouter>
     );
 
-    expect(screen.getByText('Login Page')).toBeInTheDocument();
+    expect(await screen.findByText('Login Page')).toBeInTheDocument();
   });
 
-  it('redirects non-admin users away from admin routes', () => {
+  it('redirects non-admin users away from admin routes', async () => {
     authState.value = {
       isAuthenticated: true,
       isLoading: false,
@@ -73,17 +78,18 @@ describe('App routes', () => {
     };
 
     render(
-      <MemoryRouter initialEntries={['/monitoring']}>
+      <MemoryRouter future={routerFuture} initialEntries={['/monitoring']}>
         <Routes>
           <Route path="*" element={<App />} />
         </Routes>
       </MemoryRouter>
     );
 
+    expect(await screen.findByText('App Layout')).toBeInTheDocument();
     expect(screen.queryByText('Monitoring Page')).not.toBeInTheDocument();
   });
 
-  it('renders the dashboard page for employees on /dashboard', () => {
+  it('renders the dashboard page for employees on /dashboard', async () => {
     authState.value = {
       isAuthenticated: true,
       isLoading: false,
@@ -100,18 +106,18 @@ describe('App routes', () => {
     };
 
     render(
-      <MemoryRouter initialEntries={['/dashboard']}>
+      <MemoryRouter future={routerFuture} initialEntries={['/dashboard']}>
         <Routes>
           <Route path="*" element={<App />} />
         </Routes>
       </MemoryRouter>
     );
 
-    expect(screen.getByText('Dashboard Page')).toBeInTheDocument();
+    expect(await screen.findByText('Dashboard Page')).toBeInTheDocument();
     expect(screen.queryByText('Reports Page')).not.toBeInTheDocument();
   });
 
-  it('renders the admin dashboard for admins on /dashboard', () => {
+  it('renders the admin dashboard for admins on /dashboard', async () => {
     authState.value = {
       isAuthenticated: true,
       isLoading: false,
@@ -128,14 +134,14 @@ describe('App routes', () => {
     };
 
     render(
-      <MemoryRouter initialEntries={['/dashboard']}>
+      <MemoryRouter future={routerFuture} initialEntries={['/dashboard']}>
         <Routes>
           <Route path="*" element={<App />} />
         </Routes>
       </MemoryRouter>
     );
 
-    expect(screen.getByText('Admin Dashboard Page')).toBeInTheDocument();
+    expect(await screen.findByText('Admin Dashboard Page')).toBeInTheDocument();
     expect(screen.queryByText('Dashboard Page')).not.toBeInTheDocument();
   });
 });

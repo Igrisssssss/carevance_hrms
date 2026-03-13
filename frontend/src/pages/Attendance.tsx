@@ -84,8 +84,6 @@ const parseTimeToMinutes = (time: string) => {
   return h * 60 + m;
 };
 
-const getDateOnly = (iso?: string | null) => (iso ? iso.split('T')[0] : null);
-
 const buildMonthGrid = (month: string) => {
   // month: YYYY-MM
   const [y, m] = month.split('-').map((v) => Number(v));
@@ -114,6 +112,11 @@ const buildMonthGrid = (month: string) => {
 type AttendanceProps = {
   mode?: 'full' | 'time-edit';
 };
+
+type SectionFeedback = {
+  tone: 'success' | 'error';
+  message: string;
+} | null;
 
 export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const { user, organization } = useAuth();
@@ -167,8 +170,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [timeEditDate, setTimeEditDate] = useState(formatLocalDate(new Date()));
   const [extraMinutes, setExtraMinutes] = useState(60);
   const [timeEditMessage, setTimeEditMessage] = useState('');
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [punchFeedback, setPunchFeedbackState] = useState<SectionFeedback>(null);
+  const [leaveFeedback, setLeaveFeedbackState] = useState<SectionFeedback>(null);
+  const [timeEditFeedback, setTimeEditFeedbackState] = useState<SectionFeedback>(null);
   const [employeeProfile, setEmployeeProfile] = useState<UserProfile360 | null>(null);
   const [employeeMonitoring, setEmployeeMonitoring] = useState<any | null>(null);
   const [employeeMonitoringScreenshots, setEmployeeMonitoringScreenshots] = useState<any[]>([]);
@@ -178,9 +182,44 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [isEmployeePanelLoading, setIsEmployeePanelLoading] = useState(false);
 
   const isAdmin = hasAdminAccess(user);
-  const setFeedback = (nextMessage = '', nextError = '') => {
-    setMessage(nextMessage);
-    setError(nextError);
+  const setPunchFeedback = (nextMessage = '', nextError = '') => {
+    if (nextMessage) {
+      setPunchFeedbackState({ tone: 'success', message: nextMessage });
+      return;
+    }
+
+    if (nextError) {
+      setPunchFeedbackState({ tone: 'error', message: nextError });
+      return;
+    }
+
+    setPunchFeedbackState(null);
+  };
+  const setLeaveFeedback = (nextMessage = '', nextError = '') => {
+    if (nextMessage) {
+      setLeaveFeedbackState({ tone: 'success', message: nextMessage });
+      return;
+    }
+
+    if (nextError) {
+      setLeaveFeedbackState({ tone: 'error', message: nextError });
+      return;
+    }
+
+    setLeaveFeedbackState(null);
+  };
+  const setTimeEditFeedback = (nextMessage = '', nextError = '') => {
+    if (nextMessage) {
+      setTimeEditFeedbackState({ tone: 'success', message: nextMessage });
+      return;
+    }
+
+    if (nextError) {
+      setTimeEditFeedbackState({ tone: 'error', message: nextError });
+      return;
+    }
+
+    setTimeEditFeedbackState(null);
   };
 
   const fetchAttendance = async () => {
@@ -219,15 +258,16 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const doCheckIn = async () => {
     setIsPunchLoading(true);
-    setFeedback();
+    setPunchFeedback();
     try {
       const res = await attendanceApi.checkIn();
       const payload = res.data as any;
       if (payload?.record) setTodayRecord(payload.record);
       await Promise.all([fetchAttendance(), fetchCalendar(), fetchToday()]);
+      setPunchFeedback('Checked in successfully');
     } catch (e) {
       console.error('Check-in failed:', e);
-      setFeedback('', (e as any)?.response?.data?.message || 'Check-in failed');
+      setPunchFeedback('', (e as any)?.response?.data?.message || 'Check-in failed');
     } finally {
       setIsPunchLoading(false);
     }
@@ -235,15 +275,16 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const doCheckOut = async () => {
     setIsPunchLoading(true);
-    setFeedback();
+    setPunchFeedback();
     try {
       const res = await attendanceApi.checkOut();
       const payload = res.data as any;
       if (payload?.record) setTodayRecord(payload.record);
       await Promise.all([fetchAttendance(), fetchCalendar(), fetchToday()]);
+      setPunchFeedback('Checked out successfully');
     } catch (e) {
       console.error('Check-out failed:', e);
-      setFeedback('', (e as any)?.response?.data?.message || 'Check-out failed');
+      setPunchFeedback('', (e as any)?.response?.data?.message || 'Check-out failed');
     } finally {
       setIsPunchLoading(false);
     }
@@ -280,12 +321,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const submitLeaveRequest = async () => {
     if (!leaveStartDate || !leaveEndDate) {
-      setFeedback('', 'Please select start and end date');
+      setLeaveFeedback('', 'Please select start and end date');
       return;
     }
 
     setIsLeaveSubmitting(true);
-    setFeedback();
+    setLeaveFeedback();
     try {
       await leaveApi.create({
         start_date: leaveStartDate,
@@ -294,72 +335,72 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       });
       setLeaveReason('');
       await fetchLeaveRequests();
-      setFeedback('Leave request submitted');
+      setLeaveFeedback('Leave request submitted');
     } catch (e) {
       console.error('Leave request submit failed:', e);
-      setFeedback('', (e as any)?.response?.data?.message || 'Failed to submit leave request');
+      setLeaveFeedback('', (e as any)?.response?.data?.message || 'Failed to submit leave request');
     } finally {
       setIsLeaveSubmitting(false);
     }
   };
 
   const approveLeave = async (id: number) => {
-    setFeedback();
+    setLeaveFeedback();
     try {
       await leaveApi.approve(id);
       await Promise.all([fetchLeaveRequests(), fetchAttendance(), fetchCalendar(), fetchToday()]);
-      setFeedback('Leave request approved');
+      setLeaveFeedback('Leave request approved');
     } catch (e) {
       console.error('Approve leave failed:', e);
-      setFeedback('', (e as any)?.response?.data?.message || 'Failed to approve leave request');
+      setLeaveFeedback('', (e as any)?.response?.data?.message || 'Failed to approve leave request');
     }
   };
 
   const rejectLeave = async (id: number) => {
-    setFeedback();
+    setLeaveFeedback();
     try {
       await leaveApi.reject(id);
       await fetchLeaveRequests();
-      setFeedback('Leave request rejected');
+      setLeaveFeedback('Leave request rejected');
     } catch (e) {
       console.error('Reject leave failed:', e);
-      setFeedback('', (e as any)?.response?.data?.message || 'Failed to reject leave request');
+      setLeaveFeedback('', (e as any)?.response?.data?.message || 'Failed to reject leave request');
     }
   };
 
   const requestLeaveRevoke = async (id: number) => {
-    setFeedback();
+    setLeaveFeedback();
     try {
       await leaveApi.requestRevoke(id);
       await fetchLeaveRequests();
-      setFeedback('Leave revoke request submitted');
+      setLeaveFeedback('Leave revoke request submitted');
     } catch (e) {
       console.error('Leave revoke request failed:', e);
-      setFeedback('', (e as any)?.response?.data?.message || 'Failed to request leave revoke');
+      setLeaveFeedback('', (e as any)?.response?.data?.message || 'Failed to request leave revoke');
     }
   };
 
   const approveLeaveRevoke = async (id: number) => {
-    setFeedback();
+    setLeaveFeedback();
     try {
       await leaveApi.approveRevoke(id);
       await Promise.all([fetchLeaveRequests(), fetchCalendar(), fetchAttendance(), fetchToday()]);
-      setFeedback('Leave revoke approved');
+      setLeaveFeedback('Leave revoke approved');
     } catch (e) {
       console.error('Approve leave revoke failed:', e);
-      setFeedback('', (e as any)?.response?.data?.message || 'Failed to approve leave revoke');
+      setLeaveFeedback('', (e as any)?.response?.data?.message || 'Failed to approve leave revoke');
     }
   };
 
   const rejectLeaveRevoke = async (id: number) => {
-    setFeedback();
+    setLeaveFeedback();
     try {
       await leaveApi.rejectRevoke(id);
       await fetchLeaveRequests();
-      setFeedback('Leave revoke rejected');
+      setLeaveFeedback('Leave revoke rejected');
     } catch (e) {
       console.error('Reject leave revoke failed:', e);
-      setFeedback('', (e as any)?.response?.data?.message || 'Failed to reject leave revoke');
+      setLeaveFeedback('', (e as any)?.response?.data?.message || 'Failed to reject leave revoke');
     }
   };
 
@@ -377,12 +418,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const submitTimeEditRequest = async () => {
     if (!timeEditDate || !extraMinutes || extraMinutes <= 0) {
-      setFeedback('', 'Please enter a valid date and extra minutes');
+      setTimeEditFeedback('', 'Please enter a valid date and extra minutes');
       return;
     }
 
     setIsTimeEditSubmitting(true);
-    setFeedback();
+    setTimeEditFeedback();
     try {
       await attendanceTimeEditApi.create({
         attendance_date: timeEditDate,
@@ -391,36 +432,36 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       });
       setTimeEditMessage('');
       await fetchTimeEditRequests();
-      setFeedback('Time edit request submitted');
+      setTimeEditFeedback('Time edit request submitted');
     } catch (e) {
       console.error('Time edit request submit failed:', e);
-      setFeedback('', (e as any)?.response?.data?.message || 'Failed to submit time edit request');
+      setTimeEditFeedback('', (e as any)?.response?.data?.message || 'Failed to submit time edit request');
     } finally {
       setIsTimeEditSubmitting(false);
     }
   };
 
   const approveTimeEdit = async (id: number) => {
-    setFeedback();
+    setTimeEditFeedback();
     try {
       await attendanceTimeEditApi.approve(id);
       await Promise.all([fetchTimeEditRequests(), fetchAttendance(), fetchCalendar(), fetchToday()]);
-      setFeedback('Time edit request approved');
+      setTimeEditFeedback('Time edit request approved');
     } catch (e) {
       console.error('Approve time edit failed:', e);
-      setFeedback('', (e as any)?.response?.data?.message || 'Failed to approve time edit request');
+      setTimeEditFeedback('', (e as any)?.response?.data?.message || 'Failed to approve time edit request');
     }
   };
 
   const rejectTimeEdit = async (id: number) => {
-    setFeedback();
+    setTimeEditFeedback();
     try {
       await attendanceTimeEditApi.reject(id);
       await fetchTimeEditRequests();
-      setFeedback('Time edit request rejected');
+      setTimeEditFeedback('Time edit request rejected');
     } catch (e) {
       console.error('Reject time edit failed:', e);
-      setFeedback('', (e as any)?.response?.data?.message || 'Failed to reject time edit request');
+      setTimeEditFeedback('', (e as any)?.response?.data?.message || 'Failed to reject time edit request');
     }
   };
 
@@ -631,10 +672,13 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     return (
       <div className="space-y-6 animate-fade-in">
         <PageHeader eyebrow="Attendance adjustments" title="Edit Time" description="Request overtime or attendance time adjustments and review approval status." />
-        {message ? <FeedbackBanner tone="success" message={message} /> : null}
-        {error ? <FeedbackBanner tone="error" message={error} /> : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {timeEditFeedback ? (
+            <div className="lg:col-span-2">
+              <FeedbackBanner tone={timeEditFeedback.tone} message={timeEditFeedback.message} />
+            </div>
+          ) : null}
           <SurfaceCard className="p-4">
             <h2 className="font-semibold text-gray-900 mb-3">Request Time Edit / Overtime</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -711,8 +755,6 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader eyebrow="Attendance operations" title="Attendance" description={isAdmin ? 'Track attendance, punches, leave, and overtime requests across the team.' : 'Review your attendance, punches, leave requests, and overtime history.'} />
-      {message ? <FeedbackBanner tone="success" message={message} /> : null}
-      {error ? <FeedbackBanner tone="error" message={error} /> : null}
 
       <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-4">
         <div>
@@ -886,6 +928,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         </SurfaceCard>
 
         <SurfaceCard className="lg:col-span-3 p-4">
+          {punchFeedback ? (
+            <div className="mb-4">
+              <FeedbackBanner tone={punchFeedback.tone} message={punchFeedback.message} />
+            </div>
+          ) : null}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-gray-900">Today</p>
@@ -1121,6 +1168,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {leaveFeedback ? (
+          <div className="lg:col-span-2">
+            <FeedbackBanner tone={leaveFeedback.tone} message={leaveFeedback.message} />
+          </div>
+        ) : null}
         <SurfaceCard className="p-4">
           <h2 className="font-semibold text-gray-900 mb-3">Request Leave</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1202,6 +1254,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {timeEditFeedback ? (
+          <div className="lg:col-span-2">
+            <FeedbackBanner tone={timeEditFeedback.tone} message={timeEditFeedback.message} />
+          </div>
+        ) : null}
         <SurfaceCard className="p-4">
           <h2 className="font-semibold text-gray-900 mb-3">Request Time Edit / Overtime</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

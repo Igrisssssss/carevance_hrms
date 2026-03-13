@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Organization;
+use App\Models\ReportGroup;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -111,16 +112,28 @@ class OrganizationController extends Controller
         $validated = $request->validate([
             'email' => 'required|email',
             'name' => 'required|string|max:255',
-            'role' => 'required|in:admin,manager,employee',
+            'role' => 'required|in:admin,manager,employee,client',
+            'settings' => 'nullable|array',
+            'group_ids' => 'nullable|array',
+            'group_ids.*' => 'integer',
         ]);
 
         $existing = User::where('email', $validated['email'])->first();
+        $groupIds = ReportGroup::where('organization_id', $organization->id)
+            ->whereIn('id', $validated['group_ids'] ?? [])
+            ->pluck('id')
+            ->all();
+
         if ($existing) {
             $existing->update([
                 'name' => $validated['name'],
                 'role' => $validated['role'],
                 'organization_id' => $organization->id,
+                'settings' => $validated['settings'] ?? $existing->settings,
             ]);
+            if (array_key_exists('group_ids', $validated)) {
+                $existing->reportGroups()->sync($groupIds);
+            }
 
             return response()->json([
                 'message' => 'Existing user added to organization.',
@@ -135,7 +148,11 @@ class OrganizationController extends Controller
             'password' => Hash::make($password),
             'role' => $validated['role'],
             'organization_id' => $organization->id,
+            'settings' => $validated['settings'] ?? null,
         ]);
+        if (array_key_exists('group_ids', $validated)) {
+            $user->reportGroups()->sync($groupIds);
+        }
 
         return response()->json([
             'message' => 'User invited successfully.',

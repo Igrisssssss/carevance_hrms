@@ -53,41 +53,67 @@ export default function SettingsPage() {
   );
 
   useEffect(() => {
+    setProfileName(user?.name || '');
+    setProfileEmail(user?.email || '');
+    setProfileAvatar(user?.avatar || '');
+  }, [user]);
+
+  useEffect(() => {
+    setOrgName(organization?.name || '');
+    setOrgSlug(organization?.slug || '');
+  }, [organization]);
+
+  useEffect(() => {
     const load = async () => {
       setIsLoading(true);
       setError('');
       try {
-        const [meRes, billRes] = await Promise.all([settingsApi.me(), settingsApi.billing()]);
-        const payload = meRes.data;
-        const fetchedUser = payload.user;
-        const fetchedOrg = payload.organization;
-        const settings = fetchedUser?.settings || {};
-        const notifications = settings.notifications || {};
+        const [meResult, billingResult] = await Promise.allSettled([settingsApi.me(), settingsApi.billing()]);
 
-        setCanManageOrg(Boolean(payload.can_manage_org));
-        setBillingPlan((billRes.data as any)?.plan || null);
+        if (meResult.status === 'fulfilled') {
+          const payload = meResult.value.data;
+          const fetchedUser = payload.user;
+          const fetchedOrg = payload.organization;
+          const settings = fetchedUser?.settings || {};
+          const notifications = settings.notifications || {};
 
-        setProfileName(fetchedUser?.name || '');
-        setProfileEmail(fetchedUser?.email || '');
-        setProfileAvatar(fetchedUser?.avatar || '');
+          setCanManageOrg(Boolean(payload.can_manage_org));
+          setProfileName(fetchedUser?.name || '');
+          setProfileEmail(fetchedUser?.email || '');
+          setProfileAvatar(fetchedUser?.avatar || '');
+          setOrgName(fetchedOrg?.name || '');
+          setOrgSlug(fetchedOrg?.slug || '');
+          setTimezone(settings.timezone || 'UTC');
+          setNotifyEmail(notifications.email ?? true);
+          setNotifyWeekly(notifications.weekly_summary ?? true);
+          setNotifyProject(notifications.project_updates ?? true);
+          setNotifyTask(notifications.task_assignments ?? true);
+        } else {
+          setCanManageOrg(Boolean(hasAdminAccess(user) && !isEmployee));
+        }
 
-        setOrgName(fetchedOrg?.name || '');
-        setOrgSlug(fetchedOrg?.slug || '');
+        if (billingResult.status === 'fulfilled') {
+          setBillingPlan((billingResult.value.data as any)?.plan || null);
+        } else {
+          setBillingPlan(null);
+        }
 
-        setTimezone(settings.timezone || 'UTC');
-        setNotifyEmail(notifications.email ?? true);
-        setNotifyWeekly(notifications.weekly_summary ?? true);
-        setNotifyProject(notifications.project_updates ?? true);
-        setNotifyTask(notifications.task_assignments ?? true);
-      } catch (e: any) {
-        setError(e?.response?.data?.message || 'Failed to load settings');
+        if (meResult.status === 'rejected' && billingResult.status === 'rejected') {
+          const meError = meResult.reason as any;
+          setError(meError?.response?.data?.message || 'Failed to load settings');
+        } else if (meResult.status === 'rejected') {
+          const meError = meResult.reason as any;
+          setError(meError?.response?.data?.message || 'Some settings could not be refreshed');
+        } else if (billingResult.status === 'rejected') {
+          setError('Billing details are temporarily unavailable');
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
     load();
-  }, []);
+  }, [isEmployee, user]);
 
   const saveProfile = async () => {
     setError('');

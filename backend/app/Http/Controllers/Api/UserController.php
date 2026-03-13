@@ -10,6 +10,7 @@ use App\Models\LeaveRequest;
 use App\Models\Payslip;
 use App\Models\TimeEntry;
 use App\Models\User;
+use App\Models\ReportGroup;
 use App\Services\Audit\AuditLogService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -107,8 +108,11 @@ class UserController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email',
-            'role' => 'nullable|in:admin,manager,employee',
+            'role' => 'nullable|in:admin,manager,employee,client',
             'password' => 'nullable|string|min:8',
+            'settings' => 'nullable|array',
+            'group_ids' => 'nullable|array',
+            'group_ids.*' => 'integer',
         ]);
 
         $user = User::create([
@@ -117,7 +121,17 @@ class UserController extends Controller
             'password' => Hash::make($validated['password'] ?? Str::random(12)),
             'role' => $validated['role'] ?? 'employee',
             'organization_id' => $currentUser->organization_id,
+            'settings' => $validated['settings'] ?? null,
         ]);
+
+        if (array_key_exists('group_ids', $validated)) {
+            $groupIds = ReportGroup::where('organization_id', $currentUser->organization_id)
+                ->whereIn('id', $validated['group_ids'] ?? [])
+                ->pluck('id')
+                ->all();
+
+            $user->reportGroups()->sync($groupIds);
+        }
 
         $this->auditLogService->log(
             action: 'user.created',
@@ -152,12 +166,27 @@ class UserController extends Controller
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|string|email|max:255|unique:users,email,' . $user->id,
-            'role' => 'sometimes|in:admin,manager,employee',
+            'role' => 'sometimes|in:admin,manager,employee,client',
+            'settings' => 'nullable|array',
+            'group_ids' => 'nullable|array',
+            'group_ids.*' => 'integer',
         ]);
 
         $originalRole = $user->role;
-        $originalAttributes = $user->only(['name', 'email', 'role']);
-        $user->update($validated);
+        $originalAttributes = $user->only(['name', 'email', 'role', 'settings']);
+        $updatable = collect($validated)
+            ->except(['group_ids'])
+            ->all();
+        $user->update($updatable);
+
+        if (array_key_exists('group_ids', $validated)) {
+            $groupIds = ReportGroup::where('organization_id', $user->organization_id)
+                ->whereIn('id', $validated['group_ids'] ?? [])
+                ->pluck('id')
+                ->all();
+
+            $user->reportGroups()->sync($groupIds);
+        }
 
         $this->auditLogService->log(
             action: 'user.updated',
@@ -166,7 +195,7 @@ class UserController extends Controller
             metadata: [
                 'changed_fields' => array_keys($validated),
                 'before' => $originalAttributes,
-                'after' => $user->only(['name', 'email', 'role']),
+                'after' => $user->only(['name', 'email', 'role', 'settings']),
             ],
             request: $request
         );

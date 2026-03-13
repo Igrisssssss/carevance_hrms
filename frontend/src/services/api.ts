@@ -97,7 +97,7 @@ export const organizationApi = {
   getMembers: (id: number) => 
     api.get<User[]>(`/organizations/${id}/members`),
   
-  inviteMember: (id: number, data: { email: string; name: string; role: string }) => 
+  inviteMember: (id: number, data: { email: string; name: string; role: string; settings?: Record<string, any>; group_ids?: number[] }) => 
     api.post(`/organizations/${id}/invite`, data),
 };
 
@@ -117,10 +117,10 @@ export const userApi = {
   get: (id: number) => 
     api.get<User>(`/users/${id}`),
   
-  create: (data: Partial<User> & { password?: string }) => 
+  create: (data: Partial<User> & { password?: string; group_ids?: number[] }) => 
     api.post<User>('/users', data),
   
-  update: (id: number, data: Partial<User>) => 
+  update: (id: number, data: Partial<User> & { group_ids?: number[] }) => 
     api.put<User>(`/users/${id}`, data),
   
   delete: (id: number) => 

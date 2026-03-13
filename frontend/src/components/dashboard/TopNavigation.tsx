@@ -11,6 +11,20 @@ interface TopNavigationProps {
   onOpenExternal?: (path: string) => void;
 }
 
+function Badge({ count, active }: { count?: number; active: boolean }) {
+  if (!count || count <= 0) return null;
+
+  return (
+    <span
+      className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+        active ? 'bg-white/20 text-white' : 'bg-rose-600 text-white'
+      }`}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
 const isPathMatch = (pathname: string, href: string) =>
   pathname === href || pathname.startsWith(`${href}/`);
 
@@ -142,6 +156,7 @@ export default function TopNavigation({
                 >
                   <group.icon className="h-4 w-4" />
                   <span>{group.label}</span>
+                  <Badge count={group.unreadCount} active={isActive} />
                   <ChevronDown className={`h-4 w-4 transition ${expanded ? 'rotate-180' : ''}`} />
                 </button>
 
@@ -295,6 +310,7 @@ export default function TopNavigation({
               >
                 <group.icon className="h-4 w-4" />
                 <span>{group.label}</span>
+                <Badge count={group.unreadCount} active={isActive} />
               </button>
             ) : (
               <Link
@@ -313,6 +329,7 @@ export default function TopNavigation({
               >
                 <group.icon className="h-4 w-4" />
                 <span>{group.label}</span>
+                <Badge count={group.unreadCount} active={isActive} />
               </Link>
             )
           );

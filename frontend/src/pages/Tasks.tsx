@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { taskApi, projectApi } from '@/services/api';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
-import { CheckSquare, Plus, Edit2, Trash2, Circle, CheckCircle, Clock } from 'lucide-react';
-import type { Task, Project } from '@/types';
+import { Plus, Edit2, Trash2, Circle, CheckCircle, Clock } from 'lucide-react';
+import type { Task } from '@/types';
 
 export default function Tasks() {
   const queryClient = useQueryClient();
