@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Activity,
   BarChart3,
+  Camera,
   CalendarClock,
   Clock3,
   FileClock,
@@ -67,6 +68,7 @@ export const topNavigation: NavGroup[] = [
     items: [
       { label: 'Attendance Overview', to: '/attendance', icon: CalendarClock },
       { label: 'Monitoring', to: '/monitoring/productive-time', icon: Gauge, adminOnly: true },
+      { label: 'Screenshots', to: '/monitoring/screenshots', icon: Camera, adminOnly: true },
       { label: 'Edit Time', to: '/edit-time', icon: FileClock },
     ],
   },

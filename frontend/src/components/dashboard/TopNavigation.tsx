@@ -49,6 +49,8 @@ const getItemDescription = (groupLabel: string, itemLabel: string) => {
   if (groupLabel === 'Attendance') {
     return itemLabel === 'Monitoring'
       ? 'Live time and activity tracking'
+      : itemLabel === 'Screenshots'
+        ? 'Captured screenshot gallery'
       : 'Attendance and time workflows';
   }
 

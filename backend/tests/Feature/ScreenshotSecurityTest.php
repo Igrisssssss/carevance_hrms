@@ -144,7 +144,11 @@ class ScreenshotSecurityTest extends TestCase
                 ->assertJsonPath('total', 1)
                 ->assertJsonCount(1, 'data')
                 ->assertJsonPath('data.0.id', $matchingScreenshot->id)
-                ->assertJsonPath('data.0.time_entry_id', $matchingEntry->id);
+                ->assertJsonPath('data.0.time_entry_id', $matchingEntry->id)
+                ->assertJsonPath('data.0.user_id', $employee->id)
+                ->assertJsonPath('data.0.user.name', $employee->name)
+                ->assertJsonPath('data.0.user.email', $employee->email)
+                ->assertJsonPath('data.0.user.role', $employee->role);
         } finally {
             Carbon::setTestNow();
         }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { activityApi, reportApi, screenshotApi, userApi } from '@/services/api';
 import PageHeader from '@/components/dashboard/PageHeader';
 import FilterPanel from '@/components/dashboard/FilterPanel';
@@ -7,11 +8,15 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
-import { PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
+import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, TextInput } from '@/components/ui/FormField';
-import { Activity, AppWindow, Camera, Check, ChevronDown, Globe, RefreshCw, TimerReset, Users } from 'lucide-react';
+import { Activity, AppWindow, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
 
 type MonitoringWorkspaceMode = 'productive-time' | 'unproductive-time' | 'screenshots' | 'app-usage' | 'website-usage';
+type SectionFeedback = {
+  tone: 'success' | 'error';
+  message: string;
+} | null;
 
 const today = new Date();
 const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -108,12 +113,48 @@ const modeCopy: Record<MonitoringWorkspaceMode, { title: string; description: st
 };
 
 export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspaceMode }) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [startDate, setStartDate] = useState(toDate(monthStart));
   const [endDate, setEndDate] = useState(toDate(today));
   const [query, setQuery] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
+  const [screenshotPage, setScreenshotPage] = useState(1);
   const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
+  const [screenshotFeedback, setScreenshotFeedback] = useState<SectionFeedback>(null);
+  const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
+  const [isDeletingScreenshots, setIsDeletingScreenshots] = useState(false);
   const employeeMenuRef = useRef<HTMLDivElement | null>(null);
+  const hasExplicitEmployeeSelection = selectedUserId !== '';
+  const screenshotTotalQueryEnabled =
+    hasExplicitEmployeeSelection && (mode === 'productive-time' || mode === 'unproductive-time');
+
+  useEffect(() => {
+    if (!location.search) return;
+
+    const params = new URLSearchParams(location.search);
+    const nextStartDate = params.get('start');
+    const nextEndDate = params.get('end');
+    const nextQuery = params.get('q');
+    const nextUserId = params.get('user');
+
+    if (nextStartDate) {
+      setStartDate(nextStartDate);
+    }
+
+    if (nextEndDate) {
+      setEndDate(nextEndDate);
+    }
+
+    if (nextQuery !== null) {
+      setQuery(nextQuery);
+    }
+
+    if (nextUserId !== null) {
+      const parsedUserId = Number(nextUserId);
+      setSelectedUserId(Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : '');
+    }
+  }, [location.search]);
 
   const usersQuery = useQuery({
     queryKey: ['monitoring-users'],
@@ -124,7 +165,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   });
 
   const dataQuery = useQuery({
-    queryKey: ['monitoring-workspace-data', mode, startDate, endDate, query, selectedUserId],
+    queryKey: ['monitoring-workspace-data', mode, startDate, endDate, query, selectedUserId, screenshotPage],
     queryFn: async () => {
       if (mode === 'productive-time' || mode === 'unproductive-time') {
         const response = await reportApi.employeeInsights({
@@ -140,7 +181,10 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
         const [screenshotsResponse, insightsResponse] = await Promise.all([
           screenshotApi.getAll({
             user_id: selectedUserId ? Number(selectedUserId) : undefined,
-            page: 1,
+            start_date: startDate,
+            end_date: endDate,
+            page: screenshotPage,
+            per_page: 24,
           }),
           reportApi.employeeInsights({
             start_date: startDate,
@@ -151,7 +195,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
         ]);
 
         return {
-          screenshots: screenshotsResponse.data?.data || [],
+          screenshotsPage: screenshotsResponse.data || null,
           insights: insightsResponse.data,
         };
       }
@@ -179,20 +223,59 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     },
   });
 
+  const screenshotTotalQuery = useQuery({
+    queryKey: ['monitoring-screenshot-total', selectedUserId, startDate, endDate],
+    enabled: screenshotTotalQueryEnabled,
+    queryFn: async () => {
+      const response = await screenshotApi.getAll({
+        user_id: Number(selectedUserId),
+        start_date: startDate,
+        end_date: endDate,
+        page: 1,
+        per_page: 1,
+      });
+
+      return {
+        total: Number(response.data?.total || 0),
+      };
+    },
+  });
+
   const isLoading = usersQuery.isLoading || dataQuery.isLoading;
   const isError = usersQuery.isError || dataQuery.isError;
   const users = usersQuery.data || [];
+  const usersById = useMemo(
+    () => new Map(users.map((employee: any) => [Number(employee.id), employee])),
+    [users]
+  );
   const pageTitle = modeCopy[mode];
   const selectedEmployeeLabel =
     users.find((employee: any) => employee.id === selectedUserId)?.name || 'All employees';
-  const hasExplicitEmployeeSelection = selectedUserId !== '';
 
   const insights =
     mode === 'productive-time' || mode === 'unproductive-time'
       ? (dataQuery.data as any)
       : (dataQuery.data as any)?.insights || null;
-  const screenshots = mode === 'screenshots' ? ((dataQuery.data as any)?.screenshots || []) : [];
+  const screenshotPageData = mode === 'screenshots' ? ((dataQuery.data as any)?.screenshotsPage || null) : null;
+  const screenshots = mode === 'screenshots' ? (screenshotPageData?.data || []) : [];
+  const screenshotTotal =
+    mode === 'screenshots'
+      ? Number(screenshotPageData?.total || screenshots.length || 0)
+      : Number(screenshotTotalQuery.data?.total || 0);
+  const screenshotLastPage = Math.max(1, Number(screenshotPageData?.last_page || 1));
+  const screenshotCurrentPage = Math.max(1, Number(screenshotPageData?.current_page || screenshotPage));
+  const visibleScreenshotIds = screenshots.map((shot: any) => Number(shot.id));
+  const allVisibleScreenshotsSelected =
+    visibleScreenshotIds.length > 0 && visibleScreenshotIds.every((id: number) => selectedScreenshotIds.includes(id));
   const activityRows = mode === 'app-usage' || mode === 'website-usage' ? ((dataQuery.data as any)?.activities || []) : [];
+  const resolveScreenshotUser = (shot: any) => {
+    if (shot?.user?.name) {
+      return shot.user;
+    }
+
+    const resolvedUserId = Number(shot?.user_id || shot?.time_entry?.user_id || 0);
+    return resolvedUserId > 0 ? usersById.get(resolvedUserId) || null : null;
+  };
 
   const aggregatedActivity = useMemo(() => {
     if (mode !== 'app-usage' && mode !== 'website-usage') return [];
@@ -264,8 +347,25 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
+  useEffect(() => {
+    setScreenshotFeedback(null);
+    setSelectedScreenshotIds([]);
+    setIsDeletingScreenshots(false);
+    setScreenshotPage(1);
+  }, [endDate, mode, query, selectedUserId, startDate]);
+
+  const refreshWorkspaceData = async () => {
+    const refreshTasks: Array<Promise<unknown>> = [dataQuery.refetch()];
+
+    if (screenshotTotalQueryEnabled) {
+      refreshTasks.push(screenshotTotalQuery.refetch());
+    }
+
+    await Promise.all(refreshTasks);
+  };
+
   const renderPanelRefreshButton = () => (
-    <Button variant="ghost" size="sm" onClick={() => void dataQuery.refetch()} iconLeft={<RefreshCw className="h-4 w-4" />}>
+    <Button variant="ghost" size="sm" onClick={() => void refreshWorkspaceData()} iconLeft={<RefreshCw className="h-4 w-4" />}>
       Refresh
     </Button>
   );
@@ -293,9 +393,118 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const liveMonitoring = insights?.live_monitoring || { employees_active: [], employees_inactive: [], employees_on_leave: [], selected_user: null, all_users: [] };
   const selectedUserLive = liveMonitoring.selected_user || null;
   const recentEmployeeScreenshots = insights?.recent_screenshots || [];
+  const screenshotCountLabel = screenshotTotalQuery.data ? screenshotTotal : recentEmployeeScreenshots.length;
   const topUnproductiveTool = selectedUserTools.unproductive?.[0] || null;
   const productiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.productive || [] : organizationTools.productive || [];
   const unproductiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.unproductive || [] : organizationTools.unproductive || [];
+
+  const openScreenshotGallery = () => {
+    if (!hasExplicitEmployeeSelection || !selectedUserId || screenshotTotal <= 0) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set('user', String(selectedUserId));
+    params.set('start', startDate);
+    params.set('end', endDate);
+
+    if (query.trim()) {
+      params.set('q', query.trim());
+    }
+
+    navigate(`/monitoring/screenshots?${params.toString()}`);
+  };
+
+  const toggleScreenshotSelection = (screenshotId: number) => {
+    setSelectedScreenshotIds((current) =>
+      current.includes(screenshotId)
+        ? current.filter((id) => id !== screenshotId)
+        : [...current, screenshotId]
+    );
+  };
+
+  const toggleVisibleScreenshotSelection = () => {
+    setSelectedScreenshotIds((current) => {
+      if (allVisibleScreenshotsSelected) {
+        return current.filter((id) => !visibleScreenshotIds.includes(id));
+      }
+
+      return Array.from(new Set([...current, ...visibleScreenshotIds]));
+    });
+  };
+
+  const handleDeleteSelectedScreenshots = async () => {
+    if (selectedScreenshotIds.length === 0) {
+      return;
+    }
+
+    if (!confirm(`Delete ${selectedScreenshotIds.length} selected screenshot${selectedScreenshotIds.length === 1 ? '' : 's'}?`)) {
+      return;
+    }
+
+    setScreenshotFeedback(null);
+    setIsDeletingScreenshots(true);
+
+    try {
+      const response = await screenshotApi.bulkDelete({
+        screenshot_ids: selectedScreenshotIds,
+      });
+
+      setSelectedScreenshotIds([]);
+      setScreenshotPage(1);
+      await refreshWorkspaceData();
+      setScreenshotFeedback({
+        tone: 'success',
+        message: response.data?.message || `${selectedScreenshotIds.length} screenshots deleted.`,
+      });
+    } catch (error) {
+      console.error('Monitoring workspace selected screenshot delete failed:', error);
+      setScreenshotFeedback({
+        tone: 'error',
+        message: (error as any)?.response?.data?.message || 'Failed to delete selected screenshots.',
+      });
+    } finally {
+      setIsDeletingScreenshots(false);
+    }
+  };
+
+  const handleDeleteAllScreenshotsInRange = async () => {
+    if (!hasExplicitEmployeeSelection || !selectedUserId || screenshotTotal <= 0) {
+      return;
+    }
+
+    if (!confirm(`Delete all ${screenshotTotal} screenshot${screenshotTotal === 1 ? '' : 's'} for this employee in the current date range?`)) {
+      return;
+    }
+
+    setScreenshotFeedback(null);
+    setIsDeletingScreenshots(true);
+
+    try {
+      const response = await screenshotApi.bulkDelete({
+        delete_all_in_range: true,
+        user_id: Number(selectedUserId),
+        start_date: startDate,
+        end_date: endDate,
+      });
+
+      setSelectedScreenshotIds([]);
+      setScreenshotPage(1);
+      await refreshWorkspaceData();
+      setScreenshotFeedback({
+        tone: 'success',
+        message: response.data?.message || 'All screenshots in the selected range were deleted.',
+      });
+    } catch (error) {
+      console.error('Monitoring workspace bulk screenshot delete failed:', error);
+      setScreenshotFeedback({
+        tone: 'error',
+        message: (error as any)?.response?.data?.message || 'Failed to delete screenshots in the current range.',
+      });
+    } finally {
+      setIsDeletingScreenshots(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -441,11 +650,34 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                     <h2 className="text-lg font-semibold text-slate-950">Recent screenshots</h2>
                     <p className="mt-1 text-sm text-slate-500">Latest screenshot captures for the selected employee.</p>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-slate-500">{recentEmployeeScreenshots.length} found</span>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <span className="text-xs text-slate-500">{screenshotCountLabel} found</span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      iconLeft={<Eye className="h-4 w-4" />}
+                      onClick={openScreenshotGallery}
+                      disabled={screenshotTotal === 0}
+                    >
+                      View all screenshots
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      iconLeft={<Trash2 className="h-4 w-4" />}
+                      onClick={() => void handleDeleteAllScreenshotsInRange()}
+                      disabled={!hasExplicitEmployeeSelection || screenshotTotal === 0 || isDeletingScreenshots}
+                    >
+                      {isDeletingScreenshots ? 'Deleting...' : 'Delete all in range'}
+                    </Button>
                     {renderPanelRefreshButton()}
                   </div>
                 </div>
+                {screenshotFeedback ? (
+                  <div className="mt-4">
+                    <FeedbackBanner tone={screenshotFeedback.tone} message={screenshotFeedback.message} />
+                  </div>
+                ) : null}
 
                 {recentEmployeeScreenshots.length === 0 ? (
                   <div className="mt-4">
@@ -462,7 +694,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                         className="overflow-hidden rounded-[20px] border border-slate-200 bg-white transition hover:border-sky-200"
                       >
                         <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-36 w-full object-cover" />
-                        <div className="space-y-1 p-3">
+                        <div className="space-y-2 p-3">
                           <p className="text-sm font-medium text-slate-950">{formatDateTime(shot.recorded_at || shot.created_at)}</p>
                           <p className="text-xs text-slate-500">{shot.filename || 'Captured screenshot'}</p>
                         </div>
@@ -541,9 +773,9 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
       {mode === 'screenshots' && (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Screenshots" value={screenshots.length} hint="Loaded from screenshot API" icon={Camera} accent="sky" />
-            <MetricCard label="Employees" value={new Set(screenshots.map((item: any) => item.user?.id).filter(Boolean)).size} hint="Employees with screenshots" icon={Users} accent="emerald" />
-            <MetricCard label="Selected Filter" value={selectedUserId || 'All'} hint="Current employee filter" icon={Activity} accent="violet" />
+            <MetricCard label="Screenshots" value={screenshotTotal} hint="Total captures in current range" icon={Camera} accent="sky" />
+            <MetricCard label="Employees" value={new Set(screenshots.map((item: any) => resolveScreenshotUser(item)?.id || item.user_id).filter(Boolean)).size} hint="Employees with screenshots" icon={Users} accent="emerald" />
+            <MetricCard label="Selected Filter" value={selectedEmployeeLabel} hint="Current employee filter" icon={Activity} accent="violet" />
             <MetricCard label="Range" value={`${startDate} to ${endDate}`} hint="Date controls for workspace context" icon={TimerReset} accent="amber" />
           </div>
 
@@ -580,51 +812,132 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
             </SurfaceCard>
           ) : null}
 
-          {screenshots.length === 0 ? (
+          {screenshotTotal === 0 ? (
             <PageEmptyState title="No screenshots found" description="Captured screenshots will appear here when available." />
           ) : (
             <SurfaceCard className="p-5">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-950">Screenshot Gallery</h2>
-                  <p className="mt-1 text-sm text-slate-500">Captured screenshots for the current filter.</p>
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Total in range</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">{screenshotTotal}</p>
+                  </div>
+                  <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Selected</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">{selectedScreenshotIds.length}</p>
+                  </div>
+                  <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Date range</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-950">{startDate} to {endDate}</p>
+                  </div>
                 </div>
-                {renderPanelRefreshButton()}
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {screenshots.map((shot: any) => (
-                  <a
-                    key={shot.id}
-                    href={shot.path}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="overflow-hidden rounded-[24px] border border-slate-200 bg-white transition hover:border-sky-200 hover:shadow-[0_22px_50px_-34px_rgba(14,165,233,0.45)]"
+                <div className="flex flex-wrap gap-2 lg:justify-end">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={toggleVisibleScreenshotSelection}
+                    disabled={screenshots.length === 0}
                   >
-                    <img src={shot.path} alt={`Screenshot ${shot.id}`} className="h-44 w-full object-cover" />
-                    <div className="space-y-1 p-4">
-                      <p className="font-medium text-slate-950">{shot.user?.name || 'Unknown employee'}</p>
-                      <p className="text-xs text-slate-500">{new Date(shot.recorded_at).toLocaleString()}</p>
+                    {allVisibleScreenshotsSelected ? 'Unselect visible' : 'Select visible'}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    iconLeft={<Trash2 className="h-4 w-4" />}
+                    onClick={() => void handleDeleteSelectedScreenshots()}
+                    disabled={selectedScreenshotIds.length === 0 || isDeletingScreenshots}
+                  >
+                    Delete selected
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    iconLeft={<Trash2 className="h-4 w-4" />}
+                    onClick={() => void handleDeleteAllScreenshotsInRange()}
+                    disabled={!hasExplicitEmployeeSelection || screenshotTotal === 0 || isDeletingScreenshots}
+                  >
+                    {isDeletingScreenshots ? 'Deleting...' : 'Delete all in range'}
+                  </Button>
+                  {renderPanelRefreshButton()}
+                </div>
+              </div>
+              {screenshotFeedback ? (
+                <div className="mt-4">
+                  <FeedbackBanner tone={screenshotFeedback.tone} message={screenshotFeedback.message} />
+                </div>
+              ) : null}
+              <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {screenshots.map((shot: any) => {
+                  const isSelected = selectedScreenshotIds.includes(Number(shot.id));
+                  const screenshotUser = resolveScreenshotUser(shot);
+
+                  return (
+                    <div
+                      key={shot.id}
+                      className={`overflow-hidden rounded-[24px] border bg-white transition ${
+                        isSelected ? 'border-sky-300 shadow-[0_18px_40px_-28px_rgba(14,165,233,0.45)]' : 'border-slate-200'
+                      }`}
+                    >
+                      <div className="relative">
+                        <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-44 w-full object-cover" />
+                        <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-400"
+                            checked={isSelected}
+                            onChange={() => toggleScreenshotSelection(Number(shot.id))}
+                          />
+                          Select
+                        </label>
+                        <a
+                          href={shot.path}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-slate-950/80 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-950"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          Open
+                        </a>
+                      </div>
+                      <div className="space-y-2 p-4">
+                        <p className="font-medium text-slate-950">{screenshotUser?.name || 'Unknown employee'}</p>
+                        <p className="text-xs text-slate-500">{formatDateTime(shot.recorded_at)}</p>
+                        <p className="truncate text-xs text-slate-500" title={shot.filename || 'Captured screenshot'}>
+                          {shot.filename || 'Captured screenshot'}
+                        </p>
+                      </div>
                     </div>
-                  </a>
-                ))}
+                  );
+                })}
+              </div>
+              <div className="mt-5 flex flex-col gap-3 border-t border-slate-200/80 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-slate-500">
+                  Page {screenshotCurrentPage} of {screenshotLastPage}
+                  {screenshotTotal > 0 ? ` • ${screenshotTotal} total screenshot${screenshotTotal === 1 ? '' : 's'}` : ''}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    iconLeft={<ChevronLeft className="h-4 w-4" />}
+                    onClick={() => setScreenshotPage((current) => Math.max(1, current - 1))}
+                    disabled={screenshotCurrentPage <= 1 || dataQuery.isFetching}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    iconRight={<ChevronRight className="h-4 w-4" />}
+                    onClick={() => setScreenshotPage((current) => Math.min(screenshotLastPage, current + 1))}
+                    disabled={screenshotCurrentPage >= screenshotLastPage || dataQuery.isFetching}
+                  >
+                    Next
+                  </Button>
+                </div>
               </div>
             </SurfaceCard>
           )}
-
-          {selectedUserId && recentEmployeeScreenshots.length > 0 ? (
-            <DataTable
-              title="Selected Employee Screenshot Timeline"
-              description="Recent captures for the selected employee with direct screenshot access."
-              rows={recentEmployeeScreenshots}
-              emptyMessage="No recent screenshots found for the selected employee."
-              headerAction={renderPanelRefreshButton()}
-              columns={[
-                { key: 'captured_at', header: 'Captured', render: (row: any) => formatDateTime(row.recorded_at || row.created_at) },
-                { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || selectedUserLive?.user?.name || 'Unknown' },
-                { key: 'preview', header: 'Preview', render: (row: any) => <a href={row.path} target="_blank" rel="noreferrer" className="text-sky-700 hover:text-sky-800">Open screenshot</a> },
-              ]}
-            />
-          ) : null}
         </>
       )}
 

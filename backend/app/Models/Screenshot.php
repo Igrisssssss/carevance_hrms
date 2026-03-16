@@ -14,7 +14,7 @@ class Screenshot extends Model
         'blurred' => 'boolean',
     ];
 
-    protected $appends = ['path', 'recorded_at'];
+    protected $appends = ['path', 'recorded_at', 'user_id', 'user'];
 
     public function timeEntry(): BelongsTo
     {
@@ -33,5 +33,26 @@ class Screenshot extends Model
     public function getRecordedAtAttribute(): string
     {
         return $this->created_at?->toIso8601String() ?? '';
+    }
+
+    public function getUserIdAttribute(): ?int
+    {
+        return $this->timeEntry?->user_id ? (int) $this->timeEntry->user_id : null;
+    }
+
+    public function getUserAttribute(): ?array
+    {
+        $user = $this->timeEntry?->user;
+
+        if (!$user) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'role' => $user->role,
+        ];
     }
 }

@@ -171,6 +171,8 @@ class ScreenshotController extends Controller
             'blurred' => (bool)($validated['blurred'] ?? false),
         ]);
 
+        $screenshot->loadMissing('timeEntry.user');
+
         return response()->json($screenshot, 201);
     }
 
@@ -202,6 +204,8 @@ class ScreenshotController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        $screenshot->loadMissing('timeEntry.user');
+
         return response()->json($screenshot);
     }
 
@@ -220,6 +224,7 @@ class ScreenshotController extends Controller
         ]);
 
         $screenshot->update($validated);
+        $screenshot->loadMissing('timeEntry.user');
 
         return response()->json($screenshot);
     }
@@ -282,6 +287,7 @@ class ScreenshotController extends Controller
             : null;
 
         return Screenshot::query()
+            ->with(['timeEntry.user:id,name,email,role'])
             ->whereHas('timeEntry.user', function ($query) use ($user) {
                 $query->where('organization_id', $user->organization_id);
             })
