@@ -59,9 +59,9 @@ describe('Layout navigation', () => {
   it('shows admin-only navigation items for admins', async () => {
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
-    expect(await screen.findByText('Reports')).toBeInTheDocument();
-    expect(screen.getByText('Payroll')).toBeInTheDocument();
-    expect(screen.getByText('Task')).toBeInTheDocument();
+    expect((await screen.findAllByText('Reports')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Payroll').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Task').length).toBeGreaterThan(0);
     expect(screen.queryByText('Add Employee')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /settings/i }));
@@ -89,8 +89,8 @@ describe('Layout navigation', () => {
 
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
-    expect(await screen.findByText('Attendance')).toBeInTheDocument();
-    expect(screen.getByText('Attendance')).toBeInTheDocument();
+    expect((await screen.findAllByText('Attendance')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Attendance').length).toBeGreaterThan(0);
     expect(screen.queryByText('Reports')).not.toBeInTheDocument();
     expect(screen.queryByText('Payroll')).not.toBeInTheDocument();
     expect(screen.queryByText('Settings')).not.toBeInTheDocument();

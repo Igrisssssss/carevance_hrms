@@ -6,6 +6,7 @@ import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import TopNavigation from '@/components/dashboard/TopNavigation';
 import type { NavGroup } from '@/navigation/dashboardNavigation';
 import BrandLogo from '@/components/branding/BrandLogo';
+import { cn } from '@/utils/cn';
 
 interface DashboardTopbarProps {
   user?: User | null;
@@ -73,109 +74,121 @@ export default function DashboardTopbar({
 
   return (
     <div
-      className={`sticky top-0 z-30 px-4 py-3 transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:px-6 lg:px-8 ${
+      className={`sticky top-0 z-30 transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${
         isVisible || mobileNavigationOpen || notificationsOpen || profileOpen ? 'translate-y-0' : '-translate-y-[115%]'
       }`}
     >
-      <AdaptiveSurface
-        className="relative overflow-visible w-full rounded-[30px] border border-white/75 bg-white/84 px-4 py-3 shadow-[0_24px_70px_-44px_rgba(15,23,42,0.28)] backdrop-blur-2xl sm:px-5"
-        tone="light"
-        backgroundColor="rgba(255,255,255,0.82)"
-      >
-        <div className="flex items-center gap-3 lg:gap-4 xl:gap-6">
-          <div className="hidden min-w-0 items-center md:flex md:max-w-[14rem] lg:max-w-[16rem]">
-            <BrandLogo variant="full" size="sm" className="max-w-full" />
-          </div>
-
-          <button
-            type="button"
-            className="rounded-full border border-slate-200/90 bg-white/95 p-2.5 contrast-text-secondary shadow-sm lg:hidden"
-            onClick={onToggleMobileNavigation}
-            aria-label={mobileNavigationOpen ? 'Close navigation' : 'Open navigation'}
-          >
-            {mobileNavigationOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-
-          <div className="flex min-w-0 items-center md:hidden">
-            <BrandLogo variant="icon" size="sm" className="rounded-xl" />
-          </div>
-
-          <div className="hidden min-w-0 flex-1 lg:flex lg:justify-center">
-            <TopNavigation groups={groups} onOpenExternal={onOpenExternal} />
-          </div>
-
-          <div className="ml-auto flex items-center justify-end gap-2 sm:gap-3 lg:flex-[0_1_auto]">
-            {showAddUserButton ? (
+      <div className="mx-auto max-w-[1400px] px-4 pt-3 md:px-6 lg:pt-4 xl:px-8">
+        <AdaptiveSurface
+          className="relative w-full overflow-visible rounded-[28px] border border-white/75 bg-white/84 px-3.5 py-2 shadow-[0_24px_70px_-44px_rgba(15,23,42,0.28)] backdrop-blur-2xl md:px-4 xl:px-5"
+          tone="light"
+          backgroundColor="rgba(255,255,255,0.82)"
+        >
+          <div className="flex min-h-[4.25rem] items-center gap-3 lg:grid lg:grid-cols-[minmax(0,13rem)_minmax(0,1fr)_auto] lg:gap-4 xl:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_auto] xl:gap-6">
+            <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
-                onClick={onOpenAddUser}
-                aria-label="Add user"
-                className="inline-flex items-center justify-center rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-3.5 py-2.5 text-white shadow-[0_22px_50px_-18px_rgba(14,165,233,0.6)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_28px_58px_-20px_rgba(14,165,233,0.7)]"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200/90 bg-white/95 contrast-text-secondary shadow-sm transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80 lg:hidden"
+                onClick={onToggleMobileNavigation}
+                aria-label={mobileNavigationOpen ? 'Close navigation' : 'Open navigation'}
+                aria-expanded={mobileNavigationOpen}
               >
-                <UserPlus className="h-5 w-5" />
+                {mobileNavigationOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </button>
-            ) : null}
 
-            <div className="relative">
-              <button
-                onClick={onToggleNotifications}
-                aria-label="Notifications"
-                className={`relative rounded-2xl border px-3.5 py-2.5 shadow-sm transition ${
-                  notificationsOpen || notificationsActive
-                    ? 'border-sky-200 bg-sky-50 text-sky-700'
-                    : 'border-slate-200/90 bg-white/95 contrast-text-secondary hover:bg-white'
-                }`}
-              >
-                <Bell className="h-5 w-5" />
-                {unreadNotifications > 0 ? (
-                  <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                    {unreadNotifications > 99 ? '99+' : unreadNotifications}
-                  </span>
-                ) : null}
-              </button>
-              {notificationPanel}
+              <div className="flex min-w-0 items-center lg:hidden">
+                <BrandLogo variant="icon" size="sm" className="rounded-xl sm:hidden" />
+                <BrandLogo variant="full" size="sm" className="hidden w-[9.5rem] sm:flex" />
+              </div>
+
+              <div className="hidden min-w-0 items-center lg:flex">
+                <BrandLogo variant="full" size="sm" className="max-w-[10.75rem] xl:max-w-[11.75rem]" />
+              </div>
             </div>
 
-            <div className="relative">
-              <button
-                type="button"
-                onClick={onToggleProfile}
-                aria-haspopup="menu"
-                aria-expanded={profileOpen}
-                className={`flex items-center gap-3.5 rounded-full border px-3 py-2 shadow-sm transition ${
-                  profileOpen
-                    ? 'border-sky-200 bg-sky-50 text-sky-900'
-                    : 'border-white/80 bg-white/88 hover:bg-white'
-                }`}
-              >
-                {user?.avatar ? (
-                  <img src={user.avatar} alt={user.name || 'Profile'} className="h-9 w-9 rounded-full object-cover" />
-                ) : (
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[linear-gradient(135deg,#0f172a,#0284c7)] text-sm font-semibold text-white">
-                    {user?.name?.charAt(0).toUpperCase() || 'A'}
+            <div className="hidden min-w-0 lg:flex lg:justify-center">
+              <TopNavigation groups={groups} onOpenExternal={onOpenExternal} />
+            </div>
+
+            <div className="ml-auto flex shrink-0 items-center justify-end gap-2 sm:gap-2.5 lg:ml-0">
+              {showAddUserButton ? (
+                <button
+                  type="button"
+                  onClick={onOpenAddUser}
+                  aria-label="Add user"
+                  className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-3.5 text-white shadow-[0_22px_50px_-18px_rgba(14,165,233,0.6)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_28px_58px_-20px_rgba(14,165,233,0.7)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80 xl:pr-4"
+                >
+                  <UserPlus className="h-5 w-5 shrink-0" />
+                  <span className="hidden whitespace-nowrap text-sm font-semibold xl:inline">Add User</span>
+                </button>
+              ) : null}
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={onToggleNotifications}
+                  aria-label="Notifications"
+                  className={cn(
+                    'relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80',
+                    notificationsOpen || notificationsActive
+                      ? 'border-sky-200 bg-sky-50 text-sky-700'
+                      : 'border-slate-200/90 bg-white/95 contrast-text-secondary hover:bg-white'
+                  )}
+                >
+                  <Bell className="h-5 w-5" />
+                  {unreadNotifications > 0 ? (
+                    <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                    </span>
+                  ) : null}
+                </button>
+                {notificationPanel}
+              </div>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={onToggleProfile}
+                  aria-haspopup="menu"
+                  aria-expanded={profileOpen}
+                  aria-label={user?.name || 'Account'}
+                  className={cn(
+                    'flex h-11 shrink-0 items-center rounded-full border shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80',
+                    profileOpen
+                      ? 'border-sky-200 bg-sky-50 text-sky-900'
+                      : 'border-white/80 bg-white/88 hover:bg-white',
+                    'w-11 justify-center px-0 xl:w-auto xl:justify-start xl:gap-3 xl:pl-1.5 xl:pr-3.5'
+                  )}
+                >
+                  {user?.avatar ? (
+                    <img src={user.avatar} alt={user.name || 'Profile'} className="h-9 w-9 shrink-0 rounded-full object-cover" />
+                  ) : (
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#0f172a,#0284c7)] text-sm font-semibold text-white">
+                      {user?.name?.charAt(0).toUpperCase() || 'A'}
+                    </div>
+                  )}
+                  <div className="hidden min-w-0 text-left xl:block">
+                    <p className="max-w-[8.5rem] truncate text-sm font-semibold contrast-text-primary">{user?.name || 'Admin'}</p>
+                    <p className="hidden text-xs capitalize contrast-text-muted min-[1380px]:block">{user?.role || 'user'}</p>
                   </div>
-                )}
-                <div className="hidden text-left sm:block">
-                  <p className="max-w-[9rem] truncate text-sm font-semibold contrast-text-primary">{user?.name || 'Admin'}</p>
-                  <p className="text-xs capitalize contrast-text-muted">{user?.role || 'user'}</p>
-                </div>
-              </button>
-              {profilePanel}
+                </button>
+                {profilePanel}
+              </div>
             </div>
           </div>
-        </div>
 
-        {mobileNavigationOpen ? (
-          <div className="mt-4 border-t border-slate-200/70 pt-4 lg:hidden">
-            <TopNavigation
-              groups={groups}
-              mobile
-              onNavigate={onCloseMobileNavigation}
-              onOpenExternal={onOpenExternal}
-            />
-          </div>
-        ) : null}
-      </AdaptiveSurface>
+          {mobileNavigationOpen ? (
+            <div className="mt-3 border-t border-slate-200/70 pt-4 lg:hidden">
+              <TopNavigation
+                groups={groups}
+                mobile
+                onNavigate={onCloseMobileNavigation}
+                onOpenExternal={onOpenExternal}
+              />
+            </div>
+          ) : null}
+        </AdaptiveSurface>
+      </div>
     </div>
   );
 }
