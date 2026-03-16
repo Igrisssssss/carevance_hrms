@@ -27,6 +27,7 @@ import type {
   PayrollTransaction,
   AppNotificationItem,
   UserProfile360,
+  PaginatedResponse,
 } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 
@@ -221,8 +222,8 @@ export const timeEntryApi = {
 
 // Screenshot API
 export const screenshotApi = {
-  getAll: (params?: { user_id?: number; time_entry_id?: number; page?: number }) => 
-    api.get<{ data: Screenshot[] }>('/screenshots', { params }),
+  getAll: (params?: { user_id?: number; time_entry_id?: number; start_date?: string; end_date?: string; page?: number; per_page?: number }) => 
+    api.get<PaginatedResponse<Screenshot>>('/screenshots', { params }),
   
   get: (id: number) => 
     api.get<Screenshot>(`/screenshots/${id}`),
@@ -236,6 +237,9 @@ export const screenshotApi = {
     });
   },
   
+  bulkDelete: (data: { screenshot_ids?: number[]; user_id?: number; time_entry_id?: number; start_date?: string; end_date?: string; delete_all_in_range?: boolean }) =>
+    api.post<{ message: string; deleted_count: number }>('/screenshots/bulk-delete', data),
+
   delete: (id: number) => 
     api.delete(`/screenshots/${id}`),
 };

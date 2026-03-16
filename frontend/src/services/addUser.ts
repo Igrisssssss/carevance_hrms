@@ -386,6 +386,7 @@ export const addUserService = {
         });
       }
     }
+    
 
     return {
       parsed,
@@ -396,7 +397,7 @@ export const addUserService = {
       } satisfies InviteSubmissionResult,
     };
   },
-
+  
   downloadCsvTemplate() {
     const template = [
       'email,name,role,groups,projects',

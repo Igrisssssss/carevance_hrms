@@ -23,19 +23,25 @@ import DashboardTrendCard from '@/components/dashboard/DashboardTrendCard';
 import DataTable from '@/components/dashboard/DataTable';
 import EmptyStateCard from '@/components/dashboard/EmptyStateCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageErrorState } from '@/components/ui/PageState';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
   Activity,
   CalendarClock,
   Camera,
+  ChevronLeft,
+  ChevronRight,
   CircleDollarSign,
   Clock3,
+  Eye,
   Fingerprint,
   LayoutPanelTop,
   Sparkles,
+  Trash2,
   TrendingUp,
   Users,
+  X,
 } from 'lucide-react';
 
 type DashboardScope = 'organization' | 'employee';
@@ -307,10 +313,22 @@ export default function AdminDashboard() {
   });
   const [exportFeedback, setExportFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isScreenshotManagerOpen, setIsScreenshotManagerOpen] = useState(false);
+  const [screenshotManagerPage, setScreenshotManagerPage] = useState(1);
+  const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
+  const [screenshotActionFeedback, setScreenshotActionFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const [isDeletingScreenshots, setIsDeletingScreenshots] = useState(false);
 
   useEffect(() => {
     sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
   }, [filters]);
+
+  useEffect(() => {
+    setIsScreenshotManagerOpen(false);
+    setScreenshotManagerPage(1);
+    setSelectedScreenshotIds([]);
+    setScreenshotActionFeedback(null);
+  }, [filters.scope, filters.selectedEmployeeId, filters.startDate, filters.endDate]);
 
   const usersQuery = useQuery({
     queryKey: ['admin-dashboard-users'],
@@ -391,7 +409,7 @@ export default function AdminDashboard() {
         reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate, user_ids: [userId] }),
         attendanceApi.calendar({ month, user_id: userId }),
         timeEntryApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1 }),
-        screenshotApi.getAll({ user_id: userId, page: 1 }),
+        screenshotApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1, per_page: 8 }),
       ]);
 
       return {
@@ -401,7 +419,25 @@ export default function AdminDashboard() {
         calendar: attendanceCalendarResponse.data,
         timeEntries: timeEntriesResponse.data?.data || [],
         screenshots: screenshotsResponse.data?.data || [],
+        screenshotsTotal: Number(screenshotsResponse.data?.total || screenshotsResponse.data?.data?.length || 0),
       };
+    },
+  });
+
+  const screenshotManagerQuery = useQuery({
+    queryKey: ['admin-dashboard-screenshot-gallery', filters.selectedEmployeeId, filters.startDate, filters.endDate, screenshotManagerPage],
+    enabled: filters.scope === 'employee' && Boolean(filters.selectedEmployeeId) && isScreenshotManagerOpen,
+    queryFn: async () => {
+      const userId = Number(filters.selectedEmployeeId);
+      const response = await screenshotApi.getAll({
+        user_id: userId,
+        start_date: filters.startDate,
+        end_date: filters.endDate,
+        page: screenshotManagerPage,
+        per_page: 24,
+      });
+
+      return response.data;
     },
   });
 
@@ -464,6 +500,19 @@ export default function AdminDashboard() {
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const openScreenshotManager = () => {
+    setScreenshotActionFeedback(null);
+    setSelectedScreenshotIds([]);
+    setScreenshotManagerPage(1);
+    setIsScreenshotManagerOpen(true);
+  };
+
+  const closeScreenshotManager = () => {
+    setIsScreenshotManagerOpen(false);
+    setSelectedScreenshotIds([]);
+    setScreenshotActionFeedback(null);
   };
 
   if (usersQuery.isLoading || activeQuery.isLoading) {
@@ -558,6 +607,14 @@ export default function AdminDashboard() {
   const employeeCalendar: any = employeeData?.calendar;
   const employeeEntries = employeeData?.timeEntries || [];
   const employeeScreenshots = employeeData?.screenshots || [];
+  const employeeScreenshotTotal = Number(employeeData?.screenshotsTotal || employeeScreenshots.length || 0);
+  const screenshotGallery = screenshotManagerQuery.data;
+  const screenshotGalleryItems = screenshotGallery?.data || [];
+  const screenshotGalleryTotal = Number(screenshotGallery?.total || employeeScreenshotTotal || 0);
+  const screenshotGalleryLastPage = Math.max(1, Number(screenshotGallery?.last_page || 1));
+  const screenshotGalleryCurrentPage = Math.max(1, Number(screenshotGallery?.current_page || screenshotManagerPage));
+  const visibleScreenshotIds = screenshotGalleryItems.map((shot: any) => Number(shot.id));
+  const allVisibleScreenshotsSelected = visibleScreenshotIds.length > 0 && visibleScreenshotIds.every((id: number) => selectedScreenshotIds.includes(id));
   const employeeSummary: any = profile?.summary || {};
   const employeeStatus: any = profile?.status || {};
   const employeeStats: any = employeeInsights?.stats || {};
@@ -581,6 +638,102 @@ export default function AdminDashboard() {
     productive: Number(selectedUserTools.productive?.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0) || 0),
     unproductive: Number(selectedUserTools.unproductive?.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0) || 0),
     neutral: Number(selectedUserTools.neutral?.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0) || 0),
+  };
+
+  const toggleScreenshotSelection = (screenshotId: number) => {
+    setSelectedScreenshotIds((current) =>
+      current.includes(screenshotId)
+        ? current.filter((id) => id !== screenshotId)
+        : [...current, screenshotId]
+    );
+  };
+
+  const toggleVisibleScreenshotSelection = () => {
+    setSelectedScreenshotIds((current) => {
+      if (allVisibleScreenshotsSelected) {
+        return current.filter((id) => !visibleScreenshotIds.includes(id));
+      }
+
+      return Array.from(new Set([...current, ...visibleScreenshotIds]));
+    });
+  };
+
+  const refreshScreenshotViews = async () => {
+    await employeeQuery.refetch();
+    if (isScreenshotManagerOpen) {
+      await screenshotManagerQuery.refetch();
+    }
+  };
+
+  const handleDeleteSelectedScreenshots = async () => {
+    if (selectedScreenshotIds.length === 0) {
+      return;
+    }
+
+    if (!confirm(`Delete ${selectedScreenshotIds.length} selected screenshot${selectedScreenshotIds.length === 1 ? '' : 's'}?`)) {
+      return;
+    }
+
+    setIsDeletingScreenshots(true);
+    setScreenshotActionFeedback(null);
+
+    try {
+      const response = await screenshotApi.bulkDelete({
+        screenshot_ids: selectedScreenshotIds,
+      });
+
+      setSelectedScreenshotIds([]);
+      setScreenshotManagerPage(1);
+      await refreshScreenshotViews();
+      setScreenshotActionFeedback({
+        tone: 'success',
+        message: response.data?.message || `${selectedScreenshotIds.length} screenshots deleted.`,
+      });
+    } catch (error: any) {
+      setScreenshotActionFeedback({
+        tone: 'error',
+        message: error?.response?.data?.message || 'Failed to delete selected screenshots.',
+      });
+    } finally {
+      setIsDeletingScreenshots(false);
+    }
+  };
+
+  const handleDeleteAllScreenshotsInRange = async () => {
+    if (!filters.selectedEmployeeId || employeeScreenshotTotal <= 0) {
+      return;
+    }
+
+    if (!confirm(`Delete all ${employeeScreenshotTotal} screenshot${employeeScreenshotTotal === 1 ? '' : 's'} for this employee in the current date range?`)) {
+      return;
+    }
+
+    setIsDeletingScreenshots(true);
+    setScreenshotActionFeedback(null);
+
+    try {
+      const response = await screenshotApi.bulkDelete({
+        delete_all_in_range: true,
+        user_id: Number(filters.selectedEmployeeId),
+        start_date: filters.startDate,
+        end_date: filters.endDate,
+      });
+
+      setSelectedScreenshotIds([]);
+      setScreenshotManagerPage(1);
+      await refreshScreenshotViews();
+      setScreenshotActionFeedback({
+        tone: 'success',
+        message: response.data?.message || 'All screenshots in the selected range were deleted.',
+      });
+    } catch (error: any) {
+      setScreenshotActionFeedback({
+        tone: 'error',
+        message: error?.response?.data?.message || 'Failed to delete screenshots in the current range.',
+      });
+    } finally {
+      setIsDeletingScreenshots(false);
+    }
   };
   const websiteUsageByEmployee = organizationWebsiteActivity.reduce((rows: any[], item: any) => {
     const website = normalizeToolLabel(item.name || '', item.type || 'url');
@@ -1107,7 +1260,7 @@ export default function AdminDashboard() {
                 { id: 'present-days', label: 'Present days', value: calendarSummary.present_days || 0 },
                 { id: 'late-days', label: 'Late days', value: calendarSummary.late_days || 0 },
                 { id: 'approved-leaves', label: 'Approved leaves', value: profile?.leave_requests?.filter((row: any) => row.status === 'approved').length || 0 },
-                { id: 'screenshots', label: 'Screenshots', value: employeeScreenshots.length },
+                { id: 'screenshots', label: 'Screenshots', value: employeeScreenshotTotal },
               ]}
             />
           </section>
@@ -1381,8 +1534,8 @@ export default function AdminDashboard() {
                             {
                               id: 'screenshots-count',
                               title: 'Screenshot captures',
-                              subtitle: 'Loaded from the screenshots endpoint',
-                              value: String(employeeScreenshots.length),
+                              subtitle: 'Counted from the screenshots endpoint in the current date range',
+                              value: String(employeeScreenshotTotal),
                             },
                           ]}
                           emptyTitle="No monitoring data"
@@ -1414,16 +1567,47 @@ export default function AdminDashboard() {
                           </div>
                         </SurfaceCard>
                       </div>
-                      {employeeScreenshots.length === 0 ? (
-                        <EmptyStateCard
-                          title="No screenshots found"
-                          description="The screenshot endpoint did not return captures for this employee."
-                          icon={Camera}
-                        />
-                      ) : (
-                        <SurfaceCard className="p-5">
-                          <h3 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Employee screenshots</h3>
-                          <p className="mt-1 text-sm text-slate-500">Recent captures for the selected employee with image previews.</p>
+                      <SurfaceCard className="p-5">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <h3 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Employee screenshots</h3>
+                            <p className="mt-1 text-sm text-slate-500">
+                              Recent captures for the selected employee with image previews.
+                              {employeeScreenshotTotal > employeeScreenshots.length
+                                ? ` Showing latest ${employeeScreenshots.length} of ${employeeScreenshotTotal}.`
+                                : ` ${employeeScreenshotTotal} capture${employeeScreenshotTotal === 1 ? '' : 's'} in range.`}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              iconLeft={<Eye className="h-4 w-4" />}
+                              onClick={openScreenshotManager}
+                            >
+                              View all screenshots
+                            </Button>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              iconLeft={<Trash2 className="h-4 w-4" />}
+                              onClick={handleDeleteAllScreenshotsInRange}
+                              disabled={employeeScreenshotTotal === 0 || isDeletingScreenshots}
+                            >
+                              Delete all in range
+                            </Button>
+                          </div>
+                        </div>
+
+                        {employeeScreenshots.length === 0 ? (
+                          <div className="mt-4">
+                            <EmptyStateCard
+                              title="No screenshots found"
+                              description="No screenshot captures were returned for this employee in the current date range."
+                              icon={Camera}
+                            />
+                          </div>
+                        ) : (
                           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                             {employeeScreenshots.slice(0, 8).map((shot: any) => (
                               <a
@@ -1441,8 +1625,8 @@ export default function AdminDashboard() {
                               </a>
                             ))}
                           </div>
-                        </SurfaceCard>
-                      )}
+                        )}
+                      </SurfaceCard>
                     </div>
                   ),
                 },
@@ -1451,6 +1635,177 @@ export default function AdminDashboard() {
           </section>
         </>
       )}
+
+      {isScreenshotManagerOpen ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-[32px] border border-white/70 bg-white shadow-[0_36px_120px_-48px_rgba(15,23,42,0.55)]">
+            <div className="flex flex-col gap-4 border-b border-slate-200/80 px-6 py-5 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-sky-700">Screenshot manager</p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.05em] text-slate-950">
+                  {selectedEmployee ? `${selectedEmployee.name} screenshots` : 'Employee screenshots'}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Browse the full screenshot gallery for the selected employee in the current date range, then delete selected captures or clear the full filtered set.
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconLeft={<X className="h-4 w-4" />}
+                onClick={closeScreenshotManager}
+                className="self-start"
+              >
+                Close
+              </Button>
+            </div>
+
+            <div className="border-b border-slate-200/80 px-6 py-4">
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Total in range</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">{screenshotGalleryTotal}</p>
+                  </div>
+                  <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Selected</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">{selectedScreenshotIds.length}</p>
+                  </div>
+                  <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Date range</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-950">{filters.startDate} to {filters.endDate}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 lg:justify-end">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={toggleVisibleScreenshotSelection}
+                    disabled={screenshotGalleryItems.length === 0}
+                  >
+                    {allVisibleScreenshotsSelected ? 'Unselect visible' : 'Select visible'}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    iconLeft={<Trash2 className="h-4 w-4" />}
+                    onClick={handleDeleteSelectedScreenshots}
+                    disabled={selectedScreenshotIds.length === 0 || isDeletingScreenshots}
+                  >
+                    Delete selected
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    iconLeft={<Trash2 className="h-4 w-4" />}
+                    onClick={handleDeleteAllScreenshotsInRange}
+                    disabled={screenshotGalleryTotal === 0 || isDeletingScreenshots}
+                  >
+                    Delete all in range
+                  </Button>
+                </div>
+              </div>
+              {screenshotActionFeedback ? (
+                <div className="mt-4">
+                  <FeedbackBanner tone={screenshotActionFeedback.tone} message={screenshotActionFeedback.message} />
+                </div>
+              ) : null}
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              {screenshotManagerQuery.isLoading ? (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  {Array.from({ length: 8 }).map((_, index) => (
+                    <div key={index} className="h-72 animate-pulse rounded-[24px] bg-slate-100" />
+                  ))}
+                </div>
+              ) : screenshotManagerQuery.isError ? (
+                <EmptyStateCard
+                  title="Failed to load screenshots"
+                  description={(screenshotManagerQuery.error as any)?.response?.data?.message || 'The full screenshot gallery could not be loaded.'}
+                  icon={Camera}
+                />
+              ) : screenshotGalleryItems.length === 0 ? (
+                <EmptyStateCard
+                  title="No screenshots in this range"
+                  description="No screenshot captures match the selected employee and date range."
+                  icon={Camera}
+                />
+              ) : (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  {screenshotGalleryItems.map((shot: any) => {
+                    const isSelected = selectedScreenshotIds.includes(Number(shot.id));
+
+                    return (
+                      <div
+                        key={shot.id}
+                        className={`overflow-hidden rounded-[24px] border bg-white transition ${
+                          isSelected ? 'border-sky-300 shadow-[0_18px_40px_-28px_rgba(14,165,233,0.45)]' : 'border-slate-200'
+                        }`}
+                      >
+                        <div className="relative">
+                          <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-48 w-full object-cover" />
+                          <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-400"
+                              checked={isSelected}
+                              onChange={() => toggleScreenshotSelection(Number(shot.id))}
+                            />
+                            Select
+                          </label>
+                          <a
+                            href={shot.path}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-slate-950/80 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-950"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Open
+                          </a>
+                        </div>
+                        <div className="space-y-2 p-4">
+                          <p className="font-medium text-slate-950">{formatDateTime(shot.recorded_at)}</p>
+                          <p className="truncate text-xs text-slate-500" title={shot.filename || 'Captured screenshot'}>
+                            {shot.filename || 'Captured screenshot'}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-slate-200/80 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-500">
+                Page {screenshotGalleryCurrentPage} of {screenshotGalleryLastPage}
+                {screenshotGalleryTotal > 0 ? ` • ${screenshotGalleryTotal} total screenshot${screenshotGalleryTotal === 1 ? '' : 's'}` : ''}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  iconLeft={<ChevronLeft className="h-4 w-4" />}
+                  onClick={() => setScreenshotManagerPage((current) => Math.max(1, current - 1))}
+                  disabled={screenshotGalleryCurrentPage <= 1 || screenshotManagerQuery.isFetching}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  iconRight={<ChevronRight className="h-4 w-4" />}
+                  onClick={() => setScreenshotManagerPage((current) => Math.min(screenshotGalleryLastPage, current + 1))}
+                  disabled={screenshotGalleryCurrentPage >= screenshotGalleryLastPage || screenshotManagerQuery.isFetching}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {activeQuery.isFetching ? (
         <div className="rounded-[22px] border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-700">
