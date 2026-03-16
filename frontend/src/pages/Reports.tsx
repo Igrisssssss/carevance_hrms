@@ -10,6 +10,7 @@ import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import { getWorkingDuration } from '@/lib/timeBreakdown';
 import { BarChart3, Calendar, Clock, Download, TrendingUp, Users } from 'lucide-react';
 
 type OrgUser = { id: number; name: string; email: string; role: string };
@@ -143,8 +144,8 @@ export default function Reports() {
   const byUser = overallData?.by_user || [];
   const topContributor = [...byUser].sort((a: any, b: any) => Number(b.total_duration || 0) - Number(a.total_duration || 0))[0];
   const highestIdle = [...byUser].sort((a: any, b: any) => Number(b.idle_percentage || 0) - Number(a.idle_percentage || 0))[0];
-  const billableShare = Number(overallData?.summary?.total_duration || 0) > 0
-    ? (Number(overallData?.summary?.billable_duration || 0) / Number(overallData?.summary?.total_duration || 0)) * 100
+  const workingShare = Number(overallData?.summary?.total_duration || 0) > 0
+    ? (getWorkingDuration(overallData?.summary) / Number(overallData?.summary?.total_duration || 0)) * 100
     : 0;
 
   if (usersQuery.isLoading || (isAdmin && groupsQuery.isLoading) || reportsQuery.isLoading) {
@@ -262,8 +263,8 @@ export default function Reports() {
 
       <div className="space-y-4">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <MetricCard label="Total Work" value={formatDuration(overallData?.summary?.total_duration || reportTotals?.total_duration || 0)} icon={Calendar} accent="sky" />
-          <MetricCard label="Billable Work" value={formatDuration(overallData?.summary?.billable_duration || reportTotals?.billable_duration || 0)} icon={TrendingUp} accent="emerald" />
+          <MetricCard label="Tracked Time" value={formatDuration(overallData?.summary?.total_duration || reportTotals?.total_duration || 0)} icon={Calendar} accent="sky" />
+          <MetricCard label="Working Time" value={formatDuration(getWorkingDuration(overallData?.summary) || getWorkingDuration(reportTotals))} icon={TrendingUp} accent="emerald" />
           <MetricCard label="Idle Time" value={formatDuration(overallData?.summary?.idle_duration || 0)} icon={Clock} accent="amber" />
           <MetricCard label="Users" value={String(overallData?.summary?.users_count || 0)} icon={Users} accent="violet" />
           <MetricCard label="Active Users" value={String(overallData?.summary?.active_users || 0)} icon={BarChart3} accent="slate" />
@@ -287,8 +288,8 @@ export default function Reports() {
           </SurfaceCard>
 
           <SurfaceCard className="p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Billable Share</p>
-            <p className="mt-3 text-lg font-semibold text-slate-950">{billableShare.toFixed(1)}%</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Working Share</p>
+            <p className="mt-3 text-lg font-semibold text-slate-950">{workingShare.toFixed(1)}%</p>
             <p className="mt-1 text-sm text-slate-500">Useful for operations, payroll review, and team-level planning.</p>
           </SurfaceCard>
         </div>
@@ -300,8 +301,8 @@ export default function Reports() {
           emptyMessage="No report rows found."
           columns={[
             { key: 'user', header: 'User', render: (row: any) => <span className="font-medium text-slate-950">{row.user.name}</span> },
-            { key: 'total', header: 'Total', render: (row: any) => formatDuration(row.total_duration || 0) },
-            { key: 'billable', header: 'Billable', render: (row: any) => formatDuration(row.billable_duration || 0) },
+            { key: 'total', header: 'Tracked', render: (row: any) => formatDuration(row.total_duration || 0) },
+            { key: 'working', header: 'Working', render: (row: any) => formatDuration(getWorkingDuration(row)) },
             { key: 'idle', header: 'Idle', render: (row: any) => formatDuration(row.idle_duration || 0) },
             { key: 'idle_percentage', header: 'Idle %', render: (row: any) => `${Number(row.idle_percentage || 0).toFixed(1)}%` },
             { key: 'activity', header: 'Last Activity', render: (row: any) => formatLastActivity(row.last_activity_at) },
@@ -324,8 +325,8 @@ export default function Reports() {
           emptyMessage="No daily summary rows found."
           columns={[
             { key: 'date', header: 'Date', render: (row: any) => row.date },
-            { key: 'total_duration', header: 'Total', render: (row: any) => formatDuration(row.total_duration || 0) },
-            { key: 'billable_duration', header: 'Billable', render: (row: any) => formatDuration(row.billable_duration || 0) },
+            { key: 'total_duration', header: 'Tracked', render: (row: any) => formatDuration(row.total_duration || 0) },
+            { key: 'working_duration', header: 'Working', render: (row: any) => formatDuration(getWorkingDuration(row)) },
           ]}
         />
       </div>

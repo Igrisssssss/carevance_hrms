@@ -374,7 +374,7 @@ export default function DesktopTimerDashboard() {
         <MetricCard label="Today's Time" value={formatDuration(todayTotal)} hint={todayDeltaLabel} icon={Clock} accent="sky" />
         <MetricCard label="Active Projects" value={activeProjectsCount} hint={`${totalProjectsCount} total projects`} icon={FolderKanban} accent="violet" />
         <MetricCard label="Team Members" value={teamMembersCount} hint={`${newMembersThisWeek} new this week`} icon={Users} accent="emerald" />
-        <MetricCard label="Productivity" value={`${productivityScore}%`} hint="Based on billable ratio this week" icon={TrendingUp} accent="amber" />
+        <MetricCard label="Productivity" value={`${productivityScore}%`} hint="Based on working ratio this week" icon={TrendingUp} accent="amber" />
       </div>
 
       <SurfaceCard className="overflow-hidden">

@@ -17,6 +17,7 @@ import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
+import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
   Activity,
   CalendarDays,
@@ -58,7 +59,7 @@ const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: strin
   'hours-tracked': {
     eyebrow: 'Reports',
     title: 'Hours Tracked',
-    description: 'Tracked time, billable share, idle time, and employee-level hour distribution.',
+    description: 'Tracked time, working time, idle time, and employee-level hour distribution.',
   },
   'projects-tasks': {
     eyebrow: 'Reports',
@@ -387,8 +388,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard label="Tracked Time" value={formatDuration(overallSummary.total_duration || 0)} hint="Total duration in range" icon={TimerReset} accent="sky" />
-            <MetricCard label="Billable Time" value={formatDuration(overallSummary.billable_duration || 0)} hint="Billable duration" icon={LineChart} accent="emerald" />
-            <MetricCard label="Idle Time" value={formatDuration(overallSummary.idle_duration || 0)} hint="Measured idle time" icon={Activity} accent="amber" />
+            <MetricCard label="Working Time" value={formatDuration(getWorkingDuration(overallSummary))} hint="Tracked time minus measured idle time" icon={LineChart} accent="emerald" />
+            <MetricCard label="Idle Time" value={formatDuration(overallSummary.idle_duration || 0)} hint="Measured idle time inside tracked time" icon={Activity} accent="amber" />
             <MetricCard label="Active Users" value={overallSummary.active_users || 0} hint={`${overallSummary.users_count || 0} users tracked`} icon={Users} accent="violet" />
           </div>
 
@@ -401,8 +402,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               headerAction={renderPanelRefreshButton()}
               columns={[
                 { key: 'user', header: 'User', render: (row: any) => <div><p className="font-medium text-slate-950">{row.user?.name}</p><p className="text-xs text-slate-500">{row.user?.email}</p></div> },
-                { key: 'total', header: 'Total', render: (row: any) => formatDuration(row.total_duration || 0) },
-                { key: 'billable', header: 'Billable', render: (row: any) => formatDuration(row.billable_duration || 0) },
+                { key: 'total', header: 'Tracked', render: (row: any) => formatDuration(row.total_duration || 0) },
+                { key: 'working', header: 'Working', render: (row: any) => formatDuration(getWorkingDuration(row)) },
                 { key: 'idle', header: 'Idle', render: (row: any) => formatDuration(row.idle_duration || 0) },
                 { key: 'idle_pct', header: 'Idle %', render: (row: any) => `${Number(row.idle_percentage || 0).toFixed(1)}%` },
               ]}
@@ -620,8 +621,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                 <span className="font-medium text-slate-950">{formatDuration(overallSummary.total_duration || 0)}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">Billable time</span>
-                <span className="font-medium text-slate-950">{formatDuration(overallSummary.billable_duration || 0)}</span>
+                <span className="text-slate-500">Working time</span>
+                <span className="font-medium text-slate-950">{formatDuration(getWorkingDuration(overallSummary))}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-500">Idle time</span>

@@ -171,6 +171,7 @@ export interface WeeklyReport {
   start_date: string;
   end_date: string;
   total_time: number;
+  working_time?: number;
   billable_time: number;
   by_day: ReportByDay[];
   by_user: ReportByUser[];
@@ -407,8 +408,11 @@ export interface UserProfile360 {
   summary: {
     entries_count: number;
     total_duration: number;
+    working_duration?: number;
+    working_hours?: number;
     billable_duration: number;
     non_billable_duration: number;
+    idle_duration?: number;
     attendance_days: number;
     present_days: number;
     approved_leave_days: number;

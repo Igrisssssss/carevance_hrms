@@ -4,7 +4,7 @@ import SectionHeading from './SectionHeading';
 const shots = [
   {
     title: 'Dashboard',
-    description: 'The dashboard shows live timer state, today’s entries, attendance progress, projects, and billable-ratio productivity.',
+    description: 'The dashboard shows live timer state, today’s entries, attendance progress, projects, and working-ratio productivity.',
     accent: 'from-sky-500/20 to-cyan-200/40',
   },
   {

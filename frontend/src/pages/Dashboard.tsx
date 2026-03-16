@@ -231,7 +231,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Worked Today" value={formatDuration(workedSeconds)} hint={todayDeltaLabel} icon={Clock} accent="sky" />
         <MetricCard label="Time Left Today" value={formatDuration(remainingShiftSeconds)} hint={`Target ${formatDuration(shiftTargetSeconds)}`} icon={Hourglass} accent="violet" />
-        <MetricCard label="Productivity" value={`${productivityScore}%`} hint="Based on this week's billable ratio" icon={TrendingUp} accent="amber" />
+        <MetricCard label="Productivity" value={`${productivityScore}%`} hint="Based on this week's working ratio" icon={TrendingUp} accent="amber" />
         <MetricCard label="Projects in Workspace" value={activeProjectsCount} hint={`${totalProjectsCount} total projects`} icon={FolderKanban} accent="emerald" />
       </div>
 

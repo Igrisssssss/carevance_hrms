@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Models\Activity;
 use App\Models\Project;
 use App\Models\TimeEntry;
 use App\Models\User;
@@ -9,6 +10,11 @@ use Carbon\Carbon;
 
 class DashboardSummaryService
 {
+    public function __construct(
+        private readonly TimeBreakdownService $timeBreakdownService,
+    ) {
+    }
+
     public function build(User $user): array
     {
         $now = now();
@@ -87,10 +93,11 @@ class DashboardSummaryService
             ->whereBetween('start_time', [$weekStart, $weekEnd])
             ->get(['id', 'start_time', 'end_time', 'duration', 'billable']);
         $weekTotal = (int) $weekEntries->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now));
-        $weekBillable = (int) $weekEntries
-            ->where('billable', true)
-            ->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now));
-        $productivityScore = $weekTotal > 0 ? (int) round(($weekBillable / $weekTotal) * 100) : 0;
+        $weekIdle = (int) Activity::where('user_id', $user->id)
+            ->where('type', 'idle')
+            ->whereBetween('recorded_at', [$weekStart, $weekEnd])
+            ->sum('duration');
+        $productivityScore = $this->timeBreakdownService->productivityScore($weekTotal, $weekIdle);
 
         return [
             'active_timer' => $activeEntry,

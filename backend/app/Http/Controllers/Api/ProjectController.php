@@ -3,12 +3,19 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Activity;
 use App\Models\Project;
+use App\Services\Reports\TimeBreakdownService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 
 class ProjectController extends Controller
 {
+    public function __construct(
+        private readonly TimeBreakdownService $timeBreakdownService,
+    ) {
+    }
+
     public function index()
     {
         $user = request()->user();
@@ -137,18 +144,21 @@ class ProjectController extends Controller
             ->get();
 
         $totalDuration = (int) $timeEntries->sum('duration');
-        $billableDuration = (int) $timeEntries->where('billable', true)->sum('duration');
+        $idleDuration = $timeEntries->isEmpty()
+            ? 0
+            : (int) Activity::query()
+                ->whereIn('time_entry_id', $timeEntries->pluck('id'))
+                ->where('type', 'idle')
+                ->sum('duration');
+        $timeBreakdown = $this->timeBreakdownService->build($totalDuration, $idleDuration);
 
         return response()->json([
             'project_id' => $project->id,
             'entries_count' => $timeEntries->count(),
             'tasks_count' => $project->tasks()->count(),
             'completed_tasks' => $project->tasks()->where('status', 'done')->count(),
-            'total_duration' => $totalDuration,
-            'billable_duration' => $billableDuration,
             'total_hours' => round($totalDuration / 3600, 2),
-            'billable_hours' => round($billableDuration / 3600, 2),
-        ]);
+        ] + $timeBreakdown);
     }
 
     private function canAccessProject(Project $project): bool

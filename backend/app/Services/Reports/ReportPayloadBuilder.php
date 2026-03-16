@@ -24,6 +24,7 @@ class ReportPayloadBuilder
 
         $totalDuration = (int) $enrichedEntries->sum('effective_duration');
         $billableDuration = (int) $enrichedEntries->where('billable', true)->sum('effective_duration');
+        $workingDuration = $billableDuration;
 
         $byProject = $enrichedEntries->groupBy('project_id')->map(function ($entries) {
             return [
@@ -45,10 +46,13 @@ class ReportPayloadBuilder
             'entries' => $enrichedEntries,
             'time_entries' => $enrichedEntries,
             'total_time' => $totalDuration,
+            'working_time' => $workingDuration,
             'billable_time' => $billableDuration,
             'total_duration' => $totalDuration,
+            'working_duration' => $workingDuration,
             'billable_duration' => $billableDuration,
             'total_hours' => round($totalDuration / 3600, 2),
+            'working_hours' => round($workingDuration / 3600, 2),
             'billable_hours' => round($billableDuration / 3600, 2),
             'by_project' => $byProject,
             'by_user' => $byUser,
@@ -61,10 +65,13 @@ class ReportPayloadBuilder
             'entries' => [],
             'time_entries' => [],
             'total_time' => 0,
+            'working_time' => 0,
             'billable_time' => 0,
             'total_duration' => 0,
+            'working_duration' => 0,
             'billable_duration' => 0,
             'total_hours' => 0,
+            'working_hours' => 0,
             'billable_hours' => 0,
             'by_project' => [],
             'by_user' => [],

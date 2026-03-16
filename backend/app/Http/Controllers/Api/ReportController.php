@@ -14,6 +14,8 @@ use App\Models\User;
 use App\Services\Reports\ActivityProductivityService;
 use App\Services\Reports\DashboardSummaryService;
 use App\Services\Reports\ReportPayloadBuilder;
+use App\Services\Reports\TimeBreakdownService;
+use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
@@ -24,6 +26,8 @@ class ReportController extends Controller
         private readonly ActivityProductivityService $activityProductivityService,
         private readonly DashboardSummaryService $dashboardSummaryService,
         private readonly ReportPayloadBuilder $reportPayloadBuilder,
+        private readonly TimeBreakdownService $timeBreakdownService,
+        private readonly TimeEntryDurationService $timeEntryDurationService,
     ) {
     }
 
@@ -142,12 +146,13 @@ class ReportController extends Controller
 
         $timeEntries = $query->get();
 
+        $resolvedNow = now();
         $byDay = $timeEntries->groupBy(function ($entry) {
             return Carbon::parse($entry->start_time)->toDateString();
-        })->map(function ($entries) {
+        })->map(function ($entries) use ($resolvedNow) {
             return [
                 'date' => Carbon::parse($entries->first()->start_time)->toDateString(),
-                'total_time' => (int) $entries->sum('duration'),
+                'total_time' => $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
             ];
         })->values();
 
@@ -165,27 +170,42 @@ class ReportController extends Controller
     {
         $user = $request->user();
         if (!$user) {
-            return response()->json(['productivity_score' => 0, 'idle_time' => 0, 'active_time' => 0]);
+            return response()->json([
+                'productivity_score' => 0,
+                'tracked_time' => 0,
+                'working_time' => 0,
+                'idle_time' => 0,
+                'active_time' => 0,
+            ] + $this->timeBreakdownService->build(0, 0));
         }
 
-        $startDate = $request->get('start_date', Carbon::now()->startOfWeek()->toDateString());
-        $endDate = $request->get('end_date', Carbon::now()->endOfWeek()->toDateString());
+        $startDate = Carbon::parse($request->get('start_date', Carbon::now()->startOfWeek()->toDateString()))->startOfDay();
+        $endDate = Carbon::parse($request->get('end_date', Carbon::now()->endOfWeek()->toDateString()))->endOfDay();
+        if ($startDate->greaterThan($endDate)) {
+            [$startDate, $endDate] = [$endDate->copy()->startOfDay(), $startDate->copy()->endOfDay()];
+        }
 
         $entries = TimeEntry::where('user_id', $user->id)
             ->whereBetween('start_time', [$startDate, $endDate])
             ->get();
 
-        $total = (int) $entries->sum('duration');
-        $billable = (int) $entries->where('billable', true)->sum('duration');
-        $score = $total > 0 ? (int) round(($billable / $total) * 100) : 0;
+        $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries);
+        $idleDuration = (int) Activity::where('user_id', $user->id)
+            ->where('type', 'idle')
+            ->whereBetween('recorded_at', [$startDate, $endDate])
+            ->sum('duration');
+        $timeBreakdown = $this->timeBreakdownService->build($trackedDuration, $idleDuration);
+        $score = $this->timeBreakdownService->productivityScore($trackedDuration, $idleDuration);
 
         return response()->json([
-            'start_date' => $startDate,
-            'end_date' => $endDate,
+            'start_date' => $startDate->toDateString(),
+            'end_date' => $endDate->toDateString(),
             'productivity_score' => $score,
-            'active_time' => $billable,
-            'idle_time' => max($total - $billable, 0),
-        ]);
+            'tracked_time' => $timeBreakdown['total_duration'],
+            'working_time' => $timeBreakdown['working_duration'],
+            'active_time' => $timeBreakdown['working_duration'],
+            'idle_time' => $timeBreakdown['idle_duration'],
+        ] + $timeBreakdown);
     }
 
     public function team(Request $request)
@@ -199,14 +219,15 @@ class ReportController extends Controller
         $endDate = $request->get('end_date', Carbon::now()->endOfWeek()->toDateString());
 
         $users = User::where('organization_id', $currentUser->organization_id)->get();
-        $byUser = $users->map(function (User $user) use ($startDate, $endDate) {
+        $resolvedNow = now();
+        $byUser = $users->map(function (User $user) use ($startDate, $endDate, $resolvedNow) {
             $entries = TimeEntry::where('user_id', $user->id)
                 ->whereBetween('start_time', [$startDate, $endDate])
                 ->get();
 
             return [
                 'user' => $user,
-                'total_time' => (int) $entries->sum('duration'),
+                'total_time' => $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
                 'entries' => $entries,
             ];
         });
@@ -272,11 +293,7 @@ class ReportController extends Controller
                         'summary' => [
                             'users_count' => 0,
                             'active_users' => 0,
-                            'total_duration' => 0,
-                            'billable_duration' => 0,
-                            'non_billable_duration' => 0,
-                            'idle_duration' => 0,
-                        ],
+                        ] + $this->timeBreakdownService->build(0, 0),
                         'by_user' => [],
                         'by_day' => [],
                     ]);
@@ -297,11 +314,7 @@ class ReportController extends Controller
                 'summary' => [
                     'users_count' => 0,
                     'active_users' => 0,
-                    'total_duration' => 0,
-                    'billable_duration' => 0,
-                    'non_billable_duration' => 0,
-                    'idle_duration' => 0,
-                ],
+                ] + $this->timeBreakdownService->build(0, 0),
                 'by_user' => [],
                 'by_day' => [],
             ]);
@@ -311,11 +324,12 @@ class ReportController extends Controller
 
         $entries = TimeEntry::whereIn('user_id', $userIds)
             ->whereBetween('start_time', [$startDate, $endDate])
-            ->get(['user_id', 'duration', 'billable', 'start_time']);
+            ->get(['id', 'user_id', 'start_time', 'end_time', 'duration']);
 
         $activities = Activity::whereIn('user_id', $userIds)
             ->whereBetween('recorded_at', [$startDate, $endDate])
             ->get(['user_id', 'type', 'duration', 'recorded_at']);
+        $idleActivities = $activities->where('type', 'idle')->values();
 
         $activeUserIds = TimeEntry::whereIn('user_id', $userIds)
             ->whereNull('end_time')
@@ -325,42 +339,82 @@ class ReportController extends Controller
 
         $entriesByUser = $entries->groupBy('user_id');
         $activitiesByUser = $activities->groupBy('user_id');
+        $idleActivitiesByUser = $idleActivities->groupBy('user_id');
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $activitiesByUser, $activeUserIds) {
+        $resolvedNow = now();
+
+        $byUser = $users->map(function ($user) use ($entriesByUser, $activitiesByUser, $idleActivitiesByUser, $activeUserIds, $resolvedNow) {
             $userEntries = $entriesByUser->get($user->id, collect());
             $userActivities = $activitiesByUser->get($user->id, collect());
-            $totalDuration = (int) $userEntries->sum('duration');
-            $billableDuration = (int) $userEntries->where('billable', true)->sum('duration');
-            $idleDuration = (int) $userActivities->where('type', 'idle')->sum('duration');
-            $lastActivityAt = $userActivities->max('recorded_at');
+            $timeBreakdown = $this->timeBreakdownService->build(
+                $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow),
+                (int) $idleActivitiesByUser->get($user->id, collect())->sum('duration')
+            );
 
             return [
                 'user' => $user,
                 'entries_count' => $userEntries->count(),
-                'total_duration' => $totalDuration,
-                'billable_duration' => $billableDuration,
-                'non_billable_duration' => max($totalDuration - $billableDuration, 0),
-                'idle_duration' => $idleDuration,
-                'idle_percentage' => $totalDuration > 0 ? (float) round(($idleDuration / $totalDuration) * 100, 2) : 0,
-                'last_activity_at' => $lastActivityAt,
+                'last_activity_at' => $userActivities->max('recorded_at'),
                 'is_working' => $activeUserIds->contains((int) $user->id),
-            ];
+            ] + $timeBreakdown;
         })->values();
 
-        $byDay = $entries->groupBy(fn ($entry) => Carbon::parse($entry->start_time)->toDateString())
-            ->map(function ($group, $date) {
+        $dayUserBuckets = [];
+        foreach ($entries as $entry) {
+            $date = Carbon::parse($entry->start_time)->toDateString();
+            $key = (string) $entry->user_id.'|'.$date;
+
+            if (! isset($dayUserBuckets[$key])) {
+                $dayUserBuckets[$key] = [
+                    'date' => $date,
+                    'total_duration' => 0,
+                    'idle_duration' => 0,
+                ];
+            }
+
+            $dayUserBuckets[$key]['total_duration'] += $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
+        }
+
+        foreach ($idleActivities as $activity) {
+            $date = Carbon::parse($activity->recorded_at)->toDateString();
+            $key = (string) $activity->user_id.'|'.$date;
+
+            if (! isset($dayUserBuckets[$key])) {
+                $dayUserBuckets[$key] = [
+                    'date' => $date,
+                    'total_duration' => 0,
+                    'idle_duration' => 0,
+                ];
+            }
+
+            $dayUserBuckets[$key]['idle_duration'] += (int) ($activity->duration ?? 0);
+        }
+
+        $byDay = collect($dayUserBuckets)
+            ->map(function (array $bucket) {
+                return [
+                    'date' => $bucket['date'],
+                ] + $this->timeBreakdownService->build(
+                    (int) ($bucket['total_duration'] ?? 0),
+                    (int) ($bucket['idle_duration'] ?? 0)
+                );
+            })
+            ->groupBy('date')
+            ->map(function ($rows, $date) {
                 return [
                     'date' => $date,
-                    'total_duration' => (int) $group->sum('duration'),
-                    'billable_duration' => (int) $group->where('billable', true)->sum('duration'),
-                ];
+                ] + $this->timeBreakdownService->build(
+                    (int) $rows->sum('total_duration'),
+                    (int) $rows->sum('idle_duration')
+                );
             })
             ->sortBy('date')
             ->values();
 
-        $totalDuration = (int) $entries->sum('duration');
-        $billableDuration = (int) $entries->where('billable', true)->sum('duration');
-        $idleDuration = (int) $activities->where('type', 'idle')->sum('duration');
+        $summaryBreakdown = $this->timeBreakdownService->build(
+            (int) $byUser->sum('total_duration'),
+            (int) $byUser->sum('idle_duration')
+        );
 
         return response()->json([
             'start_date' => $startDate->toDateString(),
@@ -368,12 +422,7 @@ class ReportController extends Controller
             'summary' => [
                 'users_count' => $users->count(),
                 'active_users' => $activeUserIds->unique()->count(),
-                'total_duration' => $totalDuration,
-                'billable_duration' => $billableDuration,
-                'non_billable_duration' => max($totalDuration - $billableDuration, 0),
-                'idle_duration' => $idleDuration,
-                'idle_percentage' => $totalDuration > 0 ? (float) round(($idleDuration / $totalDuration) * 100, 2) : 0,
-            ],
+            ] + $summaryBreakdown,
             'users' => $users,
             'by_user' => $byUser,
             'by_day' => $byDay,
@@ -392,22 +441,37 @@ class ReportController extends Controller
             return response()->json(['message' => 'Project not found'], 404);
         }
 
-        $startDate = $request->get('start_date', Carbon::now()->startOfMonth()->toDateString());
-        $endDate = $request->get('end_date', Carbon::now()->endOfMonth()->toDateString());
+        $startDate = Carbon::parse($request->get('start_date', Carbon::now()->startOfMonth()->toDateString()))->startOfDay();
+        $endDate = Carbon::parse($request->get('end_date', Carbon::now()->endOfMonth()->toDateString()))->endOfDay();
+        if ($startDate->greaterThan($endDate)) {
+            [$startDate, $endDate] = [$endDate->copy()->startOfDay(), $startDate->copy()->endOfDay()];
+        }
 
         $entries = TimeEntry::with('user', 'task')
             ->where('project_id', $project->id)
             ->whereBetween('start_time', [$startDate, $endDate])
             ->get();
+        $idleDuration = $entries->isEmpty()
+            ? 0
+            : (int) Activity::query()
+                ->whereIn('time_entry_id', $entries->pluck('id'))
+                ->where('type', 'idle')
+                ->sum('duration');
+        $timeBreakdown = $this->timeBreakdownService->build(
+            $this->timeEntryDurationService->sumEffectiveDuration($entries),
+            $idleDuration
+        );
 
         return response()->json([
             'project' => $project,
-            'start_date' => $startDate,
-            'end_date' => $endDate,
+            'start_date' => $startDate->toDateString(),
+            'end_date' => $endDate->toDateString(),
             'entries' => $entries,
-            'total_time' => (int) $entries->sum('duration'),
-            'billable_time' => (int) $entries->where('billable', true)->sum('duration'),
-        ]);
+            'total_time' => $timeBreakdown['total_duration'],
+            'working_time' => $timeBreakdown['working_duration'],
+            'billable_time' => $timeBreakdown['billable_time'],
+            'idle_time' => $timeBreakdown['idle_duration'],
+        ] + $timeBreakdown);
     }
 
     public function export(Request $request)
@@ -754,9 +818,8 @@ class ReportController extends Controller
 
         $entries = TimeEntry::where('user_id', $selectedUser->id)
             ->whereBetween('start_time', [$startDate, $endDate])
-            ->get(['duration', 'billable']);
-        $totalDuration = (int) $entries->sum('duration');
-        $billableDuration = (int) $entries->where('billable', true)->sum('duration');
+            ->get(['id', 'start_time', 'end_time', 'duration']);
+        $totalDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries);
         $entriesCount = $entries->count();
 
         $activities = Activity::where('user_id', $selectedUser->id)
@@ -766,6 +829,7 @@ class ReportController extends Controller
         $totalIdle = (int) $activities->where('type', 'idle')->sum('duration');
         $idleCount = max(1, $activities->where('type', 'idle')->count());
         $avgIdle = (float) round($totalIdle / $idleCount, 2);
+        $timeBreakdown = $this->timeBreakdownService->build($totalDuration, $totalIdle);
 
         $activityBreakdown = $activities->groupBy('type')->map(function ($group, $type) {
             return [
@@ -1034,10 +1098,12 @@ class ReportController extends Controller
             'selected_user' => $selectedUser,
             'stats' => [
                 'entries_count' => $entriesCount,
-                'total_duration' => $totalDuration,
-                'total_hours' => round($totalDuration / 3600, 2),
-                'billable_duration' => $billableDuration,
-                'idle_total_duration' => $totalIdle,
+                'total_duration' => $timeBreakdown['total_duration'],
+                'total_hours' => round($timeBreakdown['total_duration'] / 3600, 2),
+                'working_duration' => $timeBreakdown['working_duration'],
+                'working_hours' => $timeBreakdown['working_hours'],
+                'billable_duration' => $timeBreakdown['billable_duration'],
+                'idle_total_duration' => $timeBreakdown['idle_duration'],
                 'idle_avg_duration' => $avgIdle,
                 'activity_events' => $activities->count(),
             ],

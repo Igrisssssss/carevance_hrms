@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Activity;
 use App\Models\AppNotification;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceTimeEditRequest;
@@ -12,6 +13,8 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use App\Models\ReportGroup;
 use App\Services\Audit\AuditLogService;
+use App\Services\Reports\TimeBreakdownService;
+use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -19,7 +22,11 @@ use Illuminate\Support\Str;
 
 class UserController extends Controller
 {
-    public function __construct(private readonly AuditLogService $auditLogService)
+    public function __construct(
+        private readonly AuditLogService $auditLogService,
+        private readonly TimeBreakdownService $timeBreakdownService,
+        private readonly TimeEntryDurationService $timeEntryDurationService,
+    )
     {
     }
 
@@ -262,15 +269,26 @@ class UserController extends Controller
         }
 
         $entries = $query->get();
+        $resolvedNow = now();
+        $idleQuery = Activity::where('user_id', $user->id)
+            ->where('type', 'idle');
+        if ($request->start_date) {
+            $idleQuery->whereDate('recorded_at', '>=', $request->start_date);
+        }
+        if ($request->end_date) {
+            $idleQuery->whereDate('recorded_at', '<=', $request->end_date);
+        }
+
+        $timeBreakdown = $this->timeBreakdownService->build(
+            $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
+            (int) $idleQuery->sum('duration')
+        );
 
         return response()->json([
             'user_id' => $user->id,
             'entries_count' => $entries->count(),
-            'total_duration' => (int) $entries->sum('duration'),
-            'billable_duration' => (int) $entries->where('billable', true)->sum('duration'),
-            'total_hours' => round($entries->sum('duration') / 3600, 2),
-            'billable_hours' => round($entries->where('billable', true)->sum('duration') / 3600, 2),
-        ]);
+            'total_hours' => round($timeBreakdown['total_duration'] / 3600, 2),
+        ] + $timeBreakdown);
     }
 
     public function profile360(Request $request, int $id)
@@ -303,6 +321,12 @@ class UserController extends Controller
             ->whereBetween('start_time', [$startDate, $endDate])
             ->orderByDesc('start_time')
             ->get();
+        $resolvedNow = now();
+        $entries->transform(function (TimeEntry $entry) use ($resolvedNow) {
+            $entry->duration = $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
+
+            return $entry;
+        });
 
         $attendanceRecords = AttendanceRecord::query()
             ->where('user_id', $user->id)
@@ -337,8 +361,15 @@ class UserController extends Controller
             ->latest('created_at')
             ->first(['id', 'type', 'title', 'message', 'created_at', 'is_read']);
 
-        $totalDuration = (int) $entries->sum('duration');
-        $billableDuration = (int) $entries->where('billable', true)->sum('duration');
+        $idleDuration = (int) Activity::query()
+            ->where('user_id', $user->id)
+            ->where('type', 'idle')
+            ->whereBetween('recorded_at', [$startDate, $endDate])
+            ->sum('duration');
+        $timeBreakdown = $this->timeBreakdownService->build(
+            $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
+            $idleDuration
+        );
         $approvedLeaveDays = (int) $leaveRequests
             ->where('status', 'approved')
             ->sum(function (LeaveRequest $leaveRequest) {
@@ -364,15 +395,12 @@ class UserController extends Controller
             ],
             'summary' => [
                 'entries_count' => $entries->count(),
-                'total_duration' => $totalDuration,
-                'billable_duration' => $billableDuration,
-                'non_billable_duration' => max($totalDuration - $billableDuration, 0),
                 'attendance_days' => $attendanceRecords->count(),
                 'present_days' => $attendanceRecords->where('worked_seconds', '>', 0)->count(),
                 'approved_leave_days' => $approvedLeaveDays,
                 'approved_time_edit_seconds' => $approvedTimeEditsSeconds,
                 'payslips_count' => $payslips->count(),
-            ],
+            ] + $timeBreakdown,
             'status' => [
                 'is_working' => (bool) $activeEntry,
                 'current_project' => $activeEntry?->project?->name,

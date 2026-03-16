@@ -24,6 +24,7 @@ import DataTable from '@/components/dashboard/DataTable';
 import EmptyStateCard from '@/components/dashboard/EmptyStateCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { FeedbackBanner, PageErrorState } from '@/components/ui/PageState';
+import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
   Activity,
   CalendarClock,
@@ -542,7 +543,7 @@ export default function AdminDashboard() {
   const lateEmployees = attendanceRows.filter((row: any) => Number(row.late_days || 0) > 0).length;
   const absentEmployees = Math.max(attendanceRows.length - presentEmployees, 0);
   const topPerformers = [...overallByUser]
-    .sort((a: any, b: any) => Number(b.billable_duration || 0) - Number(a.billable_duration || 0))
+    .sort((a: any, b: any) => getWorkingDuration(b) - getWorkingDuration(a))
     .slice(0, 5);
   const attentionEmployees = [...overallByUser]
     .sort((a: any, b: any) => Number(b.idle_percentage || 0) - Number(a.idle_percentage || 0))
@@ -565,13 +566,16 @@ export default function AdminDashboard() {
   const calendarSummary: any = employeeCalendar?.summary || {};
   const latestAttendance: any = employeeStatus.latest_attendance;
   const employeeLiveMonitoring: any = employeeInsights?.live_monitoring?.selected_user || null;
+  const employeeTrackedDuration = Number(employeeSummary.total_duration || 0);
+  const employeeIdleDuration = Number(employeeStats.idle_total_duration || 0);
+  const employeeWorkingDuration = getWorkingDuration(employeeSummary);
   const monthlyAttendancePercentage = percentage(
     Number(calendarSummary.present_days || 0),
     Number(calendarSummary.present_days || 0) + Number(calendarSummary.absent_days || 0)
   );
   const employeeProductivity = percentage(
-    Number(employeeSummary.billable_duration || 0),
-    Number(employeeSummary.total_duration || 0)
+    employeeWorkingDuration,
+    employeeTrackedDuration
   );
   const toolMix = {
     productive: Number(selectedUserTools.productive?.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0) || 0),
@@ -678,7 +682,7 @@ export default function AdminDashboard() {
                   id: 'tracked-hours',
                   label: 'Total hours tracked',
                   value: formatDuration(overallSummary.total_duration || 0),
-                  caption: `${formatDuration(overallSummary.billable_duration || 0)} billable`,
+                  caption: `${formatDuration(getWorkingDuration(overallSummary))} working`,
                   meta: `${formatDuration(overallSummary.idle_duration || 0)} idle`,
                   icon: Clock3,
                   accent: 'violet',
@@ -717,18 +721,18 @@ export default function AdminDashboard() {
                   label: item.date,
                   value: Number(item.total_duration || 0),
                   formattedValue: formatDuration(item.total_duration || 0),
-                  hint: `${formatDuration(item.billable_duration || 0)} billable`,
+                  hint: `${formatDuration(getWorkingDuration(item))} working`,
                 }))}
                 colorClassName="bg-sky-500"
               />
               <DashboardTrendCard
                 title="Productivity trend"
-                description="Billable output against idle time using the current reporting dataset."
+                description="Working time against idle time using the current reporting dataset."
                 points={overallByDay.map((item: any) => ({
                   id: `productivity-${item.date}`,
                   label: item.date,
-                  value: Number(item.billable_duration || 0),
-                  formattedValue: `${percentage(Number(item.billable_duration || 0), Number(item.total_duration || 0))}%`,
+                  value: getWorkingDuration(item),
+                  formattedValue: `${percentage(getWorkingDuration(item), Number(item.total_duration || 0))}%`,
                   hint: `${formatDuration(item.idle_duration || 0)} idle`,
                 }))}
                 colorClassName="bg-emerald-500"
@@ -761,15 +765,15 @@ export default function AdminDashboard() {
               title="Top performers, risks, teams, and alerts"
               description="Only the most useful insight groups stay visible here; detailed records move lower into tabs."
             />
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 2xl:grid-cols-4">
+            <div className="grid grid-cols-1 items-stretch gap-5 xl:grid-cols-2 2xl:grid-cols-4">
               <DashboardInsightList
                 title="Top performers"
-                description="Highest billable output in the selected range."
+                description="Highest working time in the selected range."
                 items={topPerformers.map((row: any) => ({
                   id: String(row.user?.id || row.user?.email),
                   title: row.user?.name || 'Unknown',
                   subtitle: `${formatDuration(row.total_duration || 0)} total tracked`,
-                  value: formatDuration(row.billable_duration || 0),
+                  value: formatDuration(getWorkingDuration(row)),
                   tone: 'good',
                 }))}
                 emptyDescription="No performer data is available for the current selection."
@@ -1042,20 +1046,20 @@ export default function AdminDashboard() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
-                    <p className="text-xs text-cyan-100/70">Worked hours</p>
-                    <p className="mt-2 text-2xl font-semibold">{formatDuration(employeeSummary.total_duration || 0)}</p>
+                    <p className="text-xs text-cyan-100/70">Tracked time</p>
+                    <p className="mt-2 text-2xl font-semibold">{formatDuration(employeeTrackedDuration)}</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
+                    <p className="text-xs text-cyan-100/70">Working time</p>
+                    <p className="mt-2 text-2xl font-semibold">{formatDuration(employeeWorkingDuration)}</p>
                   </div>
                   <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
                     <p className="text-xs text-cyan-100/70">Productivity</p>
                     <p className="mt-2 text-2xl font-semibold">{employeeProductivity}%</p>
                   </div>
                   <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
-                    <p className="text-xs text-cyan-100/70">Attendance</p>
-                    <p className="mt-2 text-2xl font-semibold">{monthlyAttendancePercentage}%</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
                     <p className="text-xs text-cyan-100/70">Idle time</p>
-                    <p className="mt-2 text-2xl font-semibold">{formatDuration(employeeStats.idle_total_duration || 0)}</p>
+                    <p className="mt-2 text-2xl font-semibold">{formatDuration(employeeIdleDuration)}</p>
                   </div>
                 </div>
               </div>
@@ -1073,18 +1077,18 @@ export default function AdminDashboard() {
                 },
                 {
                   id: 'worked-hours',
-                  label: 'Worked hours',
-                  value: formatDuration(employeeSummary.total_duration || 0),
+                  label: 'Tracked time',
+                  value: formatDuration(employeeTrackedDuration),
                   caption: `${employeeSummary.entries_count || 0} tracked sessions`,
-                  meta: `Check in ${latestAttendance?.check_in_at ? new Date(latestAttendance.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}`,
+                  meta: `Working ${formatDuration(employeeWorkingDuration)} after idle adjustment`,
                   icon: Clock3,
                   accent: 'emerald',
                 },
                 {
                   id: 'active-vs-idle',
-                  label: 'Active vs idle',
-                  value: `${formatDuration(employeeSummary.billable_duration || 0)} / ${formatDuration(employeeStats.idle_total_duration || 0)}`,
-                  caption: 'Billable compared with idle time',
+                  label: 'Working vs idle',
+                  value: `${formatDuration(employeeWorkingDuration)} / ${formatDuration(employeeIdleDuration)}`,
+                  caption: `Inside ${formatDuration(employeeTrackedDuration)} tracked time`,
                   meta: `${employeeStats.activity_events || 0} activity events`,
                   icon: Sparkles,
                   accent: 'violet',
@@ -1093,7 +1097,7 @@ export default function AdminDashboard() {
                   id: 'productivity',
                   label: 'Productivity score',
                   value: `${employeeProductivity}%`,
-                  caption: 'Billable share in the selected range',
+                  caption: 'Working share in the selected range',
                   meta: `${monthlyAttendancePercentage}% monthly attendance`,
                   icon: TrendingUp,
                   accent: 'amber',
@@ -1123,7 +1127,7 @@ export default function AdminDashboard() {
                   label: item.date,
                   value: Number(item.total_duration || 0),
                   formattedValue: formatDuration(item.total_duration || 0),
-                  hint: `${formatDuration(item.billable_duration || 0)} billable`,
+                  hint: `${formatDuration(getWorkingDuration(item))} working`,
                 }))}
                 colorClassName="bg-sky-500"
               />
@@ -1181,7 +1185,7 @@ export default function AdminDashboard() {
               title="Attendance, performance, activity, and monitoring"
               description="Only the most useful personal insight groups remain at this level."
             />
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 2xl:grid-cols-4">
+            <div className="grid grid-cols-1 items-stretch gap-5 xl:grid-cols-2 2xl:grid-cols-4">
               <DashboardInsightList
                 title="Attendance"
                 description="Current employee attendance context."
@@ -1216,7 +1220,7 @@ export default function AdminDashboard() {
                   {
                     id: 'entries',
                     title: `${employeeSummary.entries_count || 0} tracked sessions`,
-                    subtitle: `${formatDuration(employeeSummary.total_duration || 0)} total worked`,
+                    subtitle: `${formatDuration(employeeTrackedDuration)} total tracked`,
                     value: `${employeeProductivity}%`,
                     tone: employeeProductivity >= 70 ? 'good' : 'warning',
                   },
@@ -1299,7 +1303,7 @@ export default function AdminDashboard() {
                         },
                         { key: 'start', header: 'Start', render: (row: any) => formatDateTime(row.start_time) },
                         { key: 'duration', header: 'Worked', render: (row: any) => formatDuration(row.duration || 0) },
-                        { key: 'billable', header: 'Billable', render: (row: any) => (row.billable ? 'Yes' : 'No') },
+                        { key: 'working', header: 'Working', render: (row: any) => (row.billable ? 'Yes' : 'No') },
                       ]}
                     />
                   ),

@@ -7,6 +7,8 @@ use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\LeaveRequest;
 use App\Models\TimeEntry;
+use App\Models\User;
+use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Builder;
@@ -14,6 +16,11 @@ use Illuminate\Http\Request;
 
 class TimeEntryController extends Controller
 {
+    public function __construct(
+        private readonly TimeEntryDurationService $timeEntryDurationService,
+    ) {
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -21,8 +28,25 @@ class TimeEntryController extends Controller
             return response()->json(['data' => []]);
         }
 
+        $targetUser = $user;
+        $requestedUserId = (int) $request->get('user_id', 0);
+
+        if ($requestedUserId > 0 && $requestedUserId !== (int) $user->id) {
+            if (! $this->canViewOrganizationEntries($user)) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            $targetUser = User::query()
+                ->where('organization_id', $user->organization_id)
+                ->find($requestedUserId);
+
+            if (! $targetUser) {
+                return response()->json(['message' => 'User not found'], 404);
+            }
+        }
+
         $timeEntries = TimeEntry::with('task', 'project')
-            ->where('user_id', $user->id)
+            ->where('user_id', $targetUser->id)
             ->when($request->timer_slot, fn (Builder $q, string $slot) => $q->where('timer_slot', $slot))
             ->when($request->project_id, fn (Builder $q, string $projectId) => $q->where('project_id', $projectId))
             ->when($request->task_id, fn (Builder $q, string $taskId) => $q->where('task_id', $taskId))
@@ -30,6 +54,15 @@ class TimeEntryController extends Controller
             ->when($request->end_date, fn (Builder $q, string $end) => $q->whereDate('start_time', '<=', $end))
             ->orderBy('start_time', 'desc')
             ->paginate((int) $request->get('per_page', 15));
+
+        $resolvedNow = now();
+        $timeEntries->setCollection(
+            $timeEntries->getCollection()->map(function (TimeEntry $entry) use ($resolvedNow) {
+                $entry->duration = $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
+
+                return $entry;
+            })
+        );
 
         return response()->json($timeEntries);
     }
@@ -69,17 +102,19 @@ class TimeEntryController extends Controller
 
     public function show(TimeEntry $timeEntry)
     {
-        if (!$this->canAccessTimeEntry($timeEntry)) {
+        if (!$this->canViewTimeEntry($timeEntry)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
         $timeEntry->load('task', 'project');
+        $timeEntry->duration = $this->timeEntryDurationService->effectiveDuration($timeEntry);
+
         return response()->json($timeEntry);
     }
 
     public function update(Request $request, TimeEntry $timeEntry)
     {
-        if (!$this->canAccessTimeEntry($timeEntry)) {
+        if (!$this->canModifyTimeEntry($timeEntry)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -104,7 +139,7 @@ class TimeEntryController extends Controller
 
     public function destroy(TimeEntry $timeEntry)
     {
-        if (!$this->canAccessTimeEntry($timeEntry)) {
+        if (!$this->canModifyTimeEntry($timeEntry)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -202,11 +237,7 @@ class TimeEntryController extends Controller
             ->first();
 
         if ($timeEntry) {
-            $durationSeconds = max(
-                0,
-                now()->getTimestamp() - Carbon::parse($timeEntry->start_time)->getTimestamp()
-            );
-            $timeEntry->duration = (int) $durationSeconds;
+            $timeEntry->duration = $this->timeEntryDurationService->effectiveDuration($timeEntry);
         }
 
         return response()->json($timeEntry);
@@ -230,18 +261,50 @@ class TimeEntryController extends Controller
             ->orderBy('start_time', 'desc')
             ->get();
 
-        $totalDuration = (int) $timeEntries->sum(fn (TimeEntry $entry) => $this->effectiveDuration($entry));
+        $resolvedNow = now();
+        $timeEntries->transform(function (TimeEntry $entry) use ($resolvedNow) {
+            $entry->duration = $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
+
+            return $entry;
+        });
 
         return response()->json([
             'time_entries' => $timeEntries,
-            'total_duration' => $totalDuration,
+            'total_duration' => $this->timeEntryDurationService->sumEffectiveDuration($timeEntries, $resolvedNow),
         ]);
     }
 
-    private function canAccessTimeEntry(TimeEntry $timeEntry): bool
+    private function canViewTimeEntry(TimeEntry $timeEntry): bool
     {
         $user = request()->user();
-        return $user && $timeEntry->user_id === $user->id;
+        if (! $user) {
+            return false;
+        }
+
+        if ((int) $timeEntry->user_id === (int) $user->id) {
+            return true;
+        }
+
+        if (! $this->canViewOrganizationEntries($user)) {
+            return false;
+        }
+
+        return User::query()
+            ->where('organization_id', $user->organization_id)
+            ->whereKey($timeEntry->user_id)
+            ->exists();
+    }
+
+    private function canModifyTimeEntry(TimeEntry $timeEntry): bool
+    {
+        $user = request()->user();
+
+        return $user && (int) $timeEntry->user_id === (int) $user->id;
+    }
+
+    private function canViewOrganizationEntries(User $user): bool
+    {
+        return (bool) $user->organization_id && in_array($user->role, ['admin', 'manager'], true);
     }
 
     private function ensureAttendanceCheckedIn($user)
@@ -355,25 +418,8 @@ class TimeEntryController extends Controller
         foreach ($runningEntries as $running) {
             $running->update([
                 'end_time' => $endedAt,
-                'duration' => $this->effectiveDuration($running, $endedAt),
+                'duration' => $this->timeEntryDurationService->effectiveDuration($running, $endedAt),
             ]);
         }
-    }
-
-    private function effectiveDuration(TimeEntry $entry, ?Carbon $endAt = null): int
-    {
-        if ($entry->end_time) {
-            return (int) max(
-                (int) ($entry->duration ?? 0),
-                Carbon::parse($entry->start_time)->diffInSeconds(Carbon::parse($entry->end_time))
-            );
-        }
-
-        $resolvedEnd = $endAt ?: now();
-
-        return (int) max(
-            (int) ($entry->duration ?? 0),
-            Carbon::parse($entry->start_time)->diffInSeconds($resolvedEnd)
-        );
     }
 }

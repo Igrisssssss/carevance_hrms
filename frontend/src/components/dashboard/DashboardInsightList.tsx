@@ -17,6 +17,8 @@ interface DashboardInsightListProps {
   emptyTitle?: string;
   emptyDescription?: string;
   footer?: string;
+  className?: string;
+  contentClassName?: string;
 }
 
 const toneClasses: Record<NonNullable<DashboardInsightItem['tone']>, string> = {
@@ -33,33 +35,35 @@ export default function DashboardInsightList({
   emptyTitle = 'No items found',
   emptyDescription = 'There is nothing to show for this section yet.',
   footer,
+  className,
+  contentClassName,
 }: DashboardInsightListProps) {
   return (
-    <SurfaceCard className="p-5">
+    <SurfaceCard className={cn('flex h-full min-h-[320px] max-h-[420px] flex-col p-5', className)}>
       <h2 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">{title}</h2>
       <p className="mt-1 text-sm text-slate-500">{description}</p>
 
-      {items.length === 0 ? (
-        <div className="mt-5">
+      <div className={cn('mt-5 min-h-0 flex-1 overflow-y-auto pr-1', contentClassName)}>
+        {items.length === 0 ? (
           <PageEmptyState title={emptyTitle} description={emptyDescription} />
-        </div>
-      ) : (
-        <div className="mt-5 space-y-3">
-          {items.map((item) => (
-            <div key={item.id} className="flex items-start justify-between gap-4 rounded-[22px] border border-slate-200 bg-slate-50/70 px-4 py-3">
-              <div className="min-w-0">
-                <p className="font-medium text-slate-950">{item.title}</p>
-                {item.subtitle ? <p className="mt-1 text-sm text-slate-500">{item.subtitle}</p> : null}
+        ) : (
+          <div className="space-y-3">
+            {items.map((item) => (
+              <div key={item.id} className="flex items-start justify-between gap-4 rounded-[22px] border border-slate-200 bg-slate-50/70 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-slate-950">{item.title}</p>
+                  {item.subtitle ? <p className="mt-1 text-sm text-slate-500">{item.subtitle}</p> : null}
+                </div>
+                {item.value ? (
+                  <span className={cn('shrink-0 rounded-full px-3 py-1 text-xs font-semibold', toneClasses[item.tone || 'default'])}>
+                    {item.value}
+                  </span>
+                ) : null}
               </div>
-              {item.value ? (
-                <span className={cn('shrink-0 rounded-full px-3 py-1 text-xs font-semibold', toneClasses[item.tone || 'default'])}>
-                  {item.value}
-                </span>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
 
       {footer ? <p className="mt-4 text-xs leading-5 text-slate-500">{footer}</p> : null}
     </SurfaceCard>
