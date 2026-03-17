@@ -287,7 +287,7 @@ export const screenshotApi = {
 
 // Activity API
 export const activityApi = {
-  getAll: (params?: { user_id?: number; type?: string; start_date?: string; end_date?: string; page?: number }) => 
+  getAll: (params?: { user_id?: number; group_ids?: number[]; type?: string; start_date?: string; end_date?: string; page?: number; per_page?: number }) => 
     api.get<{ data: Activity[] }>('/activities', { params }),
   
   get: (id: number) => 
@@ -757,6 +757,7 @@ export const auditApi = {
     target_id?: number;
     date_from?: string;
     date_to?: string;
+    page?: number;
     per_page?: number;
   }) =>
     api.get<{

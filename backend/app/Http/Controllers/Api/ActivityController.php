@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
+use App\Models\ReportGroup;
 use App\Models\TimeEntry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -26,6 +27,31 @@ class ActivityController extends Controller
         }
 
         $canViewAll = $this->canViewAll($user);
+        $groupUserIds = null;
+        $selectedGroupIds = collect($request->input('group_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($canViewAll && $selectedGroupIds->isNotEmpty()) {
+            $groupUserIds = ReportGroup::query()
+                ->where('organization_id', $user->organization_id)
+                ->whereIn('id', $selectedGroupIds)
+                ->with('users:id')
+                ->get()
+                ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+            if ($groupUserIds->isEmpty()) {
+                return response()->json(Activity::query()->whereRaw('1 = 0')->paginate(15));
+            }
+        }
+
+        $perPage = (int) $request->get('per_page', 50);
+        $perPage = max(1, min($perPage, 200));
 
         $activities = Activity::query()
             ->with(['user:id,name,email,role'])
@@ -33,7 +59,17 @@ class ActivityController extends Controller
                 $query->where('organization_id', $user->organization_id);
             })
             ->when(!$canViewAll, fn ($query) => $query->where('user_id', $user->id))
-            ->when($canViewAll && $request->user_id, fn ($query, $userId) => $query->where('user_id', $userId))
+            ->when($canViewAll && $request->user_id, function ($query) use ($request) {
+                $query->where('user_id', $request->user_id);
+            })
+            ->when($canViewAll && $groupUserIds !== null, function ($query) use ($groupUserIds, $request) {
+                $selectedUserId = $request->user_id ? (int) $request->user_id : null;
+                if ($selectedUserId) {
+                    $query->whereIn('user_id', $groupUserIds->intersect([$selectedUserId]));
+                } else {
+                    $query->whereIn('user_id', $groupUserIds);
+                }
+            })
             ->when($request->type, function ($query, $type) {
                 $query->where('type', $type);
             })
@@ -44,7 +80,7 @@ class ActivityController extends Controller
                 $query->where('recorded_at', '<=', Carbon::parse((string) $endDate)->endOfDay());
             })
             ->orderBy('recorded_at', 'desc')
-            ->paginate(15);
+            ->paginate($perPage);
 
         return response()->json($activities);
     }

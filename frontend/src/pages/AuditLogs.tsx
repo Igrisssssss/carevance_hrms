@@ -21,9 +21,10 @@ export default function AuditLogs() {
   const [dateTo, setDateTo] = useState('');
   const [actorUserId, setActorUserId] = useState('');
   const [targetType, setTargetType] = useState('');
+  const [page, setPage] = useState(1);
 
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['audit-logs', action, dateFrom, dateTo, actorUserId, targetType],
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+    queryKey: ['audit-logs', action, dateFrom, dateTo, actorUserId, targetType, page],
     queryFn: async () => {
       const response = await auditApi.list({
         action: action || undefined,
@@ -31,11 +32,13 @@ export default function AuditLogs() {
         date_to: dateTo || undefined,
         actor_user_id: actorUserId ? Number(actorUserId) : undefined,
         target_type: targetType || undefined,
-        per_page: 50,
+        page,
+        per_page: 10,
       });
 
       return response.data;
     },
+    keepPreviousData: true,
   });
 
   return (
@@ -49,28 +52,88 @@ export default function AuditLogs() {
       <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-5">
         <div>
           <FieldLabel>Action</FieldLabel>
-          <TextInput value={action} onChange={(e) => setAction(e.target.value)} placeholder="payroll.marked_paid" />
+          <TextInput
+            value={action}
+            onChange={(e) => {
+              setAction(e.target.value);
+              setPage(1);
+            }}
+            placeholder="payroll.marked_paid"
+          />
         </div>
         <div>
           <FieldLabel>Date From</FieldLabel>
-          <TextInput type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <TextInput
+            type="date"
+            value={dateFrom}
+            onChange={(e) => {
+              setDateFrom(e.target.value);
+              setPage(1);
+            }}
+          />
         </div>
         <div>
           <FieldLabel>Date To</FieldLabel>
-          <TextInput type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <TextInput
+            type="date"
+            value={dateTo}
+            onChange={(e) => {
+              setDateTo(e.target.value);
+              setPage(1);
+            }}
+          />
         </div>
         <div>
           <FieldLabel>Actor User ID</FieldLabel>
-          <TextInput type="number" value={actorUserId} onChange={(e) => setActorUserId(e.target.value)} placeholder="12" />
+          <TextInput
+            type="number"
+            value={actorUserId}
+            onChange={(e) => {
+              setActorUserId(e.target.value);
+              setPage(1);
+            }}
+            placeholder="12"
+          />
         </div>
         <div>
           <FieldLabel>Target Type</FieldLabel>
-          <TextInput value={targetType} onChange={(e) => setTargetType(e.target.value)} placeholder="Payroll" />
+          <TextInput
+            value={targetType}
+            onChange={(e) => {
+              setTargetType(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Payroll"
+          />
         </div>
       </FilterPanel>
 
-      <div className="flex justify-end">
-        <Button variant="secondary" onClick={() => refetch()}>Refresh Logs</Button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-slate-500">
+          {data?.pagination ? `Page ${data.pagination.current_page} of ${data.pagination.last_page}` : 'Page 1 of 1'}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+            disabled={page <= 1 || isLoading}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              const lastPage = data?.pagination?.last_page ?? page;
+              setPage((prev) => (prev < lastPage ? prev + 1 : prev));
+            }}
+            disabled={!data?.pagination || page >= (data.pagination?.last_page || 1) || isLoading}
+          >
+            Next
+          </Button>
+          <Button variant="secondary" onClick={() => refetch()} disabled={isFetching}>
+            Refresh Logs
+          </Button>
+        </div>
       </div>
 
       {isLoading ? <PageLoadingState label="Loading audit logs..." /> : null}

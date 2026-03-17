@@ -226,9 +226,11 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       if (mode === 'timeline') {
         const response = await activityApi.getAll({
           user_id: selectedUserId ? Number(selectedUserId) : undefined,
+          group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
           start_date: startDate,
           end_date: endDate,
           page: 1,
+          per_page: 200,
         });
         return response.data?.data || [];
       }
@@ -270,6 +272,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const overallSummary = overallData?.summary || {};
   const byUser = overallData?.by_user || [];
   const byDay = overallData?.by_day || [];
+  const shouldScrollByUser = byUser.length > 5;
+  const shouldScrollByDay = byDay.length > 5;
 
   const projectsData = dataQuery.data as any;
   const projects = projectsData?.projects || [];
@@ -533,6 +537,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               rows={byUser}
               emptyMessage="No employee rows found."
               headerAction={renderPanelRefreshButton()}
+              bodyClassName={shouldScrollByUser ? 'max-h-[360px] overflow-y-auto' : undefined}
               columns={[
                 { key: 'user', header: 'User', render: (row: any) => <div><p className="font-medium text-slate-950">{row.user?.name}</p><p className="text-xs text-slate-500">{row.user?.email}</p></div> },
                 { key: 'total', header: 'Tracked', render: (row: any) => formatDuration(row.total_duration || 0) },
@@ -554,7 +559,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                   <PageEmptyState title="No trend data" description="Tracked work by day will appear here." />
                 </div>
               ) : (
-                <div className="mt-5 space-y-3">
+                <div className={`mt-5 space-y-3 ${shouldScrollByDay ? 'max-h-[360px] overflow-y-auto pr-2' : ''}`.trim()}>
                   {byDay.map((item: any) => {
                     const width = Math.max(
                       8,
@@ -635,6 +640,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             rows={timelineRows.slice().sort((a: any, b: any) => +new Date(b.recorded_at) - +new Date(a.recorded_at))}
             emptyMessage="No timeline events found."
             headerAction={renderPanelRefreshButton()}
+            bodyClassName={timelineRows.length > 8 ? 'max-h-[420px] overflow-y-auto' : undefined}
             columns={[
               { key: 'recorded_at', header: 'When', render: (row: any) => new Date(row.recorded_at).toLocaleString() },
               { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
@@ -674,6 +680,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               rows={usageProductiveRows}
               emptyMessage="No productive tool usage found."
               headerAction={renderPanelRefreshButton()}
+              bodyClassName={usageProductiveRows.length > 5 ? 'max-h-[320px] overflow-y-auto' : undefined}
               columns={[
                 { key: 'label', header: 'Tool', render: (row: any) => row.label },
                 { key: 'type', header: 'Type', render: (row: any) => row.type },
@@ -686,6 +693,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               rows={usageUnproductiveRows}
               emptyMessage="No unproductive tool usage found."
               headerAction={renderPanelRefreshButton()}
+              bodyClassName={usageUnproductiveRows.length > 5 ? 'max-h-[320px] overflow-y-auto' : undefined}
               columns={[
                 { key: 'label', header: 'Tool', render: (row: any) => row.label },
                 { key: 'type', header: 'Type', render: (row: any) => row.type },
@@ -700,6 +708,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             rows={employeeRankings}
             emptyMessage="No employee ranking data found."
             headerAction={renderPanelRefreshButton()}
+            bodyClassName={employeeRankings.length > 5 ? 'max-h-[320px] overflow-y-auto' : undefined}
             columns={[
               { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
               { key: 'productive_duration', header: 'Productive Time', render: (row: any) => formatDuration(row.productive_duration || 0) },

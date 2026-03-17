@@ -15,6 +15,7 @@ interface DataTableProps<T> {
   rows: T[];
   emptyMessage: string;
   headerAction?: ReactNode;
+  bodyClassName?: string;
 }
 
 export default function DataTable<T>({
@@ -24,6 +25,7 @@ export default function DataTable<T>({
   rows,
   emptyMessage,
   headerAction,
+  bodyClassName,
 }: DataTableProps<T>) {
   return (
     <SurfaceCard className="overflow-hidden">
@@ -36,7 +38,7 @@ export default function DataTable<T>({
           {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
         </div>
       </div>
-      <div className="overflow-x-auto">
+      <div className={`overflow-x-auto ${bodyClassName || ''}`.trim()}>
         <table className="min-w-full text-sm">
           <thead className="bg-slate-50/80">
             <tr>
