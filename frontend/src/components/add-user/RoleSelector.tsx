@@ -37,15 +37,17 @@ const roleOptions: Array<{
 export default function RoleSelector({
   value,
   onChange,
+  allowedRoles = roleOptions.map((option) => option.value),
 }: {
   value: InviteUserRole;
   onChange: (role: InviteUserRole) => void;
+  allowedRoles?: InviteUserRole[];
 }) {
   return (
     <div>
       <FieldLabel>Access Level</FieldLabel>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        {roleOptions.map((option) => {
+        {roleOptions.filter((option) => allowedRoles.includes(option.value)).map((option) => {
           const Icon = option.icon;
           const active = value === option.value;
 

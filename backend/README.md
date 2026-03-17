@@ -53,3 +53,25 @@ ATTENDANCE_SHIFT_SECONDS=28800
 - The codebase uses the `personal_access_tokens` table but does not rely on Sanctum middleware wiring.
 - There is no separate broadcasting server configuration in this repo.
 - Screenshots are exposed through short-lived signed URLs, and chat attachments stream through authenticated endpoints.
+
+## Workspace Signup And SMTP Notes
+
+- Public workspace-owner signup uses `POST /api/auth/signup-owner`.
+- Secure onboarding invites use `POST /api/invitations`, `GET /api/invitations/{token}`, and `POST /api/invitations/{token}/accept`.
+- Invitation emails are queue-ready Laravel mailables. Set `MAIL_MAILER=smtp`, configure the `MAIL_*` vars in `.env`, and keep a queue worker running if you are not using the `sync` driver.
+- `FRONTEND_APP_URL` should point at the React app so invite emails generate `/accept-invite/:token` links correctly.
+
+### Brevo SMTP Example
+
+Use your Brevo SMTP credentials and keep secrets in `.env` only:
+
+```env
+MAIL_MAILER=smtp
+MAIL_HOST=smtp-relay.brevo.com
+MAIL_PORT=587
+MAIL_USERNAME=your_brevo_login
+MAIL_PASSWORD=your_brevo_smtp_key
+MAIL_ENCRYPTION=null
+MAIL_FROM_ADDRESS=your_sender_email
+MAIL_FROM_NAME="CareVance HRMS"
+```

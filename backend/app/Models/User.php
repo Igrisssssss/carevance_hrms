@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
@@ -18,6 +19,11 @@ class User extends Authenticatable
     public function organizations()
     {
         return $this->hasMany(Organization::class);
+    }
+
+    public function ownedOrganization(): HasOne
+    {
+        return $this->hasOne(Organization::class, 'owner_user_id');
     }
 
     public function projects()
@@ -87,6 +93,7 @@ class User extends Authenticatable
         'password',
         'role',
         'organization_id',
+        'invited_by',
         'avatar',
         'settings',
         'last_seen_at',
@@ -118,6 +125,16 @@ class User extends Authenticatable
     }
 
     protected $appends = ['is_active', 'is_online'];
+
+    public function inviter(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'invited_by');
+    }
+
+    public function sentInvitations(): HasMany
+    {
+        return $this->hasMany(Invitation::class, 'invited_by');
+    }
 
     public function getIsActiveAttribute(): bool
     {

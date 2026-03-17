@@ -44,7 +44,7 @@ export default function CsvUploadPanel({
           Parsed {summary.parsedCount} row{summary.parsedCount === 1 ? '' : 's'}, added {summary.successCount}, errors {summary.errorCount}.
         </div>
       ) : (
-        <p className="text-xs text-slate-500">If project assignments are listed in CSV, they will remain mock-ready until backend access-control endpoints are added.</p>
+        <p className="text-xs text-slate-500">If project IDs are listed in CSV, they are stored for future provisioning while project-access automation remains pending.</p>
       )}
     </div>
   );

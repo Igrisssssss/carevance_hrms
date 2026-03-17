@@ -5,9 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Api\Concerns\InteractsWithApiResponses;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Auth\LoginRequest;
-use App\Http\Requests\Api\Auth\RegisterRequest;
+use App\Http\Requests\Api\Auth\SignupOwnerRequest;
 use App\Models\Organization;
 use App\Models\User;
+use App\Services\Auth\ApiTokenService;
 use App\Services\Audit\AuditLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,65 +20,65 @@ class AuthController extends Controller
 {
     use InteractsWithApiResponses;
 
-    public function __construct(private readonly AuditLogService $auditLogService)
+    public function __construct(
+        private readonly AuditLogService $auditLogService,
+        private readonly ApiTokenService $apiTokenService,
+    )
     {
     }
 
-    public function register(RegisterRequest $request)
+    public function register(SignupOwnerRequest $request)
     {
-        $result = DB::transaction(function () use ($request) {
-            $role = $request->get('role', 'admin');
-            $organization = null;
-            $organizationName = trim((string) $request->organization_name);
+        return $this->signupOwner($request);
+    }
 
-            if ($role === 'employee') {
-                if ($organizationName === '') {
-                    throw ValidationException::withMessages([
-                        'organization_name' => ['Organization name is required for employee signup.'],
-                    ]);
-                }
+    public function signupOwner(SignupOwnerRequest $request)
+    {
+        $validated = $request->validated();
+        $organizationName = trim((string) ($validated['company_name'] ?? $validated['organization_name'] ?? ''));
+        $planCode = (string) ($validated['plan_code'] ?? config('carevance.default_plan', 'starter'));
+        $signupMode = (string) ($validated['signup_mode'] ?? 'trial');
+        $billingCycle = $validated['billing_cycle'] ?? config('carevance.default_billing_cycle', 'monthly');
+        $trialDays = max(1, (int) config('carevance.trial_days', 14));
 
-                $organization = Organization::query()
-                    ->whereRaw('LOWER(name) = ?', [mb_strtolower($organizationName)])
-                    ->orWhere('slug', Str::slug($organizationName))
-                    ->first();
-
-                if (!$organization) {
-                    throw ValidationException::withMessages([
-                        'organization_name' => ['Organization not found. Enter a valid organization name.'],
-                    ]);
-                }
-            } else {
-                if ($organizationName === '') {
-                    throw ValidationException::withMessages([
-                        'organization_name' => ['Organization name is required for admin signup.'],
-                    ]);
-                }
-
-                $baseSlug = Str::slug($organizationName);
-                $slug = $baseSlug !== '' ? $baseSlug : 'organization';
-                $suffix = 1;
-
-                while (Organization::where('slug', $slug)->exists()) {
-                    $slug = ($baseSlug !== '' ? $baseSlug : 'organization').'-'.$suffix;
-                    $suffix++;
-                }
-
-                $organization = Organization::create([
-                    'name' => $organizationName,
-                    'slug' => $slug,
-                ]);
-            }
+        $result = DB::transaction(function () use ($validated, $organizationName, $planCode, $signupMode, $billingCycle, $trialDays, $request) {
+            $organization = Organization::create([
+                'name' => $organizationName,
+                'slug' => $this->generateUniqueOrganizationSlug($organizationName),
+                'plan_code' => $planCode,
+                'billing_cycle' => $billingCycle,
+                'subscription_status' => $signupMode === 'paid' ? 'inactive' : 'trial',
+                'subscription_intent' => $signupMode === 'paid' ? 'paid' : 'trial',
+                'trial_starts_at' => $signupMode === 'trial' ? now() : null,
+                'trial_ends_at' => $signupMode === 'trial' ? now()->addDays($trialDays) : null,
+                'subscription_expires_at' => $signupMode === 'trial' ? now()->addDays($trialDays)->toDateString() : null,
+            ]);
 
             $user = User::create([
-                'name' => $request->name,
-                'email' => $request->email,
-                'password' => Hash::make($request->password),
-                'role' => $role,
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+                'role' => 'admin',
                 'organization_id' => $organization->id,
             ]);
 
-            $token = $this->issueToken($user);
+            $organization->forceFill([
+                'owner_user_id' => $user->id,
+            ])->save();
+
+            $token = $this->apiTokenService->issue($user);
+
+            $this->auditLogService->log(
+                action: 'auth.owner_signup',
+                actor: $user,
+                target: $organization,
+                metadata: [
+                    'plan_code' => $organization->plan_code,
+                    'subscription_status' => $organization->subscription_status,
+                    'signup_mode' => $signupMode,
+                ],
+                request: $request
+            );
 
             return compact('user', 'token', 'organization');
         });
@@ -99,7 +100,7 @@ class AuthController extends Controller
             ]);
         }
 
-        $token = $this->issueToken($user);
+        $token = $this->apiTokenService->issue($user);
 
         $this->auditLogService->log(
             action: 'auth.login',
@@ -181,7 +182,7 @@ class AuthController extends Controller
             ], 401);
         }
 
-        $token = $this->issueToken($user, 'web-handoff-token');
+        $token = $this->apiTokenService->issue($user, 'web-handoff-token');
         $user->load('organization');
 
         return $this->successResponse([
@@ -191,23 +192,17 @@ class AuthController extends Controller
         ], 'Handoff token issued.');
     }
 
-    private function issueToken(User $user, string $name = 'auth-token'): string
+    private function generateUniqueOrganizationSlug(string $organizationName): string
     {
-        $plainToken = bin2hex(random_bytes(40));
-        $ttlMinutes = (int) config('auth.api_tokens.ttl_minutes', 10080);
+        $baseSlug = Str::slug($organizationName);
+        $slug = $baseSlug !== '' ? $baseSlug : 'organization';
+        $suffix = 1;
 
-        DB::table('personal_access_tokens')->insert([
-            'tokenable_type' => User::class,
-            'tokenable_id' => $user->id,
-            'name' => $name,
-            'token' => hash('sha256', $plainToken),
-            'abilities' => json_encode(['*']),
-            'last_used_at' => null,
-            'expires_at' => $ttlMinutes > 0 ? now()->addMinutes($ttlMinutes) : null,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        while (Organization::where('slug', $slug)->exists()) {
+            $slug = ($baseSlug !== '' ? $baseSlug : 'organization').'-'.$suffix;
+            $suffix++;
+        }
 
-        return $plainToken;
+        return $slug;
     }
 }

@@ -78,10 +78,10 @@ export default function Login() {
                 <p className="mt-3 text-sm text-slate-500">
                   New here?{' '}
                   <Link
-                    to="/register"
+                    to="/signup-owner"
                     className="font-semibold text-sky-700 underline-offset-4 transition hover:text-slate-950 hover:underline focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
                   >
-                    Create an account
+                    Start your workspace
                   </Link>
                 </p>
               </div>

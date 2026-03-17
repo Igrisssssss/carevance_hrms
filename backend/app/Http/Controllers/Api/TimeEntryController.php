@@ -6,12 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\LeaveRequest;
+use App\Models\Project;
+use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TimeEntryController extends Controller
@@ -85,10 +88,17 @@ class TimeEntryController extends Controller
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
+        $assignment = $this->resolveProjectAndTask($request, $user);
+        if ($assignment instanceof JsonResponse) {
+            return $assignment;
+        }
+
+        [$projectId, $taskId] = $assignment;
+
         $timeEntry = TimeEntry::create([
             'description' => $request->description,
-            'project_id' => $request->project_id,
-            'task_id' => $request->task_id,
+            'project_id' => $projectId,
+            'task_id' => $taskId,
             'start_time' => $request->start_time,
             'end_time' => $request->end_time,
             'duration' => $request->duration ?? 0,
@@ -97,6 +107,7 @@ class TimeEntryController extends Controller
             'timer_slot' => $request->get('timer_slot', 'primary'),
         ]);
 
+        $timeEntry->load('project', 'task');
         return response()->json($timeEntry, 201);
     }
 
@@ -129,12 +140,35 @@ class TimeEntryController extends Controller
             'timer_slot' => 'nullable|in:primary,secondary',
         ]);
 
-        $timeEntry->update($request->only([
-            'description', 'project_id', 'task_id', 
-            'start_time', 'end_time', 'duration', 'billable', 'timer_slot'
-        ]));
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
 
-        return response()->json($timeEntry);
+        $assignment = $this->resolveProjectAndTask($request, $user, $timeEntry);
+        if ($assignment instanceof JsonResponse) {
+            return $assignment;
+        }
+
+        [$projectId, $taskId] = $assignment;
+
+        $payload = $request->only([
+            'description',
+            'start_time',
+            'end_time',
+            'duration',
+            'billable',
+            'timer_slot',
+        ]);
+
+        if ($request->exists('project_id') || $request->exists('task_id')) {
+            $payload['project_id'] = $projectId;
+            $payload['task_id'] = $taskId;
+        }
+
+        $timeEntry->update($payload);
+
+        return response()->json($timeEntry->fresh()->load('project', 'task'));
     }
 
     public function destroy(TimeEntry $timeEntry)
@@ -161,6 +195,13 @@ class TimeEntryController extends Controller
         if (!$user) {
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
+
+        $assignment = $this->resolveProjectAndTask($request, $user);
+        if ($assignment instanceof JsonResponse) {
+            return $assignment;
+        }
+
+        [$projectId, $taskId] = $assignment;
         $slot = $request->get('timer_slot', 'primary');
 
         if ($slot === 'primary') {
@@ -178,13 +219,14 @@ class TimeEntryController extends Controller
 
         $timeEntry = TimeEntry::create([
             'description' => $request->description,
-            'project_id' => $request->project_id,
-            'task_id' => $request->task_id,
+            'project_id' => $projectId,
+            'task_id' => $taskId,
             'start_time' => $startedAt,
             'user_id' => $user->id,
             'timer_slot' => $slot,
         ]);
 
+        $timeEntry->load('project', 'task');
         return response()->json($timeEntry, 201);
     }
 
@@ -216,7 +258,7 @@ class TimeEntryController extends Controller
             $this->ensureAttendanceCheckedOutForBreak($user->id, $stoppedAt);
         }
 
-        return response()->json($timeEntry);
+        return response()->json($timeEntry->load('project', 'task'));
     }
 
     public function active(Request $request)
@@ -421,5 +463,56 @@ class TimeEntryController extends Controller
                 'duration' => $this->timeEntryDurationService->effectiveDuration($running, $endedAt),
             ]);
         }
+    }
+
+    private function resolveProjectAndTask(Request $request, User $user, ?TimeEntry $existingEntry = null): array|JsonResponse
+    {
+        $projectId = $request->exists('project_id')
+            ? ($request->project_id ? (int) $request->project_id : null)
+            : ($existingEntry?->project_id ? (int) $existingEntry->project_id : null);
+
+        $taskId = $request->exists('task_id')
+            ? ($request->task_id ? (int) $request->task_id : null)
+            : ($existingEntry?->task_id ? (int) $existingEntry->task_id : null);
+
+        if ($request->exists('project_id') && !$projectId) {
+            $taskId = null;
+        }
+
+        if ($projectId) {
+            $project = Project::query()
+                ->where('organization_id', $user->organization_id)
+                ->find($projectId);
+
+            if (!$project) {
+                return response()->json(['message' => 'Invalid project for your organization.'], 422);
+            }
+        }
+
+        if ($taskId) {
+            $taskQuery = Task::query()
+                ->whereKey($taskId)
+                ->whereHas('project', fn (Builder $query) => $query->where('organization_id', $user->organization_id));
+
+            if ($projectId) {
+                $taskQuery->where('project_id', $projectId);
+            }
+
+            $task = $taskQuery->first();
+
+            if (!$task) {
+                return response()->json([
+                    'message' => $projectId
+                        ? 'Selected task is not available in the chosen project.'
+                        : 'Invalid task for your organization.',
+                ], 422);
+            }
+
+            if (!$projectId) {
+                $projectId = (int) $task->project_id;
+            }
+        }
+
+        return [$projectId, $taskId];
     }
 }

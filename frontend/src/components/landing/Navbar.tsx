@@ -9,9 +9,9 @@ import { desktopDownloadUrl } from '@/lib/runtimeConfig';
 const navItems = [
   { label: 'Product', href: '#product' },
   { label: 'Features', href: '#features' },
+  { label: 'Pricing', href: '#pricing' },
   { label: 'Workflow', href: '#workflow' },
-  { label: 'Screens', href: '#screenshots' },
-  { label: 'Security', href: '#security' },
+  { label: 'FAQ', href: '#faq' },
 ];
 
 export default function Navbar() {
@@ -88,7 +88,7 @@ export default function Navbar() {
             {navItems.map((item) => (
               <a
                 key={item.label}
-                href={item.href}
+                href={location.pathname === '/' ? item.href : `/${item.href}`}
                 className="rounded-full px-3.5 py-2 text-sm font-semibold text-slate-900 transition duration-300 hover:-translate-y-0.5 hover:text-sky-700"
               >
                 {item.label}
@@ -113,10 +113,16 @@ export default function Navbar() {
               Login
             </Link>
             <Link
-              to="/register"
+              to="/contact-sales"
+              className="rounded-full px-4 py-2 text-sm font-semibold text-slate-900 transition duration-300 hover:-translate-y-0.5 hover:text-sky-700"
+            >
+              Book Demo
+            </Link>
+            <Link
+              to="/start-trial"
               className="rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_40px_-18px_rgba(14,165,233,0.7)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_46px_-20px_rgba(14,165,233,0.8)]"
             >
-              Start Monitoring
+              Start Free Trial
             </Link>
           </div>
 
@@ -151,7 +157,7 @@ export default function Navbar() {
                 {navItems.map((item) =>
                   <a
                     key={item.label}
-                    href={item.href}
+                    href={location.pathname === '/' ? item.href : `/${item.href}`}
                     onClick={() => setIsOpen(false)}
                     className="block rounded-2xl px-3 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-950/5 hover:text-sky-700"
                   >
@@ -159,11 +165,18 @@ export default function Navbar() {
                   </a>
                 )}
                 <Link
-                  to="/register"
+                  to="/contact-sales"
+                  onClick={() => setIsOpen(false)}
+                  className="block rounded-2xl border border-slate-200/90 px-4 py-3 text-center text-sm font-semibold text-slate-900"
+                >
+                  Book Demo
+                </Link>
+                <Link
+                  to="/start-trial"
                   onClick={() => setIsOpen(false)}
                   className="block rounded-2xl bg-[linear-gradient(135deg,#020617_0%,#0f172a_35%,#0284c7_100%)] px-4 py-3 text-center text-sm font-semibold text-white"
                 >
-                  Start Monitoring
+                  Start Free Trial
                 </Link>
               </div>
             </motion.div>

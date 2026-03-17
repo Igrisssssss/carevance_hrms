@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
@@ -11,15 +12,28 @@ class Organization extends Model
     protected $fillable = [
         'name',
         'slug',
+        'owner_user_id',
+        'plan_code',
+        'billing_cycle',
         'settings',
         'subscription_status',
+        'subscription_intent',
+        'trial_starts_at',
+        'trial_ends_at',
         'subscription_expires_at',
     ];
 
     protected $casts = [
         'settings' => 'array',
+        'trial_starts_at' => 'datetime',
+        'trial_ends_at' => 'datetime',
         'subscription_expires_at' => 'date',
     ];
+
+    public function owner(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'owner_user_id');
+    }
 
     public function projects(): HasMany
     {
@@ -29,6 +43,11 @@ class Organization extends Model
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
+    }
+
+    public function invitations(): HasMany
+    {
+        return $this->hasMany(Invitation::class);
     }
 
     public function tasks(): HasManyThrough

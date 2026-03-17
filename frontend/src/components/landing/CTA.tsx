@@ -23,24 +23,24 @@ export default function CTA() {
           <div className="relative max-w-2xl">
             <p className="contrast-text-accent text-sm font-semibold uppercase tracking-[0.28em]">Start now</p>
             <h2 className="contrast-text-primary mt-4 text-3xl font-semibold tracking-[-0.05em] sm:text-6xl sm:leading-[0.95]">
-              Start monitoring work activity with the modules already built in CareVance HRMS
+              Launch a workspace trial or talk through your CareVance rollout
             </h2>
             <p className="contrast-text-secondary mt-4 text-base leading-7 sm:text-lg sm:leading-8">
-              Create the organization, add users, open the dashboard, and use the monitoring, attendance, reporting, and payroll workflows from the existing product.
+              Start the owner signup flow for immediate setup, or connect with sales when you need a guided rollout or enterprise planning.
             </p>
           </div>
           <div className="relative flex flex-col gap-3 sm:gap-4 sm:flex-row">
             <Link
-              to="/register"
+              to="/start-trial"
               className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3.5 text-sm font-semibold text-slate-950 transition duration-300 hover:-translate-y-0.5 hover:bg-cyan-50 sm:w-auto"
             >
-              Start Monitoring
+              Start Free Trial
             </Link>
             <Link
-              to="/login"
+              to="/contact-sales"
               className="inline-flex w-full items-center justify-center rounded-full border border-white/25 bg-white/10 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:bg-white/15 sm:w-auto"
             >
-              View Dashboard
+              Contact Sales
             </Link>
             <a
               href={desktopDownloadUrl}

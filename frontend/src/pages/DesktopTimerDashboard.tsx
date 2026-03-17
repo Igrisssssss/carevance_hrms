@@ -6,7 +6,7 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
 import { PageLoadingState } from '@/components/ui/PageState';
-import { FieldLabel, SelectInput } from '@/components/ui/FormField';
+import { SelectInput } from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
 import {
   Clock,
@@ -18,9 +18,27 @@ import {
   Calendar,
 } from 'lucide-react';
 import type { TimeEntry } from '@/types';
-import type { Project } from '@/types';
+import type { Project, Task } from '@/types';
 
 const ACTIVE_TIMER_KEY = 'active_timer_snapshot';
+const AUTO_START_SUPPRESSED_KEY = 'desktop_timer_auto_start_suppressed';
+
+const getAutoStartSuppressionKey = (userId?: number | null) => `${AUTO_START_SUPPRESSED_KEY}:${userId ?? 'guest'}`;
+
+const suppressAutoStart = (userId?: number | null) => {
+  if (!userId) return;
+  sessionStorage.setItem(getAutoStartSuppressionKey(userId), '1');
+};
+
+const clearAutoStartSuppression = (userId?: number | null) => {
+  if (!userId) return;
+  sessionStorage.removeItem(getAutoStartSuppressionKey(userId));
+};
+
+const isAutoStartSuppressed = (userId?: number | null) => {
+  if (!userId) return false;
+  return sessionStorage.getItem(getAutoStartSuppressionKey(userId)) === '1';
+};
 
 const getStartTimeMs = (startTime?: string) => {
   if (!startTime) return NaN;
@@ -32,13 +50,16 @@ const getStartTimeMs = (startTime?: string) => {
 
 export default function DesktopTimerDashboard() {
   const { user } = useAuth();
+  const userId = user?.id ?? null;
   const [activeTimer, setActiveTimer] = useState<TimeEntry | null>(null);
   const [liveDuration, setLiveDuration] = useState(0);
   const [todayEntries, setTodayEntries] = useState<TimeEntry[]>([]);
   const [todayTotal, setTodayTotal] = useState(0);
   const [allTimeTotal, setAllTimeTotal] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectTasks, setProjectTasks] = useState<Task[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [teamMembersCount, setTeamMembersCount] = useState(0);
   const [newMembersThisWeek, setNewMembersThisWeek] = useState(0);
   const [productivityScore, setProductivityScore] = useState(0);
@@ -52,12 +73,11 @@ export default function DesktopTimerDashboard() {
   const [workedBaseSeconds, setWorkedBaseSeconds] = useState(0);
   const [timerBaseSeconds, setTimerBaseSeconds] = useState(0);
   const [isSubmittingOvertime, setIsSubmittingOvertime] = useState(false);
+  const [isLoadingProjectTasks, setIsLoadingProjectTasks] = useState(false);
+  const [isUpdatingTimerContext, setIsUpdatingTimerContext] = useState(false);
   const [notice, setNotice] = useState('');
   const hasRestoredSnapshotRef = useRef(false);
-
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const hasAttemptedAutoStartRef = useRef(false);
 
   useEffect(() => {
     if (!activeTimer) {
@@ -96,6 +116,40 @@ export default function DesktopTimerDashboard() {
     return () => clearInterval(interval);
   }, [activeTimer?.id, activeTimer?.duration, activeTimer?.start_time]);
 
+  const syncTimerEntryLocally = (entry: TimeEntry | null) => {
+    setActiveTimer(entry);
+    if (!entry) {
+      return;
+    }
+
+    setTodayEntries((prev) => {
+      const nextEntries = prev.some((current) => current.id === entry.id)
+        ? prev.map((current) => (current.id === entry.id ? { ...current, ...entry } : current))
+        : [entry, ...prev];
+
+      return nextEntries;
+    });
+  };
+
+  const loadProjectTasks = async (projectId: number | null) => {
+    if (!projectId) {
+      setProjectTasks([]);
+      return;
+    }
+
+    setIsLoadingProjectTasks(true);
+    try {
+      const response = await projectApi.getTasks(projectId);
+      const nextTasks = (response.data || []).filter((task) => task.status !== 'done');
+      setProjectTasks(nextTasks);
+    } catch (error) {
+      console.error('Error loading project tasks:', error);
+      setProjectTasks([]);
+    } finally {
+      setIsLoadingProjectTasks(false);
+    }
+  };
+
   const fetchData = async () => {
     try {
       const [dashboardResponse, projectsResponse, attendanceResponse] = await Promise.all([
@@ -113,15 +167,15 @@ export default function DesktopTimerDashboard() {
       if (!activeFromApi) {
         localStorage.removeItem(ACTIVE_TIMER_KEY);
       } else {
+        clearAutoStartSuppression(userId);
         hasRestoredSnapshotRef.current = false;
       }
       setTodayEntries(data?.today_entries || []);
       setTodayTotal(Number(data?.today_total_elapsed_duration ?? data?.today_total_duration ?? 0) || 0);
       setAllTimeTotal(Number(data?.all_time_total_elapsed_duration ?? data?.all_time_total_duration ?? 0) || 0);
       setProjects(fetchedProjects);
-      if (!selectedProjectId && fetchedProjects.length > 0) {
-        setSelectedProjectId(fetchedProjects[0].id);
-      }
+      setSelectedProjectId((current) => activeFromApi?.project_id || current || fetchedProjects[0]?.id || null);
+      setSelectedTaskId(activeFromApi?.task_id || null);
       setTeamMembersCount(Number(data?.team_members_count) || 0);
       setNewMembersThisWeek(Number(data?.new_members_this_week) || 0);
       setProductivityScore(Number(data?.productivity_score) || 0);
@@ -157,16 +211,76 @@ export default function DesktopTimerDashboard() {
     }
   };
 
-  const handleStartTimer = async () => {
-    setIsStarting(true);
+  useEffect(() => {
+    hasAttemptedAutoStartRef.current = false;
+    hasRestoredSnapshotRef.current = false;
     setNotice('');
+    setActiveTimer(null);
+    setTodayEntries([]);
+    setTodayTotal(0);
+    setAllTimeTotal(0);
+    setProjects([]);
+    setProjectTasks([]);
+    setSelectedProjectId(null);
+    setSelectedTaskId(null);
+
+    if (!userId) {
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    void fetchData();
+  }, [userId]);
+
+  useEffect(() => {
+    void loadProjectTasks(selectedProjectId);
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (!activeTimer) {
+      if (selectedTaskId && !projectTasks.some((task) => task.id === selectedTaskId)) {
+        setSelectedTaskId(null);
+      }
+      return;
+    }
+
+    if (activeTimer.project_id) {
+      setSelectedProjectId(activeTimer.project_id);
+    }
+    setSelectedTaskId(activeTimer.task_id || null);
+  }, [activeTimer?.id, activeTimer?.project_id, activeTimer?.task_id, projectTasks, selectedTaskId]);
+
+  useEffect(() => {
+    if (isLoading || user?.role !== 'employee') {
+      return;
+    }
+
+    if (activeTimer) {
+      hasAttemptedAutoStartRef.current = true;
+      return;
+    }
+
+    if (hasAttemptedAutoStartRef.current || isStarting || isAutoStartSuppressed(userId)) {
+      return;
+    }
+
+    hasAttemptedAutoStartRef.current = true;
+    void handleStartTimer(true);
+  }, [activeTimer?.id, isLoading, isStarting, user?.role, userId]);
+
+  const handleStartTimer = async (isAutoStart = false) => {
+    setIsStarting(true);
+    setNotice(isAutoStart ? 'Starting your timer automatically...' : '');
     try {
       const startedAtIso = new Date().toISOString();
       const response = await timeEntryApi.start({
-        project_id: selectedProjectId || undefined,
+        project_id: isAutoStart ? null : selectedProjectId,
+        task_id: isAutoStart ? null : selectedTaskId,
         timer_slot: 'primary',
       });
-      setActiveTimer(response.data);
+      clearAutoStartSuppression(userId);
+      syncTimerEntryLocally(response.data);
       setAttendanceToday((prev: any) => ({
         ...(prev || {}),
         attendance_date: prev?.attendance_date || startedAtIso.split('T')[0],
@@ -182,10 +296,11 @@ export default function DesktopTimerDashboard() {
           description: response.data.description ?? '',
         })
       );
+      setNotice(isAutoStart ? 'Timer started. Choose a project, then a task for the running session.' : '');
       await fetchData();
     } catch (error: any) {
       console.error('Error starting timer:', error);
-      setNotice(error?.response?.data?.message || 'Failed to start timer');
+      setNotice(error?.response?.data?.message || (isAutoStart ? 'Could not auto-start the timer.' : 'Failed to start timer'));
     } finally {
       setIsStarting(false);
     }
@@ -196,6 +311,7 @@ export default function DesktopTimerDashboard() {
       setNotice('');
       const response = await timeEntryApi.stop({ timer_slot: (activeTimer?.timer_slot || 'primary') as 'primary' | 'secondary' });
       const stoppedEntry = response.data;
+      suppressAutoStart(userId);
       setActiveTimer(null);
       localStorage.removeItem(ACTIVE_TIMER_KEY);
 
@@ -219,6 +335,7 @@ export default function DesktopTimerDashboard() {
     } catch (error) {
       const status = (error as any)?.response?.status;
       if (status === 404) {
+        suppressAutoStart(userId);
         setActiveTimer(null);
         localStorage.removeItem(ACTIVE_TIMER_KEY);
         await fetchData();
@@ -228,12 +345,67 @@ export default function DesktopTimerDashboard() {
     }
   };
 
+  const handleProjectSelection = async (projectId: number | null) => {
+    setSelectedProjectId(projectId);
+    setSelectedTaskId(null);
+
+    if (!activeTimer) {
+      return;
+    }
+
+    setIsUpdatingTimerContext(true);
+    setNotice('');
+
+    try {
+      const response = await timeEntryApi.update(activeTimer.id, {
+        project_id: projectId,
+        task_id: null,
+      });
+      syncTimerEntryLocally(response.data);
+      setNotice(projectId ? 'Project updated for the running timer. Choose a task next.' : 'Project cleared from the running timer.');
+    } catch (error: any) {
+      console.error('Error updating timer project:', error);
+      setSelectedProjectId(activeTimer.project_id || null);
+      setSelectedTaskId(activeTimer.task_id || null);
+      setNotice(error?.response?.data?.message || 'Failed to update the running timer project.');
+    } finally {
+      setIsUpdatingTimerContext(false);
+    }
+  };
+
+  const handleTaskSelection = async (taskId: number | null) => {
+    setSelectedTaskId(taskId);
+
+    if (!activeTimer) {
+      return;
+    }
+
+    setIsUpdatingTimerContext(true);
+    setNotice('');
+
+    try {
+      const response = await timeEntryApi.update(activeTimer.id, {
+        project_id: selectedProjectId,
+        task_id: taskId,
+      });
+      syncTimerEntryLocally(response.data);
+      setNotice(taskId ? 'Task updated for the running timer.' : 'Task cleared from the running timer.');
+    } catch (error: any) {
+      console.error('Error updating timer task:', error);
+      setSelectedTaskId(activeTimer.task_id || null);
+      setNotice(error?.response?.data?.message || 'Failed to update the running timer task.');
+    } finally {
+      setIsUpdatingTimerContext(false);
+    }
+  };
+
   const currentWorkedSeconds = Math.max(
     0,
     workedBaseSeconds + (activeTimer ? Math.max(0, liveDuration - timerBaseSeconds) : 0)
   );
   const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - currentWorkedSeconds);
   const overtimeSeconds = Math.max(0, currentWorkedSeconds - shiftTargetSeconds);
+  const availableTasks = projectTasks.filter((task) => task.status !== 'done');
 
   const submitOvertimeProof = async () => {
     if (overtimeSeconds <= 0) {
@@ -297,7 +469,7 @@ export default function DesktopTimerDashboard() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="mb-1 text-sm font-medium text-cyan-100/80">
-              {activeTimer ? 'Timer Running' : 'Start Tracking'}
+              {activeTimer ? 'Timer Running' : 'Desktop timer'}
             </p>
             <div className="text-4xl font-semibold tracking-[-0.05em] sm:text-5xl">
               {activeTimer ? formatTime(liveDuration) : '00:00:00'}
@@ -318,14 +490,21 @@ export default function DesktopTimerDashboard() {
             {activeTimer?.project?.name && (
               <p className="mt-1 text-sm text-cyan-50/90">Project: {activeTimer.project.name}</p>
             )}
+            {activeTimer?.task?.title && (
+              <p className="mt-1 text-sm text-cyan-50/90">Task: {activeTimer.task.title}</p>
+            )}
+            {activeTimer && !activeTimer?.project?.name ? (
+              <p className="mt-3 text-sm text-cyan-50/90">Choose a project first, then pick one of that project's tasks for this running timer.</p>
+            ) : null}
           </div>
           <div className="flex flex-col items-start gap-3 lg:items-end">
             <StatusBadge tone={activeTimer ? 'success' : 'info'} className="border-white/15 bg-white/10 text-white">
-              {activeTimer ? 'Live session' : 'Ready to start'}
+              {isUpdatingTimerContext ? 'Updating timer' : activeTimer ? 'Live session' : 'Ready to start'}
             </StatusBadge>
             <Button
               onClick={() => (activeTimer ? handleStopTimer() : handleStartTimer())}
-              disabled={isStarting}
+              aria-label={activeTimer ? 'Pause timer' : 'Start timer'}
+              disabled={isStarting || isUpdatingTimerContext}
               variant="secondary"
               size="lg"
               className={`h-16 w-16 rounded-full border-0 px-0 ${
@@ -336,13 +515,18 @@ export default function DesktopTimerDashboard() {
             </Button>
           </div>
         </div>
-        {!activeTimer && (
-          <div className="mt-4 max-w-xs">
-            <FieldLabel>Project</FieldLabel>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="rounded-[24px] border border-white/15 bg-white/10 p-4">
+            <p className="text-xs uppercase tracking-[0.24em] text-cyan-100/70">
+              {activeTimer ? 'Running Timer Project' : 'Project'}
+            </p>
             <SelectInput
+              aria-label="Active timer project"
               value={selectedProjectId ?? ''}
-              onChange={(e) => setSelectedProjectId(e.target.value ? Number(e.target.value) : null)}
-              className="border-white/15 bg-white/10 text-white shadow-none focus:border-white/40 focus:bg-white/15 focus:ring-white/20"
+              onChange={(e) => void handleProjectSelection(e.target.value ? Number(e.target.value) : null)}
+              disabled={isStarting || isUpdatingTimerContext}
+              className="mt-3 border-white/35 bg-white/90 text-slate-950 shadow-none focus:border-white focus:bg-white focus:ring-white/30 disabled:bg-white/60 disabled:text-slate-500"
             >
               <option value="" className="text-gray-900">Choose project</option>
               {projects.map((project) => (
@@ -351,8 +535,41 @@ export default function DesktopTimerDashboard() {
                 </option>
               ))}
             </SelectInput>
+            <p className="mt-2 text-xs text-cyan-100/75">
+              {activeTimer ? 'Changing the project clears the current task so you can pick a matching one.' : 'The running timer will use this project once started.'}
+            </p>
           </div>
-        )}
+
+          <div className="rounded-[24px] border border-white/15 bg-white/10 p-4">
+            <p className="text-xs uppercase tracking-[0.24em] text-cyan-100/70">Running Timer Task</p>
+            <SelectInput
+              aria-label="Active timer task"
+              value={selectedTaskId ?? ''}
+              onChange={(e) => void handleTaskSelection(e.target.value ? Number(e.target.value) : null)}
+              disabled={!activeTimer || !selectedProjectId || isLoadingProjectTasks || isUpdatingTimerContext}
+              className="mt-3 border-white/35 bg-white/90 text-slate-950 shadow-none focus:border-white focus:bg-white focus:ring-white/30 disabled:bg-white/60 disabled:text-slate-500"
+            >
+              <option value="" className="text-gray-900">
+                {!selectedProjectId
+                  ? 'Choose project first'
+                  : isLoadingProjectTasks
+                    ? 'Loading tasks...'
+                    : availableTasks.length === 0
+                      ? 'No open tasks available'
+                      : 'Choose task'}
+              </option>
+              {availableTasks.map((task) => (
+                <option key={task.id} value={task.id} className="text-gray-900">
+                  {task.title}
+                </option>
+              ))}
+            </SelectInput>
+            <p className="mt-2 text-xs text-cyan-100/75">
+              {activeTimer ? 'Only tasks from the selected project are listed here for the live timer.' : 'Task selection becomes active while the timer is running.'}
+            </p>
+          </div>
+        </div>
+
         <div className="mt-4 text-sm text-cyan-50/85">
           Total elapsed (all sessions): {formatDuration(allTimeTotal)} | Today's attendance worked: {formatDuration(currentWorkedSeconds)}
         </div>

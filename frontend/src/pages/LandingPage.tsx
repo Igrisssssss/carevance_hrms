@@ -6,6 +6,8 @@ import Features from '@/components/landing/Features';
 import Workflow from '@/components/landing/Workflow';
 import Benefits from '@/components/landing/Benefits';
 import Security from '@/components/landing/Security';
+import PricingSection from '@/components/landing/PricingSection';
+import FAQSection from '@/components/landing/FAQSection';
 import CTA from '@/components/landing/CTA';
 import Footer from '@/components/landing/Footer';
 
@@ -44,6 +46,8 @@ export default function LandingPage() {
         <Screenshots />
       </Suspense>
       <Security />
+      <PricingSection />
+      <FAQSection />
       <CTA />
       <Footer />
     </div>

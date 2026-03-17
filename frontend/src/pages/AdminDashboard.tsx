@@ -24,6 +24,7 @@ import DataTable from '@/components/dashboard/DataTable';
 import EmptyStateCard from '@/components/dashboard/EmptyStateCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
+import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState } from '@/components/ui/PageState';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
@@ -318,6 +319,8 @@ export default function AdminDashboard() {
   const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
   const [screenshotActionFeedback, setScreenshotActionFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isDeletingScreenshots, setIsDeletingScreenshots] = useState(false);
+  const [attendanceSearchQuery, setAttendanceSearchQuery] = useState('');
+  const [attendanceGroupFilter, setAttendanceGroupFilter] = useState<number | ''>('');
 
   useEffect(() => {
     sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
@@ -588,6 +591,47 @@ export default function AdminDashboard() {
   const notifications = organizationData?.notifications || [];
   const groups = organizationData?.groups || [];
   const completedTasks = organizationData?.completedTasks || [];
+  const employeeGroupsById = groups.reduce((map: Record<number, Array<{ id: number; name: string }>>, group: any) => {
+    const groupId = Number(group?.id || 0);
+    const groupName = String(group?.name || 'Unknown group');
+
+    (group?.users || []).forEach((member: any) => {
+      const memberId = Number(member?.id || 0);
+      if (!memberId) return;
+
+      const existingGroups = map[memberId] || [];
+      if (!existingGroups.some((item) => item.id === groupId)) {
+        existingGroups.push({ id: groupId, name: groupName });
+      }
+      map[memberId] = existingGroups;
+    });
+
+    return map;
+  }, {});
+  const attendanceGroupOptions = groups
+    .map((group: any) => ({ id: Number(group?.id || 0), name: String(group?.name || 'Unknown group') }))
+    .filter((group: { id: number; name: string }) => group.id > 0)
+    .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
+  const normalizedAttendanceSearch = attendanceSearchQuery.trim().toLowerCase();
+  const filteredAttendanceRows = attendanceRows.filter((row: any) => {
+    const userId = Number(row.user?.id || row.user_id || 0);
+    const employeeName = String(row.user?.name || '').toLowerCase();
+    const employeeEmail = String(row.user?.email || '').toLowerCase();
+    const assignedGroups = employeeGroupsById[userId] || [];
+
+    const matchesSearch =
+      normalizedAttendanceSearch.length === 0 ||
+      employeeName.includes(normalizedAttendanceSearch) ||
+      employeeEmail.includes(normalizedAttendanceSearch);
+
+    const matchesGroup =
+      attendanceGroupFilter === '' ||
+      assignedGroups.some((group) => group.id === Number(attendanceGroupFilter));
+
+    return matchesSearch && matchesGroup;
+  });
+  const presentAttendanceRows = filteredAttendanceRows.filter((row: any) => Number(row.present_days || row.days_present || 0) > 0);
+  const absentAttendanceRows = filteredAttendanceRows.filter((row: any) => Number(row.present_days || row.days_present || 0) <= 0);
   const presentEmployees = attendanceRows.filter((row: any) => Number(row.present_days || row.days_present || 0) > 0).length;
   const lateEmployees = attendanceRows.filter((row: any) => Number(row.late_days || 0) > 0).length;
   const absentEmployees = Math.max(attendanceRows.length - presentEmployees, 0);
@@ -999,28 +1043,112 @@ export default function AdminDashboard() {
                   id: 'attendance',
                   label: 'Attendance',
                   content: (
-                    <DataTable
-                      title="Attendance breakdown"
-                      description="Attendance summary rows for the selected range."
-                      rows={attendanceRows}
-                      emptyMessage="No attendance rows found for the selected range."
-                      columns={[
-                        {
-                          key: 'employee',
-                          header: 'Employee',
-                          render: (row: any) => (
-                            <div>
-                              <p className="font-medium text-slate-950">{row.user?.name || 'Unknown'}</p>
-                              <p className="text-xs text-slate-500">{row.user?.email || 'No email'}</p>
+                    <div className="space-y-4">
+                      <SurfaceCard className="p-5">
+                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)_auto] lg:items-end">
+                          <div>
+                            <FieldLabel>Search employee</FieldLabel>
+                            <TextInput
+                              value={attendanceSearchQuery}
+                              onChange={(event) => setAttendanceSearchQuery(event.target.value)}
+                              placeholder="Search by employee name or email"
+                            />
+                          </div>
+                          <div>
+                            <FieldLabel>Group filter</FieldLabel>
+                            <SelectInput
+                              value={attendanceGroupFilter}
+                              onChange={(event) => setAttendanceGroupFilter(event.target.value ? Number(event.target.value) : '')}
+                            >
+                              <option value="">All groups</option>
+                              {attendanceGroupOptions.map((group: { id: number; name: string }) => (
+                                <option key={group.id} value={group.id}>
+                                  {group.name}
+                                </option>
+                              ))}
+                            </SelectInput>
+                          </div>
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="rounded-[20px] border border-slate-200/80 bg-slate-50/80 px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Matched</p>
+                              <p className="mt-2 text-lg font-semibold text-slate-950">{filteredAttendanceRows.length}</p>
                             </div>
-                          ),
-                        },
-                        { key: 'present', header: 'Present', render: (row: any) => `${row.present_days || row.days_present || 0} day(s)` },
-                        { key: 'late', header: 'Late', render: (row: any) => `${row.late_days || 0} day(s)` },
-                        { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.total_worked_seconds || row.worked_seconds || 0) },
-                        { key: 'status', header: 'Working now', render: (row: any) => (row.is_checked_in || row.is_working ? 'Checked in' : 'Offline') },
-                      ]}
-                    />
+                            <div className="rounded-[20px] border border-emerald-200/80 bg-emerald-50/80 px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.18em] text-emerald-700">Present</p>
+                              <p className="mt-2 text-lg font-semibold text-emerald-900">{presentAttendanceRows.length}</p>
+                            </div>
+                            <div className="rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.18em] text-rose-700">Absent</p>
+                              <p className="mt-2 text-lg font-semibold text-rose-900">{absentAttendanceRows.length}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </SurfaceCard>
+
+                      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                        <DataTable
+                          title="Present employees"
+                          description="Employees with at least one present day in the selected range."
+                          rows={presentAttendanceRows}
+                          emptyMessage="No present employees match the current search or group filter."
+                          columns={[
+                            {
+                              key: 'employee',
+                              header: 'Employee',
+                              render: (row: any) => {
+                                const userId = Number(row.user?.id || row.user_id || 0);
+                                const assignedGroups = employeeGroupsById[userId] || [];
+
+                                return (
+                                  <div>
+                                    <p className="font-medium text-slate-950">{row.user?.name || 'Unknown'}</p>
+                                    <p className="text-xs text-slate-500">{row.user?.email || 'No email'}</p>
+                                    <p className="mt-1 text-xs text-slate-400">
+                                      {assignedGroups.length ? assignedGroups.map((group) => group.name).join(', ') : 'No group assigned'}
+                                    </p>
+                                  </div>
+                                );
+                              },
+                            },
+                            { key: 'present', header: 'Present', render: (row: any) => `${row.present_days || row.days_present || 0} day(s)` },
+                            { key: 'late', header: 'Late', render: (row: any) => `${row.late_days || 0} day(s)` },
+                            { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.total_worked_seconds || row.worked_seconds || 0) },
+                            { key: 'status', header: 'Working now', render: (row: any) => (row.is_checked_in || row.is_working ? 'Checked in' : 'Offline') },
+                          ]}
+                        />
+
+                        <DataTable
+                          title="Absent employees"
+                          description="Employees with no present day recorded in the selected range."
+                          rows={absentAttendanceRows}
+                          emptyMessage="No absent employees match the current search or group filter."
+                          columns={[
+                            {
+                              key: 'employee',
+                              header: 'Employee',
+                              render: (row: any) => {
+                                const userId = Number(row.user?.id || row.user_id || 0);
+                                const assignedGroups = employeeGroupsById[userId] || [];
+
+                                return (
+                                  <div>
+                                    <p className="font-medium text-slate-950">{row.user?.name || 'Unknown'}</p>
+                                    <p className="text-xs text-slate-500">{row.user?.email || 'No email'}</p>
+                                    <p className="mt-1 text-xs text-slate-400">
+                                      {assignedGroups.length ? assignedGroups.map((group) => group.name).join(', ') : 'No group assigned'}
+                                    </p>
+                                  </div>
+                                );
+                              },
+                            },
+                            { key: 'present', header: 'Present', render: (row: any) => `${row.present_days || row.days_present || 0} day(s)` },
+                            { key: 'late', header: 'Late', render: (row: any) => `${row.late_days || 0} day(s)` },
+                            { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.total_worked_seconds || row.worked_seconds || 0) },
+                            { key: 'status', header: 'Working now', render: (row: any) => (row.is_checked_in || row.is_working ? 'Checked in' : 'Offline') },
+                          ]}
+                        />
+                      </div>
+                    </div>
                   ),
                 },
                 {

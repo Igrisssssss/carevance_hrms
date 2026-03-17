@@ -93,6 +93,7 @@ export const topNavigation: NavGroup[] = [
     icon: Settings,
     items: [
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },
+      { label: 'Billing', to: '/settings/billing', icon: Wallet, adminOnly: true },
       { label: 'Approval Inbox', to: '/approval-inbox', icon: Fingerprint, adminOnly: true },
       { label: 'Audit Logs', to: '/audit-logs', icon: ShieldCheck, adminOnly: true },
     ],

@@ -14,14 +14,15 @@ class Task extends Model
         'title',
         'description',
         'status',
+        'priority',
         'due_date',
+        'estimated_time',
     ];
 
     protected $casts = [
         'due_date' => 'date',
+        'estimated_time' => 'integer',
     ];
-
-    protected $appends = ['priority'];
 
     public function project(): BelongsTo
     {
@@ -36,10 +37,5 @@ class Task extends Model
     public function timeEntries(): HasMany
     {
         return $this->hasMany(TimeEntry::class);
-    }
-
-    public function getPriorityAttribute(): string
-    {
-        return 'medium';
     }
 }

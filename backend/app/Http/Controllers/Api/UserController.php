@@ -12,6 +12,7 @@ use App\Models\Payslip;
 use App\Models\TimeEntry;
 use App\Models\User;
 use App\Models\ReportGroup;
+use App\Services\Authorization\OrganizationRoleService;
 use App\Services\Audit\AuditLogService;
 use App\Services\Reports\TimeBreakdownService;
 use App\Services\TimeEntries\TimeEntryDurationService;
@@ -26,6 +27,7 @@ class UserController extends Controller
         private readonly AuditLogService $auditLogService,
         private readonly TimeBreakdownService $timeBreakdownService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
+        private readonly OrganizationRoleService $organizationRoleService,
     )
     {
     }
@@ -122,11 +124,14 @@ class UserController extends Controller
             'group_ids.*' => 'integer',
         ]);
 
+        $selectedRole = $validated['role'] ?? 'employee';
+        $this->organizationRoleService->assertCanAssignRole($currentUser, $selectedRole);
+
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password'] ?? Str::random(12)),
-            'role' => $validated['role'] ?? 'employee',
+            'role' => $selectedRole,
             'organization_id' => $currentUser->organization_id,
             'settings' => $validated['settings'] ?? null,
         ]);
@@ -178,6 +183,10 @@ class UserController extends Controller
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
         ]);
+
+        if (array_key_exists('role', $validated)) {
+            $this->organizationRoleService->assertCanAssignRole($request->user(), $validated['role']);
+        }
 
         $originalRole = $user->role;
         $originalAttributes = $user->only(['name', 'email', 'role', 'settings']);

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { activityApi, attendanceApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, reportGroupApi, screenshotApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess } from '@/lib/permissions';
@@ -10,7 +11,7 @@ import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, TextInput, TextareaInput } from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { Briefcase, CalendarDays, Clock, FolderKanban, Layers3, Users } from 'lucide-react';
+import { Briefcase, CalendarDays, Clock, Eye, FolderKanban, Layers3, Users } from 'lucide-react';
 import type { UserProfile360 } from '@/types';
 
 const formatDuration = (seconds: number) => {
@@ -119,6 +120,7 @@ type SectionFeedback = {
 } | null;
 
 export default function Attendance({ mode = 'full' }: AttendanceProps) {
+  const navigate = useNavigate();
   const { user, organization } = useAuth();
   const [query, setQuery] = useState('');
   const [startDate, setStartDate] = useState(formatLocalDate(new Date(new Date().setDate(1))));
@@ -221,7 +223,6 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
     setTimeEditFeedbackState(null);
   };
-
   const fetchAttendance = async () => {
     setIsLoading(true);
     try {
@@ -545,7 +546,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       try {
         const [insightsResponse, screenshotsResponse, websiteResponse] = await Promise.all([
           reportApi.employeeInsights({ start_date: startDate, end_date: endDate, user_id: monitoringUserId }),
-          screenshotApi.getAll({ user_id: monitoringUserId, page: 1 }),
+          screenshotApi.getAll({ user_id: monitoringUserId, start_date: startDate, end_date: endDate, page: 1 }),
           activityApi.getAll({ user_id: monitoringUserId, type: 'url', start_date: startDate, end_date: endDate, page: 1 }),
         ]);
 
@@ -599,6 +600,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const selectedRow = rows.find((row) => row.user.id === selectedUserId) || rows[0];
   const employeePanelUser = employeeProfile?.user || user;
   const attendancePanelUser = isAdmin ? selectedRow?.user : employeePanelUser;
+  const monitoringUserId = isAdmin ? selectedUserId : user?.id;
   const pendingLeaveRequests = useMemo(
     () => leaveRequests.filter((item) => item.status === 'pending'),
     [leaveRequests]
@@ -667,6 +669,15 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     [employeeGroups, employeeProfile, organizationMembersCount]
   );
   const employeeLiveMonitoring = employeeMonitoring?.live_monitoring?.selected_user || null;
+  const openMonitoringScreenshotGallery = () => {
+    if (!monitoringUserId) return;
+
+    const params = new URLSearchParams();
+    params.set('user', String(monitoringUserId));
+    params.set('start', startDate);
+    params.set('end', endDate);
+    navigate(`/monitoring/screenshots?${params.toString()}`);
+  };
 
   if (mode === 'time-edit') {
     return (
@@ -872,7 +883,18 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             <div className="rounded-[24px] border border-slate-200 bg-white/85 p-4">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="font-semibold text-slate-950">Screenshot captures</h3>
-                <span className="text-xs text-slate-500">{employeeMonitoringScreenshots.length} shown</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">{employeeMonitoringScreenshots.length} shown</span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    iconLeft={<Eye className="h-4 w-4" />}
+                    onClick={openMonitoringScreenshotGallery}
+                    disabled={!monitoringUserId || employeeMonitoringScreenshots.length === 0}
+                  >
+                    View all screenshots
+                  </Button>
+                </div>
               </div>
               {employeeMonitoringScreenshots.length === 0 ? (
                 <p className="mt-3 text-sm text-slate-500">No screenshots found for the selected employee in this attendance panel.</p>
@@ -887,7 +909,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                       className="overflow-hidden rounded-[20px] border border-slate-200 bg-white transition hover:border-sky-200"
                     >
                       <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-32 w-full object-cover" />
-                      <div className="space-y-1 p-3">
+                      <div className="space-y-2 p-3">
                         <p className="text-xs font-semibold text-slate-950">{formatDateTime(shot.recorded_at)}</p>
                         <p className="text-[11px] text-slate-500">{shot.filename || 'Captured screenshot'}</p>
                       </div>

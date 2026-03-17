@@ -36,6 +36,16 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute((int) env('RATE_LIMIT_REGISTER_PER_MINUTE', 3))->by($request->ip()),
         ]);
 
+        RateLimiter::for('invitations.create', fn (Request $request) => [
+            Limit::perMinute((int) env('RATE_LIMIT_INVITATIONS_CREATE_PER_MINUTE', 20))
+                ->by((string) optional($request->user())->getAuthIdentifier()),
+        ]);
+
+        RateLimiter::for('invitations.accept', fn (Request $request) => [
+            Limit::perMinute((int) env('RATE_LIMIT_INVITATIONS_ACCEPT_PER_MINUTE', 10))
+                ->by($request->ip().'|'.(string) $request->route('token')),
+        ]);
+
         RateLimiter::for('auth.handoff', fn (Request $request) => [
             Limit::perMinute((int) env('RATE_LIMIT_HANDOFF_PER_MINUTE', 10))->by((string) optional($request->user())->getAuthIdentifier()),
         ]);

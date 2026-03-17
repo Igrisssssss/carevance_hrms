@@ -1,4 +1,4 @@
-import { organizationApi, projectApi, reportGroupApi } from '@/services/api';
+import { invitationApi, projectApi, reportGroupApi } from '@/services/api';
 
 export type InviteUserRole = 'employee' | 'manager' | 'admin' | 'client';
 
@@ -32,6 +32,15 @@ export interface InviteSubmissionPayload {
   settings: AdditionalInviteSettings;
 }
 
+export interface InviteLinkPayload {
+  organizationId: number;
+  email: string;
+  role: InviteUserRole;
+  groupIds: number[];
+  projectIds: number[];
+  settings: AdditionalInviteSettings;
+}
+
 export interface InviteSubmissionResult {
   invitedCount: number;
   failed: Array<{ email: string; message: string }>;
@@ -42,10 +51,10 @@ export interface InviteLinkResult {
   url: string;
   meta: {
     role: InviteUserRole;
+    email: string;
     groupIds: number[];
     projectIds: number[];
   };
-  isMock: boolean;
 }
 
 export interface CsvParseRow {
@@ -211,66 +220,59 @@ export const addUserService = {
   },
 
   async inviteByEmail(payload: InviteSubmissionPayload): Promise<InviteSubmissionResult> {
-    const failed: Array<{ email: string; message: string }> = [];
-    let invitedCount = 0;
-
-    for (const email of payload.emails) {
-      try {
-        await organizationApi.inviteMember(payload.organizationId, {
-          email,
-          name: deriveDisplayName(email),
-          role: payload.role,
-          group_ids: payload.groupIds,
-          settings: {
-            monitoring_interval_minutes: payload.settings.monitoringInterval,
-            can_edit_time: payload.settings.canEditTime,
-            attendance_monitoring: payload.settings.attendanceMonitoring,
-            payroll_visibility: payload.settings.payrollVisibility,
-            task_assignment_access: payload.settings.taskAssignmentAccess,
-          },
-        });
-        invitedCount += 1;
-      } catch (error: any) {
-        failed.push({
-          email,
-          message: error?.response?.data?.message || 'Unable to send invitation.',
-        });
-      }
-    }
-
-    const deferredAssignments = payload.projectIds.length > 0
-      ? ['Project access was staged in the frontend only because the backend does not expose a user-project assignment endpoint yet.']
-      : [];
-
-    return { invitedCount, failed, deferredAssignments };
-  },
-
-  async generateInviteLink(payload: Omit<InviteSubmissionPayload, 'emails' | 'organizationId'>) {
-    const token = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-    const params = new URLSearchParams({
-      invite: token,
+    const response = await invitationApi.create({
+      emails: payload.emails,
       role: payload.role,
+      delivery: 'email',
+      group_ids: payload.groupIds,
+      project_ids: payload.projectIds,
+      settings: {
+        monitoring_interval_minutes: payload.settings.monitoringInterval,
+        can_edit_time: payload.settings.canEditTime,
+        attendance_monitoring: payload.settings.attendanceMonitoring,
+        payroll_visibility: payload.settings.payrollVisibility,
+        task_assignment_access: payload.settings.taskAssignmentAccess,
+      },
     });
 
-    if (payload.groupIds.length > 0) {
-      params.set('groups', payload.groupIds.join(','));
-    }
-
-    if (payload.projectIds.length > 0) {
-      params.set('projects', payload.projectIds.join(','));
-    }
+    const failed = response.data.failed || [];
+    const deferredAssignments = payload.projectIds.length > 0
+      ? ['Project IDs are stored with the invitation for future provisioning, but project-access automation is not wired yet.']
+      : [];
 
     return {
-      url: `${window.location.origin}/register?${params.toString()}`,
+      invitedCount: response.data.invited_count || 0,
+      failed,
+      deferredAssignments,
+    };
+  },
+
+  async generateInviteLink(payload: InviteLinkPayload) {
+    const response = await invitationApi.create({
+      email: payload.email,
+      role: payload.role,
+      delivery: 'link',
+      group_ids: payload.groupIds,
+      project_ids: payload.projectIds,
+      settings: {
+        monitoring_interval_minutes: payload.settings.monitoringInterval,
+        can_edit_time: payload.settings.canEditTime,
+        attendance_monitoring: payload.settings.attendanceMonitoring,
+        payroll_visibility: payload.settings.payrollVisibility,
+        task_assignment_access: payload.settings.taskAssignmentAccess,
+      },
+    });
+
+    const invitation = response.data.invitations[0];
+
+    return {
+      url: invitation?.invite_url || '',
       meta: {
         role: payload.role,
+        email: payload.email,
         groupIds: payload.groupIds,
         projectIds: payload.projectIds,
       },
-      isMock: true,
     } satisfies InviteLinkResult;
   },
 
@@ -362,11 +364,12 @@ export const addUserService = {
 
     for (const row of parsed.rows) {
       try {
-        await organizationApi.inviteMember(basePayload.organizationId, {
+        await invitationApi.create({
           email: row.email,
-          name: row.name,
           role: row.role,
+          delivery: 'email',
           group_ids: row.groupIds,
+          project_ids: row.projectIds,
           settings: {
             monitoring_interval_minutes: basePayload.settings.monitoringInterval,
             can_edit_time: basePayload.settings.canEditTime,
@@ -377,7 +380,7 @@ export const addUserService = {
         });
         invitedCount += 1;
         if (row.projectIds.length > 0) {
-          deferredAssignments.add('CSV project assignments are mock-ready only until a backend user-project access endpoint exists.');
+          deferredAssignments.add('CSV project IDs are stored for future provisioning, but project-access automation is not wired yet.');
         }
       } catch (error: any) {
         failed.push({

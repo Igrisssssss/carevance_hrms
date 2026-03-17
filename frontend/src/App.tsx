@@ -4,9 +4,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess } from '@/lib/permissions';
 
 const LandingPage = lazy(() => import('@/pages/LandingPage'));
+const PricingPage = lazy(() => import('@/pages/PricingPage'));
+const OwnerSignupPage = lazy(() => import('@/pages/OwnerSignupPage'));
+const InviteSignupPage = lazy(() => import('@/pages/InviteSignupPage'));
+const ContactSalesPage = lazy(() => import('@/pages/ContactSalesPage'));
+const AcceptInvitePage = lazy(() => import('@/pages/AcceptInvitePage'));
 const Layout = lazy(() => import('@/components/Layout'));
 const Login = lazy(() => import('@/pages/Login'));
-const Register = lazy(() => import('@/pages/Register'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const AdminDashboard = lazy(() => import('@/pages/AdminDashboard'));
 const DesktopTimerDashboard = lazy(() => import('@/pages/DesktopTimerDashboard'));
@@ -27,6 +31,7 @@ const ReportsWorkspace = lazy(() => import('@/pages/ReportsWorkspace'));
 const MonitoringWorkspace = lazy(() => import('@/pages/MonitoringWorkspace'));
 const EmployeeManagementWorkspace = lazy(() => import('@/pages/EmployeeManagementWorkspace'));
 const AddUserPage = lazy(() => import('@/pages/AddUserPage'));
+const BillingSettingsPage = lazy(() => import('@/pages/BillingSettingsPage'));
 
 function PayrollReturnBridge() {
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -127,6 +132,10 @@ function App() {
         <PayrollReturnBridge />
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/contact-sales" element={<ContactSalesPage />} />
+          <Route path="/book-demo" element={<Navigate to="/contact-sales" replace />} />
+          <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
           <Route
             path="/login"
             element={
@@ -139,7 +148,31 @@ function App() {
             path="/register"
             element={
               <PublicRoute>
-                <Register />
+                <OwnerSignupPage />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/signup"
+            element={
+              <PublicRoute>
+                <InviteSignupPage />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/signup-owner"
+            element={
+              <PublicRoute>
+                <OwnerSignupPage />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/start-trial"
+            element={
+              <PublicRoute>
+                <OwnerSignupPage defaultMode="trial" />
               </PublicRoute>
             }
           />
@@ -182,8 +215,10 @@ function App() {
             <Route path="employees/roles" element={<AdminRoute><EmployeeManagementWorkspace mode="roles" /></AdminRoute>} />
             <Route path="audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
             <Route path="add-user" element={<AdminRoute><AddUserPage /></AdminRoute>} />
+            <Route path="users/add-user" element={<AdminRoute><AddUserPage /></AdminRoute>} />
             <Route path="notifications" element={<NotificationsCenter />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="settings/billing" element={<AdminRoute><BillingSettingsPage /></AdminRoute>} />
             <Route path="legacy/reports" element={<AdminRoute><Reports /></AdminRoute>} />
             <Route path="legacy/monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
             <Route path="legacy/user-management" element={<AdminRoute><UserManagement /></AdminRoute>} />

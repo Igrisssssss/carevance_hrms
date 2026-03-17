@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 
 class TaskController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         $user = request()->user();
         if (!$user || !$user->organization_id) {
@@ -21,6 +21,9 @@ class TaskController extends Controller
             ->whereHas('project', function (Builder $query) use ($user) {
                 $query->where('organization_id', $user->organization_id);
             })
+            ->when($request->filled('project_id'), fn (Builder $query) => $query->where('project_id', (int) $request->project_id))
+            ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->status))
+            ->when($request->filled('assignee_id'), fn (Builder $query) => $query->where('assignee_id', (int) $request->assignee_id))
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -34,8 +37,10 @@ class TaskController extends Controller
             'description' => 'nullable|string',
             'project_id' => 'required|exists:projects,id',
             'status' => 'nullable|in:todo,in_progress,done',
+            'priority' => 'nullable|in:low,medium,high,urgent',
             'assignee_id' => 'nullable|exists:users,id',
             'due_date' => 'nullable|date',
+            'estimated_time' => 'nullable|integer|min:0',
         ]);
 
         $user = $request->user();
@@ -49,8 +54,10 @@ class TaskController extends Controller
             'description' => $request->description,
             'project_id' => $request->project_id,
             'status' => $request->status ?? 'todo',
+            'priority' => $request->priority ?? 'medium',
             'assignee_id' => $request->assignee_id,
             'due_date' => $request->due_date,
+            'estimated_time' => $request->estimated_time,
         ]);
 
         return response()->json($task, 201);
@@ -77,11 +84,13 @@ class TaskController extends Controller
             'description' => 'nullable|string',
             'project_id' => 'nullable|exists:projects,id',
             'status' => 'nullable|in:todo,in_progress,done',
+            'priority' => 'nullable|in:low,medium,high,urgent',
             'assignee_id' => 'nullable|exists:users,id',
             'due_date' => 'nullable|date',
+            'estimated_time' => 'nullable|integer|min:0',
         ]);
 
-        $payload = $request->only(['title', 'description', 'project_id', 'status', 'assignee_id', 'due_date']);
+        $payload = $request->only(['title', 'description', 'project_id', 'status', 'priority', 'assignee_id', 'due_date', 'estimated_time']);
 
         if (isset($payload['project_id'])) {
             $newProject = Project::find($payload['project_id']);

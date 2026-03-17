@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { organizationApi, reportGroupApi, userApi } from '@/services/api';
+import { invitationApi, organizationApi, reportGroupApi, userApi } from '@/services/api';
 import PageHeader from '@/components/dashboard/PageHeader';
 import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
@@ -10,6 +10,7 @@ import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
+import { getAssignableRoles } from '@/lib/permissions';
 import { KeyRound, MailPlus, ShieldCheck, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
@@ -35,7 +36,7 @@ const modeCopy: Record<EmployeeWorkspaceMode, { title: string; description: stri
   invitations: {
     eyebrow: 'Employee Management',
     title: 'Invitations / Onboarding',
-    description: 'Send organization invitations using the current invite endpoint and review active members.',
+    description: 'Send secure invitations, review pending onboarding, and track active members.',
   },
   roles: {
     eyebrow: 'Employee Management',
@@ -45,15 +46,15 @@ const modeCopy: Record<EmployeeWorkspaceMode, { title: string; description: stri
 };
 
 export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWorkspaceMode }) {
-  const { organization } = useAuth();
+  const { organization, user } = useAuth();
   const queryClient = useQueryClient();
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [groupName, setGroupName] = useState('');
   const [groupMembers, setGroupMembers] = useState<number[]>([]);
-  const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'admin' | 'manager' | 'employee'>('employee');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'manager' | 'employee' | 'client'>('employee');
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
 
   const usersQuery = useQuery({
     queryKey: ['employee-workspace-users'],
@@ -81,6 +82,15 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     enabled: Boolean(organization?.id),
   });
 
+  const invitationsQuery = useQuery({
+    queryKey: ['employee-workspace-invitations'],
+    queryFn: async () => {
+      const response = await invitationApi.list();
+      return response.data?.invitations || [];
+    },
+    enabled: mode === 'invitations' && allowedRoles.length > 0,
+  });
+
   const selectedUser = useMemo(
     () => (usersQuery.data || []).find((item: any) => item.id === selectedUserId) || (usersQuery.data || [])[0] || null,
     [selectedUserId, usersQuery.data]
@@ -91,6 +101,16 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       setSelectedUserId(usersQuery.data![0].id);
     }
   }, [selectedUserId, usersQuery.data]);
+
+  useEffect(() => {
+    if (allowedRoles.length === 0) {
+      return;
+    }
+
+    if (!allowedRoles.includes(inviteRole)) {
+      setInviteRole(allowedRoles[0] as 'admin' | 'manager' | 'employee' | 'client');
+    }
+  }, [allowedRoles, inviteRole]);
 
   const profileQuery = useQuery({
     queryKey: ['employee-workspace-profile', selectedUser?.id],
@@ -108,17 +128,20 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
         throw new Error('Organization context unavailable.');
       }
 
-      await organizationApi.inviteMember(organization.id, {
+      await invitationApi.create({
         email: inviteEmail.trim(),
-        name: inviteName.trim(),
         role: inviteRole,
+        delivery: 'email',
       });
     },
-    onSuccess: () => {
-      setInviteName('');
+    onSuccess: async () => {
       setInviteEmail('');
       setInviteRole('employee');
       setFeedback({ tone: 'success', message: 'Invitation sent successfully.' });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-invitations'] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organization?.id] }),
+      ]);
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || error?.message || 'Failed to send invitation.' });
@@ -153,12 +176,13 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     },
   });
 
-  const isLoading = usersQuery.isLoading || groupsQuery.isLoading || membersQuery.isLoading || profileQuery.isLoading;
-  const isError = usersQuery.isError || groupsQuery.isError || membersQuery.isError || profileQuery.isError;
+  const isLoading = usersQuery.isLoading || groupsQuery.isLoading || membersQuery.isLoading || profileQuery.isLoading || invitationsQuery.isLoading;
+  const isError = usersQuery.isError || groupsQuery.isError || membersQuery.isError || profileQuery.isError || invitationsQuery.isError;
   const pageTitle = modeCopy[mode];
   const users = usersQuery.data || [];
   const groups = groupsQuery.data || [];
   const members = membersQuery.data || [];
+  const invitations = invitationsQuery.data || [];
 
   if (isLoading) {
     return <PageLoadingState label={`Loading ${pageTitle.title.toLowerCase()}...`} />;
@@ -171,6 +195,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           (usersQuery.error as any)?.response?.data?.message ||
           (groupsQuery.error as any)?.response?.data?.message ||
           (membersQuery.error as any)?.response?.data?.message ||
+          (invitationsQuery.error as any)?.response?.data?.message ||
           (profileQuery.error as any)?.response?.data?.message ||
           'Failed to load employee management data.'
         }
@@ -322,25 +347,26 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.05fr]">
           <SurfaceCard className="p-5">
             <h2 className="text-lg font-semibold text-slate-950">Send Invitation</h2>
-            <p className="mt-1 text-sm text-slate-500">This uses the existing organization invite endpoint. The backend currently does not expose a pending-invites listing endpoint, so only sent action and active members can be shown here.</p>
+            <p className="mt-1 text-sm text-slate-500">Invitation emails send secure accept links, and the backend locks email and role when the user completes signup.</p>
             <div className="mt-4 space-y-4">
-              <div>
-                <FieldLabel>Name</FieldLabel>
-                <TextInput value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Employee name" />
-              </div>
+              {allowedRoles.length === 0 ? (
+                <PageEmptyState title="Invite permissions unavailable" description="Your current role does not allow sending workspace invitations." />
+              ) : null}
               <div>
                 <FieldLabel>Email</FieldLabel>
                 <TextInput type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="employee@company.com" />
               </div>
               <div>
                 <FieldLabel>Role</FieldLabel>
-                <SelectInput value={inviteRole} onChange={(event) => setInviteRole(event.target.value as 'admin' | 'manager' | 'employee')}>
-                  <option value="employee">Employee</option>
-                  <option value="manager">Manager</option>
-                  <option value="admin">Admin</option>
+                <SelectInput value={inviteRole} onChange={(event) => setInviteRole(event.target.value as 'admin' | 'manager' | 'employee' | 'client')}>
+                  {allowedRoles.map((role) => (
+                    <option key={role} value={role}>
+                      {role.charAt(0).toUpperCase() + role.slice(1)}
+                    </option>
+                  ))}
                 </SelectInput>
               </div>
-              <Button onClick={() => inviteMutation.mutate()} disabled={!inviteName.trim() || !inviteEmail.trim() || inviteMutation.isPending}>
+              <Button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail.trim() || inviteMutation.isPending || allowedRoles.length === 0}>
                 <MailPlus className="h-4 w-4" />
                 Send Invitation
               </Button>
@@ -350,8 +376,20 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <MetricCard label="Active Members" value={members.length} hint="Loaded from organization members" icon={Users} accent="sky" />
-              <MetricCard label="Pending Invites" value={0} hint="No backend listing endpoint available" icon={MailPlus} accent="amber" />
+              <MetricCard label="Pending Invites" value={invitations.filter((item: any) => item.status === 'pending').length} hint="Tracked from the invitation system" icon={MailPlus} accent="amber" />
             </div>
+            <DataTable
+              title="Pending Invitations"
+              description="Secure invites waiting to be accepted."
+              rows={invitations}
+              emptyMessage="No invitations found."
+              columns={[
+                { key: 'email', header: 'Email', render: (row: any) => row.email },
+                { key: 'role', header: 'Role', render: (row: any) => row.role },
+                { key: 'status', header: 'Status', render: (row: any) => row.status },
+                { key: 'expires_at', header: 'Expires', render: (row: any) => row.expires_at ? new Date(row.expires_at).toLocaleString() : 'n/a' },
+              ]}
+            />
             <DataTable
               title="Current Members"
               description="Active organization members available from the current backend."

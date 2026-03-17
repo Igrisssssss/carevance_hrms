@@ -46,17 +46,17 @@ export default function Hero() {
 
           <motion.div variants={item} className="mt-8 flex flex-col gap-3 sm:mt-11 sm:gap-4 lg:flex-row">
             <Link
-              to="/register"
+              to="/start-trial"
               className="group inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-6 py-3.5 text-sm font-semibold text-white shadow-[0_22px_50px_-18px_rgba(14,165,233,0.6)] transition duration-300 hover:-translate-y-0.5 sm:w-auto"
             >
-              Start Monitoring
+              Start Free Trial
               <ArrowRight className="h-4 w-4 transition duration-300 group-hover:translate-x-0.5" />
             </Link>
             <Link
-              to="/login"
+              to="/contact-sales"
               className="inline-flex w-full items-center justify-center rounded-full border border-slate-300/80 bg-white/80 px-6 py-3.5 text-sm font-semibold text-slate-900 shadow-[0_16px_35px_-26px_rgba(15,23,42,0.45)] backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:border-slate-950 hover:bg-white sm:w-auto"
             >
-              View Dashboard
+              Book Demo
             </Link>
             <a
               href={desktopDownloadUrl}
@@ -70,7 +70,7 @@ export default function Hero() {
           </motion.div>
 
           <motion.p variants={item} className="mt-5 text-sm font-medium text-slate-500">
-            Includes web app access plus Windows desktop tracker handoff
+            Includes workspace-owner signup, invite-only member onboarding, and optional Windows desktop tracker handoff
           </motion.p>
 
           <motion.div variants={item} className="mt-10 grid gap-4 sm:mt-14 sm:grid-cols-3">

@@ -2,6 +2,7 @@ import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import type { 
   LoginRequest, 
   RegisterRequest, 
+  OwnerSignupRequest,
   AuthResponse,
   ApiResponse,
   User,
@@ -28,6 +29,11 @@ import type {
   AppNotificationItem,
   UserProfile360,
   PaginatedResponse,
+  InvitationSummary,
+  InvitationListResponse,
+  InvitationCreateResponse,
+  InviteValidationResponse,
+  BillingSnapshot,
 } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 
@@ -69,6 +75,9 @@ export const authApi = {
   
   register: (data: RegisterRequest) => 
     api.post<AuthResponse>('/auth/register', data),
+
+  signupOwner: (data: OwnerSignupRequest) =>
+    api.post<AuthResponse>('/auth/signup-owner', data),
   
   logout: () => 
     api.post('/auth/logout'),
@@ -99,6 +108,37 @@ export const organizationApi = {
   
   inviteMember: (id: number, data: { email: string; name: string; role: string; settings?: Record<string, any>; group_ids?: number[] }) => 
     api.post(`/organizations/${id}/invite`, data),
+};
+
+export const invitationApi = {
+  list: () =>
+    api.get<InvitationListResponse>('/invitations'),
+
+  create: (data: {
+    email?: string;
+    emails?: string[];
+    role: User['role'];
+    delivery?: 'email' | 'link';
+    expires_in_hours?: number;
+    group_ids?: number[];
+    project_ids?: number[];
+    settings?: Record<string, any>;
+  }) => api.post<InvitationCreateResponse>('/invitations', data),
+
+  getByToken: (token: string) =>
+    api.get<{ invitation: InvitationSummary }>(`/invitations/${token}`),
+
+  accept: (token: string, data: { name: string; password: string; password_confirmation: string }) =>
+    api.post<AuthResponse>(`/invitations/${token}/accept`, data),
+};
+
+export const inviteApi = {
+  send: (data: { email: string; role?: string | null }) =>
+    api.post('/invites/send', data),
+  validate: (token: string) =>
+    api.get<InviteValidationResponse>('/invites/validate', { params: { token } }),
+  accept: (token: string) =>
+    api.post('/invites/accept', { token }),
 };
 
 // User API
@@ -154,7 +194,7 @@ export const projectApi = {
     api.get(`/projects/${id}/time-entries`, { params }),
   
   getTasks: (id: number, params?: { status?: string }) => 
-    api.get(`/projects/${id}/tasks`, { params }),
+    api.get<Task[]>(`/projects/${id}/tasks`, { params }),
   
   getStats: (id: number, params?: { start_date?: string; end_date?: string }) => 
     api.get(`/projects/${id}/stats`, { params }),
@@ -192,6 +232,7 @@ export const timeEntryApi = {
     start_date?: string; 
     end_date?: string;
     page?: number;
+    per_page?: number;
   }) => 
     api.get<{ data: TimeEntry[]; current_page: number; last_page: number; total: number }>('/time-entries', { params }),
   
@@ -201,13 +242,13 @@ export const timeEntryApi = {
   create: (data: Partial<TimeEntry>) => 
     api.post<TimeEntry>('/time-entries', data),
   
-  update: (id: number, data: Partial<TimeEntry>) => 
+  update: (id: number, data: Partial<TimeEntry> & { project_id?: number | null; task_id?: number | null }) => 
     api.put<TimeEntry>(`/time-entries/${id}`, data),
   
   delete: (id: number) => 
     api.delete(`/time-entries/${id}`),
   
-  start: (data?: { project_id?: number; task_id?: number; description?: string; billable?: boolean; timer_slot?: 'primary' | 'secondary' }) => 
+  start: (data?: { project_id?: number | null; task_id?: number | null; description?: string; billable?: boolean; timer_slot?: 'primary' | 'secondary' }) => 
     api.post<TimeEntry>('/time-entries/start', data || {}),
   
   stop: (data?: { timer_slot?: 'primary' | 'secondary' }) => 
@@ -254,6 +295,9 @@ export const activityApi = {
   
   create: (data: Partial<Activity>) => 
     api.post<Activity>('/activities', data),
+
+  update: (id: number, data: Partial<Activity>) =>
+    api.put<Activity>(`/activities/${id}`, data),
   
   delete: (id: number) => 
     api.delete(`/activities/${id}`),
@@ -692,7 +736,17 @@ export const settingsApi = {
     api.put<{ message: string; organization: Organization }>('/settings/organization', data),
 
   billing: () =>
-    api.get<{ plan: { name: string; status: string; renewal_date?: string | null } | null }>('/settings/billing'),
+    api.get<BillingSnapshot>('/settings/billing'),
+};
+
+export const billingApi = {
+  current: () =>
+    api.get<BillingSnapshot>('/billing/current'),
+};
+
+export const companyApi = {
+  current: () =>
+    api.get<{ company: Organization | null }>('/me/company'),
 };
 
 export const auditApi = {

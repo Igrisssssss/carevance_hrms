@@ -6,15 +6,27 @@ import BrandLogo from '@/components/branding/BrandLogo';
 const footerGroups = [
   {
     title: 'Product',
-    links: ['Monitoring', 'Attendance', 'Reports', 'Payroll'],
+    links: [
+      { label: 'Pricing', to: '/pricing' },
+      { label: 'Start Trial', to: '/start-trial' },
+      { label: 'Book Demo', to: '/contact-sales' },
+    ],
   },
   {
     title: 'Workspace',
-    links: ['Projects', 'Tasks', 'Chat'],
+    links: [
+      { label: 'Dashboard', to: '/login' },
+      { label: 'Sign In', to: '/login' },
+      { label: 'Owner Signup', to: '/signup-owner' },
+    ],
   },
   {
     title: 'Admin',
-    links: ['User Management', 'Invoices', 'Settings'],
+    links: [
+      { label: 'Billing', to: '/pricing' },
+      { label: 'Contact Sales', to: '/contact-sales' },
+      { label: 'Home', to: '/' },
+    ],
   },
 ];
 
@@ -54,9 +66,9 @@ export default function Footer() {
                 <p className="text-sm font-semibold uppercase tracking-[0.2em] contrast-text-muted">{group.title}</p>
                 <div className="mt-4 space-y-3">
                   {group.links.map((link) => (
-                    <a key={link} href="/" className="block text-sm contrast-text-secondary transition hover:text-slate-950">
-                      {link}
-                    </a>
+                    <Link key={link.label} to={link.to} className="block text-sm contrast-text-secondary transition hover:text-slate-950">
+                      {link.label}
+                    </Link>
                   ))}
                 </div>
               </div>

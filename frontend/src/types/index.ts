@@ -5,6 +5,7 @@ export interface User {
   email: string;
   role: 'admin' | 'manager' | 'employee' | 'client';
   organization_id: number | null;
+  invited_by?: number | null;
   avatar?: string | null;
   hourly_rate?: number;
   is_active: boolean;
@@ -23,7 +24,12 @@ export interface Organization {
   id: number;
   name: string;
   slug: string;
-  subscription_status?: 'trial' | 'active' | 'cancelled' | 'expired';
+  owner_user_id?: number | null;
+  plan_code?: string | null;
+  billing_cycle?: 'monthly' | 'yearly' | null;
+  subscription_status?: 'trial' | 'active' | 'inactive' | 'past_due' | 'cancelled' | 'expired';
+  subscription_intent?: 'trial' | 'paid' | null;
+  trial_starts_at?: string | null;
   trial_ends_at?: string;
   max_users?: number;
   settings?: Record<string, any>;
@@ -198,10 +204,80 @@ export interface RegisterRequest {
   organization_name?: string;
 }
 
+export interface OwnerSignupRequest {
+  company_name: string;
+  name: string;
+  email: string;
+  password: string;
+  password_confirmation: string;
+  plan_code: string;
+  signup_mode: 'trial' | 'paid';
+  billing_cycle?: 'monthly' | 'yearly';
+  terms_accepted?: boolean;
+}
+
 export interface AuthResponse {
   user: User;
   token: string;
   organization?: Organization;
+}
+
+export interface InvitationSummary {
+  id: number;
+  email: string;
+  role: User['role'];
+  status: 'pending' | 'accepted' | 'expired' | 'revoked';
+  delivery_method: 'email' | 'link';
+  invite_url?: string | null;
+  email_sent_at?: string | null;
+  expires_at?: string | null;
+  accepted_at?: string | null;
+  mail_delivery?: 'sent' | 'failed' | 'not_requested';
+  can_accept?: boolean;
+  organization?: Pick<Organization, 'id' | 'name' | 'slug'>;
+  metadata?: {
+    group_ids?: number[];
+    project_ids?: number[];
+  };
+}
+
+export interface InvitationListResponse {
+  invitations: InvitationSummary[];
+}
+
+export interface InvitationCreateResponse {
+  invitations: InvitationSummary[];
+  failed: Array<{ email: string; message: string }>;
+  invited_count: number;
+}
+
+export interface InviteValidationResponse {
+  valid: boolean;
+  email?: string;
+  role?: string | null;
+  expires_at?: string | null;
+  message?: string;
+}
+
+export interface BillingSnapshot {
+  plan: {
+    code?: string | null;
+    name: string;
+    description?: string | null;
+    status: string;
+    billing_cycle?: 'monthly' | 'yearly' | null;
+    subscription_intent?: 'trial' | 'paid' | null;
+    is_trial?: boolean;
+    trial_end_date?: string | null;
+    renewal_date?: string | null;
+    contact_sales_only?: boolean;
+  } | null;
+  workspace?: {
+    id: number;
+    name: string;
+    slug: string;
+    owner_user_id?: number | null;
+  } | null;
 }
 
 // API Response Types

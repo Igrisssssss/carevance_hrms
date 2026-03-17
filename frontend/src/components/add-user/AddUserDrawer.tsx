@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, Loader2, UserPlus, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { organizationApi } from '@/services/api';
+import { getAssignableRoles } from '@/lib/permissions';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, ToggleInput } from '@/components/ui/FormField';
@@ -21,9 +23,18 @@ type AddUserTab = 'email' | 'link' | 'csv';
 
 const tabOptions: Array<{ id: AddUserTab; label: string; description: string }> = [
   { id: 'email', label: 'Invite by Email', description: 'Invite multiple people with their roles and access.' },
-  { id: 'link', label: 'Invite by Link', description: 'Generate a reusable onboarding link for self-serve joins.' },
+  { id: 'link', label: 'Invite by Link', description: 'Generate a single-use secure onboarding link for one recipient.' },
   { id: 'csv', label: 'Add by CSV', description: 'Bulk import employees, managers, admins, or clients.' },
 ];
+
+const extractInviteError = (error: any, fallback: string) => {
+  const fieldErrors = error?.response?.data?.errors;
+  const firstFieldError = fieldErrors
+    ? Object.values(fieldErrors).flat().find(Boolean)
+    : null;
+
+  return firstFieldError || error?.response?.data?.message || error?.message || fallback;
+};
 
 const defaultSettings: AdditionalInviteSettings = {
   monitoringInterval: 10,
@@ -44,7 +55,7 @@ export default function AddUserDrawer({
   onCompleted?: () => void;
   presentation?: 'modal' | 'inline';
 }) {
-  const { organization } = useAuth();
+  const { organization, user } = useAuth();
   const queryClient = useQueryClient();
   const storedDefaults = useMemo(() => addUserService.loadDefaults(), []);
 
@@ -59,9 +70,11 @@ export default function AddUserDrawer({
   const [settings, setSettings] = useState<AdditionalInviteSettings>(defaultSettings);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [inviteUrl, setInviteUrl] = useState('');
+  const [linkEmail, setLinkEmail] = useState('');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvSummary, setCsvSummary] = useState<{ parsedCount: number; successCount: number; errorCount: number } | null>(null);
   const [csvError, setCsvError] = useState<string | null>(null);
+  const allowedRoles = useMemo(() => getAssignableRoles(user, organization) as InviteUserRole[], [organization, user]);
 
   const groupsQuery = useQuery({
     queryKey: ['add-user-groups'],
@@ -73,6 +86,19 @@ export default function AddUserDrawer({
     queryKey: ['add-user-projects'],
     queryFn: addUserService.fetchProjects,
     enabled: open,
+  });
+
+  const membersQuery = useQuery({
+    queryKey: ['add-user-members', organization?.id],
+    enabled: open && Boolean(organization?.id),
+    queryFn: async () => {
+      if (!organization?.id) {
+        return [];
+      }
+
+      const response = await organizationApi.getMembers(organization.id);
+      return response.data || [];
+    },
   });
 
   useEffect(() => {
@@ -99,6 +125,44 @@ export default function AddUserDrawer({
     setCsvError(null);
     setCsvSummary(null);
   }, [activeTab, open]);
+
+  useEffect(() => {
+    if (allowedRoles.length === 0) {
+      return;
+    }
+
+    if (!allowedRoles.includes(role)) {
+      setRole(allowedRoles[0]);
+    }
+  }, [allowedRoles, role]);
+
+  const protectedEmailSet = useMemo(() => {
+    const next = new Set<string>();
+
+    if (user?.email) {
+      next.add(user.email.trim().toLowerCase());
+    }
+
+    (membersQuery.data || []).forEach((member: any) => {
+      if (member?.email) {
+        next.add(String(member.email).trim().toLowerCase());
+      }
+    });
+
+    return next;
+  }, [membersQuery.data, user?.email]);
+
+  const ownEmail = user?.email?.trim().toLowerCase() || '';
+  const duplicateEmails = useMemo(
+    () => emails.filter((email) => protectedEmailSet.has(email.trim().toLowerCase())),
+    [emails, protectedEmailSet]
+  );
+  const isSelfInviteAttempt = ownEmail !== '' && duplicateEmails.some((email) => email.trim().toLowerCase() === ownEmail);
+  const duplicateEmailMessage = duplicateEmails.length === 0
+    ? null
+    : isSelfInviteAttempt
+      ? 'Your current admin account email cannot be invited as another user.'
+      : `${duplicateEmails.slice(0, 3).join(', ')} ${duplicateEmails.length === 1 ? 'already belongs' : 'already belong'} to existing user account${duplicateEmails.length === 1 ? '' : 's'}.`;
 
   const saveDefaultsIfNeeded = () => {
     if (!rememberDefaults) {
@@ -143,6 +207,7 @@ export default function AddUserDrawer({
         queryClient.invalidateQueries({ queryKey: ['admin-dashboard-users'] }),
         queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
         queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organization?.id] }),
+        queryClient.invalidateQueries({ queryKey: ['add-user-members', organization?.id] }),
         queryClient.invalidateQueries({ queryKey: ['add-user-groups'] }),
       ]);
       onCompleted?.();
@@ -150,7 +215,7 @@ export default function AddUserDrawer({
     onError: (error: any) => {
       setFeedback({
         tone: 'error',
-        message: error?.response?.data?.message || error?.message || 'Failed to send invites.',
+        message: extractInviteError(error, 'Failed to send invites.'),
       });
     },
   });
@@ -158,6 +223,8 @@ export default function AddUserDrawer({
   const linkMutation = useMutation({
     mutationFn: async () =>
       addUserService.generateInviteLink({
+        organizationId: organization?.id || 0,
+        email: linkEmail.trim(),
         role,
         groupIds: selectedGroupIds,
         projectIds: selectedProjectIds,
@@ -166,10 +233,10 @@ export default function AddUserDrawer({
     onSuccess: (result) => {
       saveDefaultsIfNeeded();
       setInviteUrl(result.url);
-      setFeedback({ tone: 'success', message: 'Invite link generated.' });
+      setFeedback({ tone: 'success', message: 'Secure invite link generated.' });
     },
     onError: (error: any) => {
-      setFeedback({ tone: 'error', message: error?.message || 'Failed to generate invite link.' });
+      setFeedback({ tone: 'error', message: extractInviteError(error, 'Failed to generate invite link.') });
     },
   });
 
@@ -220,11 +287,12 @@ export default function AddUserDrawer({
         queryClient.invalidateQueries({ queryKey: ['admin-dashboard-users'] }),
         queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
         queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organization?.id] }),
+        queryClient.invalidateQueries({ queryKey: ['add-user-members', organization?.id] }),
       ]);
       onCompleted?.();
     },
     onError: (error: any) => {
-      const message = error?.message || error?.response?.data?.message || 'Failed to process CSV import.';
+      const message = extractInviteError(error, 'Failed to process CSV import.');
       setCsvError(message);
       setFeedback({ tone: 'error', message });
     },
@@ -251,7 +319,7 @@ export default function AddUserDrawer({
               </div>
               <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-slate-950">Add User</h2>
               <p className="mt-1 max-w-2xl text-sm text-slate-500">
-                Invite employees, managers, admins, or clients and configure their access.
+                An invitation email will be sent. The user creates their own account and automatically receives the selected access level.
               </p>
             </div>
             <Button variant="ghost" className="h-11 w-11 rounded-full p-0" onClick={onClose} aria-label="Close add user drawer">
@@ -260,6 +328,13 @@ export default function AddUserDrawer({
           </div>
 
           {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
+
+          {allowedRoles.length === 0 ? (
+            <PageEmptyState
+              title="Invite permissions unavailable"
+              description="Your current role does not allow sending workspace invitations."
+            />
+          ) : null}
 
           <div className="grid grid-cols-1 gap-3 rounded-[28px] border border-slate-200/80 bg-slate-50/80 p-3 sm:grid-cols-3">
             {tabOptions.map((tab) => (
@@ -290,11 +365,14 @@ export default function AddUserDrawer({
                   onChange={setEmails}
                   onInvalidChange={setInvalidEmails}
                 />
+                {duplicateEmailMessage ? (
+                  <FeedbackBanner tone="error" message={duplicateEmailMessage} />
+                ) : null}
                 <div className="h-px bg-slate-200" />
               </>
             ) : null}
 
-            <RoleSelector value={role} onChange={setRole} />
+            <RoleSelector value={role} onChange={setRole} allowedRoles={allowedRoles} />
 
             <div className="h-px bg-slate-200" />
 
@@ -416,7 +494,9 @@ export default function AddUserDrawer({
 
             {activeTab === 'link' ? (
               <InviteLinkPanel
+                email={linkEmail}
                 inviteUrl={inviteUrl}
+                onEmailChange={setLinkEmail}
                 onGenerate={() => {
                   setFeedback(null);
                   linkMutation.mutate();
@@ -444,6 +524,13 @@ export default function AddUserDrawer({
               </div>
             ) : null}
 
+            {membersQuery.isLoading ? (
+              <div className="flex items-center gap-2 rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3 text-sm text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Checking existing organization members...
+              </div>
+            ) : null}
+
             {!organization?.id ? (
               <PageEmptyState
                 title="Organization context missing"
@@ -459,7 +546,7 @@ export default function AddUserDrawer({
                     setFeedback(null);
                     inviteMutation.mutate();
                   }}
-                  disabled={!organization?.id || emails.length === 0 || invalidEmails.length > 0 || inviteMutation.isPending}
+                  disabled={!organization?.id || allowedRoles.length === 0 || emails.length === 0 || invalidEmails.length > 0 || duplicateEmails.length > 0 || inviteMutation.isPending || membersQuery.isLoading}
                   iconLeft={<UserPlus className="h-4 w-4" />}
                 >
                   {inviteMutation.isPending ? 'Sending...' : 'Send Invite'}
@@ -474,7 +561,7 @@ export default function AddUserDrawer({
                     }
                     linkMutation.mutate();
                   }}
-                  disabled={!organization?.id || linkMutation.isPending || copyLinkMutation.isPending}
+                  disabled={!organization?.id || allowedRoles.length === 0 || !linkEmail.trim() || linkMutation.isPending || copyLinkMutation.isPending}
                 >
                   {inviteUrl ? 'Copy Invite Link' : 'Generate Invite Link'}
                 </Button>
@@ -486,7 +573,7 @@ export default function AddUserDrawer({
                     setCsvError(null);
                     csvMutation.mutate();
                   }}
-                  disabled={!organization?.id || !csvFile || csvMutation.isPending}
+                  disabled={!organization?.id || allowedRoles.length === 0 || !csvFile || csvMutation.isPending}
                 >
                   {csvMutation.isPending ? 'Uploading CSV...' : 'Upload CSV'}
                 </Button>

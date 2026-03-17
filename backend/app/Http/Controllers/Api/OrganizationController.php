@@ -4,14 +4,16 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Organization;
-use App\Models\ReportGroup;
-use App\Models\User;
+use App\Services\Invitations\InvitationService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 class OrganizationController extends Controller
 {
+    public function __construct(private readonly InvitationService $invitationService)
+    {
+    }
+
     public function index()
     {
         $user = request()->user();
@@ -96,7 +98,7 @@ class OrganizationController extends Controller
         }
 
         return response()->json(
-            User::where('organization_id', $organization->id)
+            \App\Models\User::where('organization_id', $organization->id)
                 ->orderBy('created_at', 'desc')
                 ->get()
         );
@@ -111,53 +113,35 @@ class OrganizationController extends Controller
 
         $validated = $request->validate([
             'email' => 'required|email',
-            'name' => 'required|string|max:255',
             'role' => 'required|in:admin,manager,employee,client',
             'settings' => 'nullable|array',
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
+            'project_ids' => 'nullable|array',
+            'project_ids.*' => 'integer',
+            'delivery' => 'nullable|in:email,link',
+            'expires_in_hours' => 'nullable|integer|min:1|max:720',
         ]);
 
-        $existing = User::where('email', $validated['email'])->first();
-        $groupIds = ReportGroup::where('organization_id', $organization->id)
-            ->whereIn('id', $validated['group_ids'] ?? [])
-            ->pluck('id')
-            ->all();
+        $result = $this->invitationService->createBatch($request->user(), $organization, [
+            ...$validated,
+            'email' => mb_strtolower(trim((string) $validated['email'])),
+        ]);
 
-        if ($existing) {
-            $existing->update([
-                'name' => $validated['name'],
-                'role' => $validated['role'],
-                'organization_id' => $organization->id,
-                'settings' => $validated['settings'] ?? $existing->settings,
-            ]);
-            if (array_key_exists('group_ids', $validated)) {
-                $existing->reportGroups()->sync($groupIds);
-            }
-
+        if (count($result['created']) === 0) {
+            $firstFailure = $result['failed'][0]['message'] ?? null;
             return response()->json([
-                'message' => 'Existing user added to organization.',
-                'user' => $existing,
-            ]);
-        }
-
-        $password = Str::random(12);
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($password),
-            'role' => $validated['role'],
-            'organization_id' => $organization->id,
-            'settings' => $validated['settings'] ?? null,
-        ]);
-        if (array_key_exists('group_ids', $validated)) {
-            $user->reportGroups()->sync($groupIds);
+                'message' => $firstFailure ?: 'No invitations were created.',
+                'errors' => [
+                    'email' => collect($result['failed'])->pluck('message')->values()->all(),
+                ],
+            ], 422);
         }
 
         return response()->json([
-            'message' => 'User invited successfully.',
-            'user' => $user,
-            'temporary_password' => $password,
+            'message' => 'Invitation created successfully.',
+            'invitation' => $result['created'][0],
+            'failed' => $result['failed'],
         ], 201);
     }
 

@@ -9,6 +9,7 @@ use App\Http\Requests\Api\Settings\UpdatePasswordRequest as UpdatePasswordFormRe
 use App\Http\Requests\Api\Settings\UpdatePreferencesRequest;
 use App\Http\Requests\Api\Settings\UpdateProfileRequest;
 use App\Services\Audit\AuditLogService;
+use App\Services\Billing\WorkspaceBillingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -17,7 +18,10 @@ class SettingsController extends Controller
 {
     use InteractsWithApiResponses;
 
-    public function __construct(private readonly AuditLogService $auditLogService)
+    public function __construct(
+        private readonly AuditLogService $auditLogService,
+        private readonly WorkspaceBillingService $workspaceBillingService,
+    )
     {
     }
 
@@ -196,24 +200,11 @@ class SettingsController extends Controller
     public function billing(Request $request)
     {
         $user = $request->user();
-        if (!$user || !$user->organization_id || !$user->organization) {
-            return response()->json(['plan' => null]);
-        }
+        $user?->load('organization');
 
-        $organization = $user->organization;
-
-        return response()->json([
-            'plan' => [
-                'name' => match ($organization->subscription_status) {
-                    'trial' => 'Trial',
-                    'active' => 'Pro',
-                    'expired' => 'Expired',
-                    default => 'Basic',
-                },
-                'status' => $organization->subscription_status ?? 'trial',
-                'renewal_date' => $organization->subscription_expires_at,
-            ],
-        ]);
+        return response()->json(
+            $this->workspaceBillingService->snapshot($user?->organization) ?? ['plan' => null, 'workspace' => null]
+        );
     }
 
     private function canManageOrg($user): bool

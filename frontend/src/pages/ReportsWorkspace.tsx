@@ -49,6 +49,58 @@ const formatDuration = (seconds: number) => {
   const minutes = Math.floor((safe % 3600) / 60);
   return `${hours}h ${minutes}m`;
 };
+const formatTimelineDuration = (seconds: number) => {
+  const safe = Math.max(0, Math.floor(Number.isFinite(Number(seconds)) ? Number(seconds) : 0));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const remainingSeconds = safe % 60;
+
+  if (hours > 0) {
+    return remainingSeconds > 0 ? `${hours}h ${minutes}m ${remainingSeconds}s` : `${hours}h ${minutes}m`;
+  }
+
+  if (minutes > 0) {
+    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+  }
+
+  return `${remainingSeconds}s`;
+};
+const normalizeSearchValue = (value: unknown) => String(value ?? '').trim().toLowerCase();
+const matchesWorkspaceSearch = (search: string, values: unknown[]) => !search || values.some((value) => normalizeSearchValue(value).includes(search));
+
+const fetchTimeEntriesForUsers = async (userIds: number[], startDate: string, endDate: string) => {
+  const uniqueUserIds = Array.from(new Set(userIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+  if (!uniqueUserIds.length) return [];
+
+  const entryCollections = await Promise.all(
+    uniqueUserIds.map(async (userId) => {
+      const collectedEntries: any[] = [];
+      let currentPage = 1;
+
+      while (true) {
+        const response = await timeEntryApi.getAll({
+          user_id: userId,
+          start_date: startDate,
+          end_date: endDate,
+          page: currentPage,
+          per_page: 1000,
+        });
+        const payload = response.data;
+
+        collectedEntries.push(...(payload.data || []));
+        if (!payload.last_page || payload.current_page >= payload.last_page) {
+          break;
+        }
+
+        currentPage += 1;
+      }
+
+      return collectedEntries;
+    })
+  );
+
+  return entryCollections.flat();
+};
 
 const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: string; eyebrow: string }> = {
   attendance: {
@@ -112,9 +164,29 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       return response.data?.data || [];
     },
   });
+  const users = usersQuery.data || [];
+  const groups = groupsQuery.data || [];
+  const projectsTasksSearch = query.trim().toLowerCase();
+  const remoteSearch = mode === 'attendance' || mode === 'web-app-usage' ? query : '';
+  const selectedGroup = selectedGroupId ? groups.find((group: any) => Number(group.id) === Number(selectedGroupId)) : null;
+  const scopedUserIds = useMemo(() => {
+    let ids = users.map((user: any) => Number(user.id));
+
+    if (selectedGroup) {
+      const groupUserIds = new Set((selectedGroup.users || []).map((user: any) => Number(user.id)));
+      ids = ids.filter((id) => groupUserIds.has(id));
+    }
+
+    if (selectedUserId) {
+      ids = ids.filter((id) => id === Number(selectedUserId));
+    }
+
+    return Array.from(new Set(ids));
+  }, [selectedGroup, selectedUserId, users]);
 
   const dataQuery = useQuery({
-    queryKey: ['report-workspace-data', mode, startDate, endDate, query, selectedUserId, selectedGroupId],
+    queryKey: ['report-workspace-data', mode, startDate, endDate, remoteSearch, selectedUserId, selectedGroupId],
+    enabled: usersQuery.isSuccess && groupsQuery.isSuccess,
     refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 10000 : false,
     refetchIntervalInBackground: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity',
     queryFn: async () => {
@@ -122,7 +194,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         const response = await reportApi.attendance({
           start_date: startDate,
           end_date: endDate,
-          q: query || undefined,
+          q: remoteSearch || undefined,
         });
         return response.data;
       }
@@ -138,16 +210,16 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       }
 
       if (mode === 'projects-tasks') {
-        const [projectsResponse, tasksResponse, timeEntriesResponse] = await Promise.all([
+        const [projectsResponse, tasksResponse, timeEntries] = await Promise.all([
           projectApi.getAll(),
           taskApi.getAll(),
-          timeEntryApi.getAll({ start_date: startDate, end_date: endDate }),
+          fetchTimeEntriesForUsers(scopedUserIds, startDate, endDate),
         ]);
 
         return {
           projects: projectsResponse.data || [],
           tasks: tasksResponse.data || [],
-          timeEntries: timeEntriesResponse.data?.data || [],
+          timeEntries,
         };
       }
 
@@ -167,7 +239,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           end_date: endDate,
           user_id: selectedUserId ? Number(selectedUserId) : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
-          q: query || undefined,
+          q: remoteSearch || undefined,
         });
         return response.data;
       }
@@ -179,8 +251,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const isLoading = usersQuery.isLoading || groupsQuery.isLoading || dataQuery.isLoading;
   const isError = usersQuery.isError || groupsQuery.isError || dataQuery.isError;
   const pageTitle = modeCopy[mode];
-  const users = usersQuery.data || [];
-  const groups = groupsQuery.data || [];
 
   const attendanceRows = (dataQuery.data as any)?.data || [];
   const attendanceTotals = useMemo(() => {
@@ -205,13 +275,76 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const projects = projectsData?.projects || [];
   const tasks = projectsData?.tasks || [];
   const projectTimeEntries = projectsData?.timeEntries || [];
+  const hasProjectsTasksScope = selectedUserId !== '' || selectedGroupId !== '';
+  const scopedUserIdSet = useMemo(() => new Set(scopedUserIds), [scopedUserIds]);
+  const projectsById = useMemo(() => new Map<number, any>(projects.map((project: any) => [Number(project.id), project])), [projects]);
+  const tasksById = useMemo(() => new Map<number, any>(tasks.map((task: any) => [Number(task.id), task])), [tasks]);
+  const usersById = useMemo(() => new Map<number, any>(users.map((user: any) => [Number(user.id), user])), [users]);
+  const filteredTasks = useMemo(() => {
+    if (mode !== 'projects-tasks') return [];
+
+    return tasks.filter((task: any) => {
+      const project = projectsById.get(Number(task.project_id));
+      const assignee = usersById.get(Number(task.assignee_id));
+      const matchesScope = !hasProjectsTasksScope || (task.assignee_id ? scopedUserIdSet.has(Number(task.assignee_id)) : false);
+
+      return matchesScope && matchesWorkspaceSearch(projectsTasksSearch, [
+        task.title,
+        task.description,
+        task.status,
+        task.priority,
+        project?.name,
+        assignee?.name,
+      ]);
+    });
+  }, [hasProjectsTasksScope, mode, projectsById, projectsTasksSearch, scopedUserIdSet, tasks, usersById]);
+  const filteredProjectTimeEntries = useMemo(() => {
+    if (mode !== 'projects-tasks') return [];
+
+    return projectTimeEntries.filter((entry: any) => {
+      const projectId = Number(entry.project_id);
+      if (!projectId) return false;
+
+      const project = projectsById.get(projectId);
+      const task = tasksById.get(Number(entry.task_id));
+      const user = usersById.get(Number(entry.user_id));
+      const matchesScope = !hasProjectsTasksScope || scopedUserIdSet.has(Number(entry.user_id));
+
+      return matchesScope && matchesWorkspaceSearch(projectsTasksSearch, [
+        project?.name,
+        project?.description,
+        task?.title,
+        user?.name,
+        entry.description,
+      ]);
+    });
+  }, [hasProjectsTasksScope, mode, projectTimeEntries, projectsById, projectsTasksSearch, scopedUserIdSet, tasksById, usersById]);
+  const filteredProjectIds = useMemo(() => new Set([
+    ...filteredTasks.map((task: any) => Number(task.project_id)),
+    ...filteredProjectTimeEntries.map((entry: any) => Number(entry.project_id)),
+  ]), [filteredProjectTimeEntries, filteredTasks]);
+  const filteredProjects = useMemo(() => {
+    if (mode !== 'projects-tasks') return [];
+    if (!hasProjectsTasksScope && !projectsTasksSearch) return projects;
+
+    return projects.filter((project: any) => {
+      const projectId = Number(project.id);
+      const matchesSearch = matchesWorkspaceSearch(projectsTasksSearch, [project.name, project.description, project.status]);
+
+      if (hasProjectsTasksScope) {
+        return filteredProjectIds.has(projectId);
+      }
+
+      return filteredProjectIds.has(projectId) || matchesSearch;
+    });
+  }, [filteredProjectIds, hasProjectsTasksScope, mode, projects, projectsTasksSearch]);
 
   const projectRows = useMemo(() => {
     if (mode !== 'projects-tasks') return [];
-    return projects.map((project: any) => {
-      const projectTasks = tasks.filter((task: any) => task.project_id === project.id);
-      const trackedSeconds = projectTimeEntries
-        .filter((entry: any) => entry.project_id === project.id)
+    return filteredProjects.map((project: any) => {
+      const projectTasks = filteredTasks.filter((task: any) => Number(task.project_id) === Number(project.id));
+      const trackedSeconds = filteredProjectTimeEntries
+        .filter((entry: any) => Number(entry.project_id) === Number(project.id))
         .reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0);
 
       return {
@@ -221,7 +354,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         tracked_seconds: trackedSeconds,
       };
     });
-  }, [mode, projectTimeEntries, projects, tasks]);
+  }, [filteredProjectTimeEntries, filteredProjects, filteredTasks, mode]);
 
   const timelineRows = (dataQuery.data as any[]) || [];
   const timelineSummary = useMemo(() => {
@@ -449,10 +582,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       {mode === 'projects-tasks' && (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Projects" value={projects.length} hint="Projects in workspace" icon={FolderKanban} accent="sky" />
-            <MetricCard label="Tasks" value={tasks.length} hint="Tasks across projects" icon={ListFilter} accent="violet" />
-            <MetricCard label="Open Tasks" value={tasks.filter((task: any) => task.status !== 'done').length} hint="Still in progress" icon={Waypoints} accent="amber" />
-            <MetricCard label="Tracked Time" value={formatDuration(projectTimeEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0))} hint="Logged against projects" icon={TimerReset} accent="emerald" />
+            <MetricCard label="Projects" value={filteredProjects.length} hint="Projects in scope" icon={FolderKanban} accent="sky" />
+            <MetricCard label="Tasks" value={filteredTasks.length} hint="Tasks in scope" icon={ListFilter} accent="violet" />
+            <MetricCard label="Open Tasks" value={filteredTasks.filter((task: any) => task.status !== 'done').length} hint="Todo and in-progress tasks" icon={Waypoints} accent="amber" />
+            <MetricCard label="Tracked Time" value={formatDuration(filteredProjectTimeEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0))} hint="Project-linked time in scope" icon={TimerReset} accent="emerald" />
           </div>
 
           <DataTable
@@ -473,7 +606,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           <DataTable
             title="Task Allocation"
             description="Task status and priority mapped to projects."
-            rows={tasks}
+            rows={filteredTasks}
             emptyMessage="No tasks found."
             headerAction={renderPanelRefreshButton()}
             columns={[
@@ -507,7 +640,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
               { key: 'type', header: 'Type', render: (row: any) => row.type },
               { key: 'name', header: 'Name', render: (row: any) => row.name },
-              { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
+              { key: 'duration', header: 'Duration', render: (row: any) => formatTimelineDuration(row.duration || 0) },
             ]}
           />
         </>

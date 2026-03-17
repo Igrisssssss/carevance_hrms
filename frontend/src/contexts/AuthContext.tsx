@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
-import { User, Organization } from '@/types';
-import { authApi } from '@/services/api';
+import { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import { User, Organization, OwnerSignupRequest } from '@/types';
+import { authApi, invitationApi } from '@/services/api';
 import { apiUrl } from '@/lib/runtimeConfig';
 
 interface AuthContextType {
@@ -10,6 +10,8 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
+  signupOwner: (payload: OwnerSignupRequest) => Promise<void>;
+  acceptInvitation: (token: string, payload: { name: string; password: string; password_confirmation: string }) => Promise<void>;
   register: (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (user: User) => void;
@@ -21,6 +23,18 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Demo mode - set to true to use mock data without backend
 const DEMO_MODE = false;
 const API_URL = apiUrl;
+const ACTIVE_TIMER_KEY = 'active_timer_snapshot';
+const AUTO_START_SUPPRESSED_KEY = 'desktop_timer_auto_start_suppressed';
+
+const clearDesktopTimerSession = () => {
+  localStorage.removeItem(ACTIVE_TIMER_KEY);
+
+  const suppressionKeys = Array.from({ length: sessionStorage.length }, (_, index) => sessionStorage.key(index))
+    .filter((key): key is string => Boolean(key))
+    .filter((key) => key === AUTO_START_SUPPRESSED_KEY || key.startsWith(`${AUTO_START_SUPPRESSED_KEY}:`));
+
+  suppressionKeys.forEach((key) => sessionStorage.removeItem(key));
+};
 
 const getResponseStatus = (error: unknown): number | null => {
   if (!error || typeof error !== 'object' || !('response' in error)) {
@@ -42,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionStorage.removeItem('token');
     sessionStorage.removeItem('user');
     sessionStorage.removeItem('organization');
+    clearDesktopTimerSession();
   };
 
   const clearAuthState = () => {
@@ -52,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const storeAuthState = (nextToken: string, nextUser: User, nextOrganization?: Organization | null) => {
+    clearDesktopTimerSession();
     setToken(nextToken);
     setUser(nextUser);
     setOrganization(nextOrganization ?? null);
@@ -202,6 +218,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await authApi.me();
       const nextUser = extractUserFromMeResponse(response.data);
+      const nextOrganization = (response.data as any)?.organization
+        || (response.data as any)?.data?.organization
+        || (nextUser as any)?.organization
+        || null;
 
       if (!nextUser) {
         throw new Error('Invalid auth payload');
@@ -213,6 +233,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setUser(nextUser);
       sessionStorage.setItem('user', JSON.stringify(nextUser));
+      if (nextOrganization) {
+        setOrganization(nextOrganization);
+        sessionStorage.setItem('organization', JSON.stringify(nextOrganization));
+      }
     } catch (error) {
       console.error('Failed to fetch user:', error);
       if (isActiveRef.current) {
@@ -252,12 +276,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     storeAuthState(authToken, userData, org);
   };
 
-  const register = async (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => {
+  const signupOwner = async (payload: OwnerSignupRequest) => {
     if (DEMO_MODE) {
       const demoUser: User = {
         id: 1,
-        name: name,
-        email: email,
+        name: payload.name,
+        email: payload.email,
         role: 'admin',
         organization_id: 1,
         is_active: true,
@@ -266,8 +290,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       const demoOrg: Organization = {
         id: 1,
-        name: options?.organizationName || 'My Company',
-        slug: (options?.organizationName || 'my-company').toLowerCase().replace(/\s+/g, '-'),
+        name: payload.company_name,
+        slug: payload.company_name.toLowerCase().replace(/\s+/g, '-'),
+        owner_user_id: 1,
+        plan_code: payload.plan_code,
+        billing_cycle: payload.billing_cycle || 'monthly',
+        subscription_status: payload.signup_mode === 'paid' ? 'inactive' : 'trial',
+        subscription_intent: payload.signup_mode,
         settings: {},
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -277,18 +306,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const response = await authApi.register({
+    const response = await authApi.signupOwner(payload);
+    const { user: userData, token: authToken, organization: org } = response.data;
+
+    storeAuthState(authToken, userData, org);
+  };
+
+  const acceptInvitation = async (
+    tokenValue: string,
+    payload: { name: string; password: string; password_confirmation: string }
+  ) => {
+    const response = await invitationApi.accept(tokenValue, payload);
+    const { user: userData, token: authToken, organization: org } = response.data;
+
+    storeAuthState(authToken, userData, org);
+  };
+
+  const register = async (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => {
+    await signupOwner({
+      company_name: options?.organizationName || 'My Company',
       name,
       email,
       password,
       password_confirmation: password,
-      role: options?.role || 'admin',
-      organization_name: options?.organizationName,
+      plan_code: 'starter',
+      signup_mode: 'trial',
+      billing_cycle: 'monthly',
+      terms_accepted: false,
     });
-    
-    const { user: userData, token: authToken, organization: org } = response.data;
-
-    storeAuthState(authToken, userData, org);
   };
 
   const logout = async () => {
@@ -328,6 +373,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         isAuthenticated: !!user && !!token,
         login,
+        signupOwner,
+        acceptInvitation,
         register,
         logout,
         updateUser,
