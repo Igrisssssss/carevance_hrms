@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\ReportGroup;
 use App\Models\TimeEntry;
+use App\Models\User;
+use App\Services\TimeEntries\IdleAutoStopMailService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -14,7 +16,10 @@ class ActivityController extends Controller
 {
     private const IDLE_AUTO_STOP_SECONDS = 300;
 
-    public function __construct(private readonly TimeEntryDurationService $timeEntryDurationService)
+    public function __construct(
+        private readonly TimeEntryDurationService $timeEntryDurationService,
+        private readonly IdleAutoStopMailService $idleAutoStopMailService,
+    )
     {
     }
 
@@ -127,7 +132,11 @@ class ActivityController extends Controller
         $activity = Activity::create($validated);
 
         if ($validated['type'] === 'idle') {
-            $this->maybeStopActiveTimersForIdle((int) $validated['user_id'], Carbon::parse($activity->recorded_at ?? now()));
+            $this->maybeStopActiveTimersForIdle(
+                userId: (int) $validated['user_id'],
+                endedAt: Carbon::parse($activity->recorded_at ?? now()),
+                idleSeconds: (int) ($activity->duration ?? 0),
+            );
         }
 
         return response()->json($activity, 201);
@@ -188,6 +197,14 @@ class ActivityController extends Controller
 
         $activity->update($validated);
 
+        if ($activity->type === 'idle') {
+            $this->maybeStopActiveTimersForIdle(
+                userId: (int) $activity->user_id,
+                endedAt: Carbon::parse($activity->recorded_at ?? now()),
+                idleSeconds: (int) ($activity->duration ?? 0),
+            );
+        }
+
         return response()->json($activity);
     }
 
@@ -212,7 +229,7 @@ class ActivityController extends Controller
         return response()->json(['message' => 'Activity deleted successfully']);
     }
 
-    private function maybeStopActiveTimersForIdle(int $userId, Carbon $endedAt): void
+    private function maybeStopActiveTimersForIdle(int $userId, Carbon $endedAt, int $idleSeconds = 0): void
     {
         $runningEntries = TimeEntry::query()
             ->where('user_id', $userId)
@@ -236,7 +253,8 @@ class ActivityController extends Controller
             ->value('recorded_at');
 
         $idleStartAt = $lastActive ? Carbon::parse($lastActive) : $earliestStart;
-        if ($idleStartAt->diffInSeconds($endedAt) < self::IDLE_AUTO_STOP_SECONDS) {
+        $resolvedIdleSeconds = max($idleSeconds, $idleStartAt->diffInSeconds($endedAt));
+        if ($resolvedIdleSeconds < self::IDLE_AUTO_STOP_SECONDS) {
             return;
         }
 
@@ -245,6 +263,11 @@ class ActivityController extends Controller
                 'end_time' => $endedAt,
                 'duration' => $this->timeEntryDurationService->effectiveDuration($entry, $endedAt),
             ]);
+        }
+
+        $user = User::query()->with('organization')->find($userId);
+        if ($user) {
+            $this->idleAutoStopMailService->send($user, $resolvedIdleSeconds, $endedAt);
         }
     }
 }

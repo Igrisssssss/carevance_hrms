@@ -164,7 +164,11 @@ export const useDesktopTracker = () => {
 
           if (idleSeconds >= IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
             try {
-              await timeEntryApi.stop({ timer_slot: 'primary' });
+              await timeEntryApi.stop({
+                timer_slot: 'primary',
+                auto_stopped_for_idle: true,
+                idle_seconds: idleSeconds,
+              });
             } catch (error: any) {
               const status = error?.response?.status;
               if (status !== 404) {

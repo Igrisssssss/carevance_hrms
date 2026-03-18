@@ -10,6 +10,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\User;
+use App\Services\TimeEntries\IdleAutoStopMailService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
@@ -21,6 +22,7 @@ class TimeEntryController extends Controller
 {
     public function __construct(
         private readonly TimeEntryDurationService $timeEntryDurationService,
+        private readonly IdleAutoStopMailService $idleAutoStopMailService,
     ) {
     }
 
@@ -234,6 +236,8 @@ class TimeEntryController extends Controller
     {
         $request->validate([
             'timer_slot' => 'nullable|in:primary,secondary',
+            'auto_stopped_for_idle' => 'nullable|boolean',
+            'idle_seconds' => 'nullable|integer|min:1|max:86400',
         ]);
 
         $user = $request->user();
@@ -256,6 +260,14 @@ class TimeEntryController extends Controller
 
         if ($slot === 'primary') {
             $this->ensureAttendanceCheckedOutForBreak($user->id, $stoppedAt);
+        }
+
+        if ($request->boolean('auto_stopped_for_idle')) {
+            $this->idleAutoStopMailService->send(
+                user: $user,
+                idleSeconds: (int) $request->input('idle_seconds', 0),
+                stoppedAt: $stoppedAt,
+            );
         }
 
         return response()->json($timeEntry->load('project', 'task'));

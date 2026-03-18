@@ -128,7 +128,11 @@ describe('useDesktopTracker', () => {
     expect(
       mocks.updateActivityMock.mock.calls.some(([, payload]) => payload?.duration === 300)
     ).toBe(true);
-    expect(mocks.stopMock).toHaveBeenCalledWith({ timer_slot: 'primary' });
+    expect(mocks.stopMock).toHaveBeenCalledWith({
+      timer_slot: 'primary',
+      auto_stopped_for_idle: true,
+      idle_seconds: 300,
+    });
     expect(sessionStorage.getItem('desktop_timer_auto_start_suppressed:1')).toBe('1');
     expect(sessionStorage.getItem('desktop_timer_idle_auto_stop_notice:1')).toBe(
       'You were idle for 5 minutes, so your timer was stopped.'

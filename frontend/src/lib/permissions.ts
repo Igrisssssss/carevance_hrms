@@ -21,7 +21,7 @@ export const getAssignableRoles = (
   }
 
   if (user.role === 'admin') {
-    return ['manager', 'employee', 'client'];
+    return ['admin', 'manager', 'employee', 'client'];
   }
 
   if (user.role === 'manager') {

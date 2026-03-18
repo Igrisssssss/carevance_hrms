@@ -31,7 +31,7 @@ class OrganizationRoleService
         }
 
         return match ($user->role) {
-            'admin' => ['manager', 'employee', 'client'],
+            'admin' => ['admin', 'manager', 'employee', 'client'],
             'manager' => config('carevance.manager_can_invite_employees', true)
                 ? ['employee']
                 : [],

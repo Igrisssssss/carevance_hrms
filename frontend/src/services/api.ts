@@ -251,7 +251,11 @@ export const timeEntryApi = {
   start: (data?: { project_id?: number | null; task_id?: number | null; description?: string; billable?: boolean; timer_slot?: 'primary' | 'secondary' }) => 
     api.post<TimeEntry>('/time-entries/start', data || {}),
   
-  stop: (data?: { timer_slot?: 'primary' | 'secondary' }) => 
+  stop: (data?: {
+    timer_slot?: 'primary' | 'secondary';
+    auto_stopped_for_idle?: boolean;
+    idle_seconds?: number;
+  }) => 
     api.post<TimeEntry>('/time-entries/stop', data || {}),
   
   active: (params?: { timer_slot?: 'primary' | 'secondary' }) => 

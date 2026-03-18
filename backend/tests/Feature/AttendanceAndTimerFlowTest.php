@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Mail\IdleTimerStoppedMail;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\Organization;
@@ -9,6 +10,7 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class AttendanceAndTimerFlowTest extends TestCase
@@ -114,5 +116,38 @@ class AttendanceAndTimerFlowTest extends TestCase
             'id' => $entry->id,
             'end_time' => null,
         ]);
+    }
+
+    public function test_idle_auto_stop_stop_request_sends_email_to_employee(): void
+    {
+        Mail::fake();
+
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $user = User::create([
+            'name' => 'Employee',
+            'email' => 'timer@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $headers = $this->apiHeadersFor($user);
+
+        $this->postJson('/api/time-entries/start', [
+            'description' => 'Primary timer',
+            'timer_slot' => 'primary',
+        ], $headers)->assertCreated();
+
+        $this->postJson('/api/time-entries/stop', [
+            'timer_slot' => 'primary',
+            'auto_stopped_for_idle' => true,
+            'idle_seconds' => 300,
+        ], $headers)->assertOk();
+
+        Mail::assertQueued(IdleTimerStoppedMail::class, function (IdleTimerStoppedMail $mail) use ($user) {
+            return $mail->hasTo($user->email)
+                && $mail->idleSeconds === 300
+                && $mail->idleDurationLabel === '5 minutes';
+        });
     }
 }

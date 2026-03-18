@@ -71,7 +71,7 @@ class InvitationFlowTest extends TestCase
         ])->assertStatus(422);
     }
 
-    public function test_non_owner_admin_cannot_invite_another_admin(): void
+    public function test_non_owner_admin_can_invite_another_admin(): void
     {
         [$organization, $owner] = $this->createWorkspaceOwner();
 
@@ -88,8 +88,9 @@ class InvitationFlowTest extends TestCase
             'role' => 'admin',
             'delivery' => 'link',
         ], $this->apiHeadersFor($admin))
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors(['role']);
+            ->assertCreated()
+            ->assertJsonPath('invited_count', 1)
+            ->assertJsonPath('invitations.0.role', 'admin');
 
         $this->postJson('/api/invitations', [
             'emails' => ['manager@example.com'],
