@@ -16,6 +16,7 @@ interface DataTableProps<T> {
   emptyMessage: string;
   headerAction?: ReactNode;
   bodyClassName?: string;
+  stickyHeader?: boolean;
 }
 
 export default function DataTable<T>({
@@ -26,6 +27,7 @@ export default function DataTable<T>({
   emptyMessage,
   headerAction,
   bodyClassName,
+  stickyHeader = false,
 }: DataTableProps<T>) {
   return (
     <SurfaceCard className="overflow-hidden">
@@ -40,7 +42,7 @@ export default function DataTable<T>({
       </div>
       <div className={`overflow-x-auto ${bodyClassName || ''}`.trim()}>
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-50/80">
+          <thead className={stickyHeader ? 'sticky top-0 z-10 bg-slate-50/95 backdrop-blur' : 'bg-slate-50/80'}>
             <tr>
               {columns.map((column) => (
                 <th

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { User, Organization, OwnerSignupRequest } from '@/types';
 import { authApi, invitationApi } from '@/services/api';
+import { clearDesktopTimerSession } from '@/lib/desktopTimerSession';
 import { apiUrl } from '@/lib/runtimeConfig';
 
 interface AuthContextType {
@@ -23,18 +24,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Demo mode - set to true to use mock data without backend
 const DEMO_MODE = false;
 const API_URL = apiUrl;
-const ACTIVE_TIMER_KEY = 'active_timer_snapshot';
-const AUTO_START_SUPPRESSED_KEY = 'desktop_timer_auto_start_suppressed';
-
-const clearDesktopTimerSession = () => {
-  localStorage.removeItem(ACTIVE_TIMER_KEY);
-
-  const suppressionKeys = Array.from({ length: sessionStorage.length }, (_, index) => sessionStorage.key(index))
-    .filter((key): key is string => Boolean(key))
-    .filter((key) => key === AUTO_START_SUPPRESSED_KEY || key.startsWith(`${AUTO_START_SUPPRESSED_KEY}:`));
-
-  suppressionKeys.forEach((key) => sessionStorage.removeItem(key));
-};
 
 const getResponseStatus = (error: unknown): number | null => {
   if (!error || typeof error !== 'object' || !('response' in error)) {
@@ -246,11 +235,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
+    const normalizedEmail = email.trim().toLowerCase();
+
     if (DEMO_MODE) {
       const demoUser: User = {
         id: 1,
-        name: email.split('@')[0],
-        email: email,
+        name: normalizedEmail.split('@')[0],
+        email: normalizedEmail,
         role: 'admin',
         organization_id: 1,
         is_active: true,
@@ -270,7 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const response = await authApi.login({ email, password });
+    const response = await authApi.login({ email: normalizedEmail, password });
     const { user: userData, token: authToken, organization: org } = response.data;
 
     storeAuthState(authToken, userData, org);

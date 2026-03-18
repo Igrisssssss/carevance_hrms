@@ -32,9 +32,16 @@ export default function Login() {
     e.preventDefault();
     setError('');
     setIsLoading(true);
+
+    const form = new FormData(e.currentTarget as HTMLFormElement);
+    const submittedEmail = String(form.get('email') || '').trim();
+    const submittedPassword = String(form.get('password') || '');
+
+    setEmail(submittedEmail);
+    setPassword(submittedPassword);
     
     try {
-      await login(email, password);
+      await login(submittedEmail, submittedPassword);
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Invalid email or password');
@@ -141,7 +148,6 @@ export default function Login() {
                     </button>
                   </div>
                 </div>
-
                 <div className="flex items-center justify-between">
                   <label htmlFor="remember-me" className="inline-flex items-center gap-2 text-sm text-slate-600">
                     <input

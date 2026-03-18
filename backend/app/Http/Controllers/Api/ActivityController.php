@@ -6,11 +6,18 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\ReportGroup;
 use App\Models\TimeEntry;
+use App\Services\TimeEntries\TimeEntryDurationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
 class ActivityController extends Controller
 {
+    private const IDLE_AUTO_STOP_SECONDS = 300;
+
+    public function __construct(private readonly TimeEntryDurationService $timeEntryDurationService)
+    {
+    }
+
     private function canViewAll(?\App\Models\User $user): bool
     {
         return $user && in_array($user->role, ['admin', 'manager'], true);
@@ -119,6 +126,10 @@ class ActivityController extends Controller
 
         $activity = Activity::create($validated);
 
+        if ($validated['type'] === 'idle') {
+            $this->maybeStopActiveTimersForIdle((int) $validated['user_id'], Carbon::parse($activity->recorded_at ?? now()));
+        }
+
         return response()->json($activity, 201);
     }
 
@@ -199,5 +210,41 @@ class ActivityController extends Controller
         $activity->delete();
 
         return response()->json(['message' => 'Activity deleted successfully']);
+    }
+
+    private function maybeStopActiveTimersForIdle(int $userId, Carbon $endedAt): void
+    {
+        $runningEntries = TimeEntry::query()
+            ->where('user_id', $userId)
+            ->whereNull('end_time')
+            ->get();
+
+        if ($runningEntries->isEmpty()) {
+            return;
+        }
+
+        $earliestStart = $runningEntries
+            ->map(fn (TimeEntry $entry) => Carbon::parse($entry->start_time))
+            ->sort()
+            ->first() ?? $endedAt;
+
+        $lastActive = Activity::query()
+            ->where('user_id', $userId)
+            ->where('type', '!=', 'idle')
+            ->whereBetween('recorded_at', [$earliestStart, $endedAt])
+            ->orderByDesc('recorded_at')
+            ->value('recorded_at');
+
+        $idleStartAt = $lastActive ? Carbon::parse($lastActive) : $earliestStart;
+        if ($idleStartAt->diffInSeconds($endedAt) < self::IDLE_AUTO_STOP_SECONDS) {
+            return;
+        }
+
+        foreach ($runningEntries as $entry) {
+            $entry->update([
+                'end_time' => $endedAt,
+                'duration' => $this->timeEntryDurationService->effectiveDuration($entry, $endedAt),
+            ]);
+        }
     }
 }

@@ -57,6 +57,7 @@ interface PersistedFilterState {
 }
 
 const FILTER_STORAGE_KEY = 'admin-dashboard-filters';
+const ATTENDANCE_TABLE_SCROLL_CLASS = 'max-h-[28rem] overflow-y-auto overscroll-contain';
 
 const toDate = (value: Date) =>
   `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
@@ -350,10 +351,23 @@ export default function AdminDashboard() {
   }, [employees, filters.scope, filters.selectedEmployeeId]);
 
   const organizationQuery = useQuery({
-    queryKey: ['admin-dashboard-organization', filters.startDate, filters.endDate],
-    enabled: filters.scope === 'organization',
+    queryKey: ['admin-dashboard-organization', filters.startDate, filters.endDate, employees.map((employee: any) => employee.id).join(',')],
+    enabled: filters.scope === 'organization' && usersQuery.isSuccess,
     queryFn: async () => {
       const payrollMonth = filters.endDate.slice(0, 7);
+      const employeeTimeEntriesResponses = employees.length === 0
+        ? []
+        : await Promise.all(
+            employees.map((employee: any) =>
+              timeEntryApi.getAll({
+                user_id: Number(employee.id),
+                start_date: filters.startDate,
+                end_date: filters.endDate,
+                page: 1,
+                per_page: 500,
+              })
+            )
+          );
       const [
         attendanceResponse,
         overallResponse,
@@ -383,6 +397,7 @@ export default function AdminDashboard() {
         overall: overallResponse.data,
         insights: insightsResponse.data,
         websiteActivity: websiteActivityResponse.data?.data || [],
+        timeEntries: employeeTimeEntriesResponses.flatMap((response) => response.data?.data || []),
         pendingLeaves: leaveResponse.data?.data || [],
         pendingTimeEdits: timeEditResponse.data?.data || [],
         payrollRecords: payrollResponse.data?.data || [],
@@ -583,6 +598,7 @@ export default function AdminDashboard() {
     employees_inactive: [],
     employees_on_leave: [],
   };
+  const organizationTimeEntries = organizationData?.timeEntries || [];
   const teamRankings = organizationData?.insights?.team_rankings?.by_efficiency || [];
   const payrollRecords = organizationData?.payrollRecords || [];
   const organizationWebsiteActivity = organizationData?.websiteActivity || [];
@@ -632,6 +648,38 @@ export default function AdminDashboard() {
   });
   const presentAttendanceRows = filteredAttendanceRows.filter((row: any) => Number(row.present_days || row.days_present || 0) > 0);
   const absentAttendanceRows = filteredAttendanceRows.filter((row: any) => Number(row.present_days || row.days_present || 0) <= 0);
+  const attendanceTimeEntriesByUser = organizationTimeEntries.reduce((map: Record<number, any[]>, entry: any) => {
+    const userId = Number(entry?.user_id || entry?.user?.id || 0);
+    if (!userId) return map;
+
+    const existingEntries = map[userId] || [];
+    existingEntries.push(entry);
+    map[userId] = existingEntries;
+    return map;
+  }, {});
+  const attendanceTimerRows = filteredAttendanceRows.map((row: any) => {
+    const userId = Number(row.user?.id || row.user_id || 0);
+    const userEntries = attendanceTimeEntriesByUser[userId] || [];
+    const firstTimerStart = userEntries.reduce((earliest: string | null, entry: any) => {
+      const startTime = typeof entry?.start_time === 'string' ? entry.start_time : null;
+      if (!startTime) return earliest;
+      if (!earliest) return startTime;
+      return new Date(startTime).getTime() < new Date(earliest).getTime() ? startTime : earliest;
+    }, null);
+    const lastTimerEnd = userEntries.reduce((latest: string | null, entry: any) => {
+      const endTime = typeof entry?.end_time === 'string' ? entry.end_time : null;
+      if (!endTime) return latest;
+      if (!latest) return endTime;
+      return new Date(endTime).getTime() > new Date(latest).getTime() ? endTime : latest;
+    }, null);
+
+    return {
+      ...row,
+      first_timer_start: firstTimerStart,
+      last_timer_end: lastTimerEnd,
+      is_timer_running: userEntries.some((entry: any) => !entry?.end_time),
+    };
+  });
   const presentEmployees = attendanceRows.filter((row: any) => Number(row.present_days || row.days_present || 0) > 0).length;
   const lateEmployees = attendanceRows.filter((row: any) => Number(row.late_days || 0) > 0).length;
   const absentEmployees = Math.max(attendanceRows.length - presentEmployees, 0);
@@ -1091,6 +1139,8 @@ export default function AdminDashboard() {
                           description="Employees with at least one present day in the selected range."
                           rows={presentAttendanceRows}
                           emptyMessage="No present employees match the current search or group filter."
+                          bodyClassName={ATTENDANCE_TABLE_SCROLL_CLASS}
+                          stickyHeader
                           columns={[
                             {
                               key: 'employee',
@@ -1122,6 +1172,8 @@ export default function AdminDashboard() {
                           description="Employees with no present day recorded in the selected range."
                           rows={absentAttendanceRows}
                           emptyMessage="No absent employees match the current search or group filter."
+                          bodyClassName={ATTENDANCE_TABLE_SCROLL_CLASS}
+                          stickyHeader
                           columns={[
                             {
                               key: 'employee',
@@ -1149,6 +1201,57 @@ export default function AdminDashboard() {
                         />
                       </div>
                     </div>
+                  ),
+                },
+                {
+                  id: 'timer-checks',
+                  label: 'Check in/out',
+                  content: (
+                    <DataTable
+                      title="Timer check-in / check-out"
+                      description="First timer start and most recent timer stop in the selected range."
+                      rows={attendanceTimerRows}
+                      emptyMessage="No employees match the current search or group filter."
+                      bodyClassName={ATTENDANCE_TABLE_SCROLL_CLASS}
+                      stickyHeader
+                      columns={[
+                        {
+                          key: 'employee',
+                          header: 'Employee',
+                          render: (row: any) => (
+                            <div>
+                              <p className="font-medium text-slate-950">{row.user?.name || 'Unknown'}</p>
+                              <p className="text-xs text-slate-500">{row.user?.email || 'No email'}</p>
+                            </div>
+                          ),
+                        },
+                        {
+                          key: 'check_in',
+                          header: 'Check in',
+                          render: (row: any) => row.first_timer_start ? (
+                            <div>
+                              <p className="font-medium text-slate-950">{new Date(row.first_timer_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                              <p className="text-xs text-slate-500">{new Date(row.first_timer_start).toLocaleDateString()}</p>
+                            </div>
+                          ) : 'No start',
+                        },
+                        {
+                          key: 'check_out',
+                          header: 'Check out',
+                          render: (row: any) => row.last_timer_end ? (
+                            <div>
+                              <p className="font-medium text-slate-950">{new Date(row.last_timer_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                              <p className="text-xs text-slate-500">{new Date(row.last_timer_end).toLocaleDateString()}</p>
+                            </div>
+                          ) : row.is_timer_running ? 'Still running' : 'No stop',
+                        },
+                        {
+                          key: 'status',
+                          header: 'Status',
+                          render: (row: any) => row.is_timer_running ? 'Running' : row.last_timer_end ? 'Stopped' : 'No timer',
+                        },
+                      ]}
+                    />
                   ),
                 },
                 {

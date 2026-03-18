@@ -40,6 +40,26 @@ describe('Login page', () => {
     });
   });
 
+  it('submits the live form values even when autofill does not trigger change events', async () => {
+    loginMock.mockResolvedValue(undefined);
+
+    renderWithProviders(<Login />);
+
+    const emailInput = screen.getByRole('textbox', { name: /email address/i }) as HTMLInputElement;
+    const passwordInput = screen.getByLabelText(/^password$/i) as HTMLInputElement;
+    const emailSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+
+    emailSetter?.call(emailInput, ' Admin@Example.com ');
+    emailSetter?.call(passwordInput, 'password123');
+
+    fireEvent.submit(emailInput.closest('form') as HTMLFormElement);
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledWith('Admin@Example.com', 'password123');
+      expect(navigateMock).toHaveBeenCalledWith('/dashboard');
+    });
+  });
+
   it('shows the backend error message when login fails', async () => {
     loginMock.mockRejectedValue({
       response: { data: { message: 'Invalid credentials' } },

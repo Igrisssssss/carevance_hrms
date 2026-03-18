@@ -1,11 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, projectApi } from '@/services/api';
+import {
+  ACTIVE_TIMER_KEY,
+  clearAutoStartSuppression,
+  clearIdleAutoStopNotice,
+  consumeIdleAutoStopNotice,
+  DESKTOP_TIMER_IDLE_STOP_EVENT,
+  type DesktopTimerIdleStopDetail,
+  isAutoStartSuppressed,
+  suppressAutoStart,
+} from '@/lib/desktopTimerSession';
 import PageHeader from '@/components/dashboard/PageHeader';
 import MetricCard from '@/components/dashboard/MetricCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
-import { PageLoadingState } from '@/components/ui/PageState';
+import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
 import { SelectInput } from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
 import {
@@ -19,26 +29,6 @@ import {
 } from 'lucide-react';
 import type { TimeEntry } from '@/types';
 import type { Project, Task } from '@/types';
-
-const ACTIVE_TIMER_KEY = 'active_timer_snapshot';
-const AUTO_START_SUPPRESSED_KEY = 'desktop_timer_auto_start_suppressed';
-
-const getAutoStartSuppressionKey = (userId?: number | null) => `${AUTO_START_SUPPRESSED_KEY}:${userId ?? 'guest'}`;
-
-const suppressAutoStart = (userId?: number | null) => {
-  if (!userId) return;
-  sessionStorage.setItem(getAutoStartSuppressionKey(userId), '1');
-};
-
-const clearAutoStartSuppression = (userId?: number | null) => {
-  if (!userId) return;
-  sessionStorage.removeItem(getAutoStartSuppressionKey(userId));
-};
-
-const isAutoStartSuppressed = (userId?: number | null) => {
-  if (!userId) return false;
-  return sessionStorage.getItem(getAutoStartSuppressionKey(userId)) === '1';
-};
 
 const getStartTimeMs = (startTime?: string) => {
   if (!startTime) return NaN;
@@ -76,6 +66,7 @@ export default function DesktopTimerDashboard() {
   const [isLoadingProjectTasks, setIsLoadingProjectTasks] = useState(false);
   const [isUpdatingTimerContext, setIsUpdatingTimerContext] = useState(false);
   const [notice, setNotice] = useState('');
+  const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const hasRestoredSnapshotRef = useRef(false);
   const hasAttemptedAutoStartRef = useRef(false);
 
@@ -215,6 +206,7 @@ export default function DesktopTimerDashboard() {
     hasAttemptedAutoStartRef.current = false;
     hasRestoredSnapshotRef.current = false;
     setNotice('');
+    setFeedback(null);
     setActiveTimer(null);
     setTodayEntries([]);
     setTodayTotal(0);
@@ -231,6 +223,40 @@ export default function DesktopTimerDashboard() {
 
     setIsLoading(true);
     void fetchData();
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+
+    const pendingNotice = consumeIdleAutoStopNotice(userId);
+    if (pendingNotice) {
+      setFeedback({ tone: 'error', message: pendingNotice });
+      setNotice('');
+      setActiveTimer(null);
+      localStorage.removeItem(ACTIVE_TIMER_KEY);
+      void fetchData();
+    }
+
+    const handleIdleAutoStop = (event: Event) => {
+      const detail = (event as CustomEvent<DesktopTimerIdleStopDetail>).detail;
+      if (!detail || detail.userId !== userId) {
+        return;
+      }
+
+      setFeedback({ tone: 'error', message: detail.message });
+      setNotice('');
+      setActiveTimer(null);
+      localStorage.removeItem(ACTIVE_TIMER_KEY);
+      void fetchData();
+    };
+
+    window.addEventListener(DESKTOP_TIMER_IDLE_STOP_EVENT, handleIdleAutoStop as EventListener);
+
+    return () => {
+      window.removeEventListener(DESKTOP_TIMER_IDLE_STOP_EVENT, handleIdleAutoStop as EventListener);
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -272,6 +298,8 @@ export default function DesktopTimerDashboard() {
   const handleStartTimer = async (isAutoStart = false) => {
     setIsStarting(true);
     setNotice(isAutoStart ? 'Starting your timer automatically...' : '');
+    setFeedback(null);
+    clearIdleAutoStopNotice(userId);
     try {
       const startedAtIso = new Date().toISOString();
       const response = await timeEntryApi.start({
@@ -515,6 +543,12 @@ export default function DesktopTimerDashboard() {
             </Button>
           </div>
         </div>
+
+        {feedback ? (
+          <div className="mt-5">
+            <FeedbackBanner tone={feedback.tone} message={feedback.message} />
+          </div>
+        ) : null}
 
         <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div className="rounded-[24px] border border-white/15 bg-white/10 p-4">

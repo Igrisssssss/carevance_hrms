@@ -284,6 +284,76 @@ describe('DesktopTimerDashboard', () => {
     expect(screen.getByRole('button', { name: /start timer/i })).toBeInTheDocument();
   });
 
+  it('shows an idle auto-stop message and keeps the timer stopped when the tracker stops it', async () => {
+    mocks.summaryMock.mockReset();
+    mocks.summaryMock
+      .mockResolvedValueOnce({
+        data: {
+          active_timer: null,
+          today_entries: [],
+          today_total_elapsed_duration: 0,
+          all_time_total_elapsed_duration: 0,
+          team_members_count: 4,
+          new_members_this_week: 1,
+          productivity_score: 82,
+          active_projects_count: 1,
+          total_projects_count: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          active_timer: {
+            id: 99,
+            user_id: 1,
+            project_id: 7,
+            task_id: null,
+            start_time: '2026-03-16T09:00:00Z',
+            duration: 0,
+            timer_slot: 'primary',
+            created_at: '2026-03-16T09:00:00Z',
+            updated_at: '2026-03-16T09:00:00Z',
+            project: { id: 7, name: 'Core Platform', status: 'active', color: '#3B82F6' },
+            task: null,
+          },
+          today_entries: [],
+          today_total_elapsed_duration: 0,
+          all_time_total_elapsed_duration: 0,
+          team_members_count: 4,
+          new_members_this_week: 1,
+          productivity_score: 82,
+          active_projects_count: 1,
+          total_projects_count: 1,
+        },
+      })
+      .mockResolvedValue({
+        data: {
+          active_timer: null,
+          today_entries: [],
+          today_total_elapsed_duration: 0,
+          all_time_total_elapsed_duration: 0,
+          team_members_count: 4,
+          new_members_this_week: 1,
+          productivity_score: 82,
+          active_projects_count: 1,
+          total_projects_count: 1,
+        },
+      });
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    expect(await screen.findByText(/timer running/i)).toBeInTheDocument();
+
+    window.dispatchEvent(new CustomEvent('desktop-timer:idle-auto-stop', {
+      detail: {
+        userId: 1,
+        message: 'You were idle for 5 minutes, so your timer was stopped.',
+      },
+    }));
+
+    expect(await screen.findByText(/idle for 5 minutes/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /start timer/i })).toBeInTheDocument();
+  });
+
   it('auto-starts for a newly logged-in user even if another user paused earlier', async () => {
     sessionStorage.setItem('desktop_timer_auto_start_suppressed:1', '1');
     mocks.authUser = {
