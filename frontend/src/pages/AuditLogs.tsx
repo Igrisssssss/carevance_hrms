@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import PageHeader from '@/components/dashboard/PageHeader';
 import FilterPanel from '@/components/dashboard/FilterPanel';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
@@ -15,6 +15,8 @@ const prettifyAction = (value: string) =>
     .map((part) => part.replace(/_/g, ' '))
     .join(' / ');
 
+type AuditLogsResponse = Awaited<ReturnType<typeof auditApi.list>>['data'];
+
 export default function AuditLogs() {
   const [action, setAction] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -23,7 +25,7 @@ export default function AuditLogs() {
   const [targetType, setTargetType] = useState('');
   const [page, setPage] = useState(1);
 
-  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<AuditLogsResponse>({
     queryKey: ['audit-logs', action, dateFrom, dateTo, actorUserId, targetType, page],
     queryFn: async () => {
       const response = await auditApi.list({
@@ -38,7 +40,7 @@ export default function AuditLogs() {
 
       return response.data;
     },
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   });
 
   return (

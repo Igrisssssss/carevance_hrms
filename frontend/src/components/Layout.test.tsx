@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Layout from '@/components/Layout';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -13,6 +13,8 @@ const authState = vi.hoisted(() => ({
 
 const apiMocks = vi.hoisted(() => ({
   getUnreadSummary: vi.fn().mockResolvedValue({ data: { unread_messages: 0, unread_conversations: 0, unread_senders: 0 } }),
+  leaveList: vi.fn().mockResolvedValue({ data: { data: [] } }),
+  attendanceTimeEditList: vi.fn().mockResolvedValue({ data: { data: [] } }),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -28,6 +30,8 @@ vi.mock('@/services/api', async () => {
   return {
     ...actual,
     chatApi: { getUnreadSummary: apiMocks.getUnreadSummary },
+    leaveApi: { list: apiMocks.leaveList },
+    attendanceTimeEditApi: { list: apiMocks.attendanceTimeEditList },
     notificationApi: {
       list: vi.fn().mockResolvedValue({ data: { data: [], unread_count: 0 } }),
       markAllRead: vi.fn().mockResolvedValue({}),
@@ -40,6 +44,8 @@ describe('Layout navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     apiMocks.getUnreadSummary.mockResolvedValue({ data: { unread_messages: 0, unread_conversations: 0, unread_senders: 0 } });
+    apiMocks.leaveList.mockResolvedValue({ data: { data: [] } });
+    apiMocks.attendanceTimeEditList.mockResolvedValue({ data: { data: [] } });
     authState.value = {
       user: {
         id: 1,
@@ -108,7 +114,9 @@ describe('Layout navigation', () => {
 
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
-    const chatLink = await screen.findByRole('link', { name: /chat/i });
-    expect(within(chatLink).getByText('4')).toBeInTheDocument();
+    await waitFor(() => {
+      const chatLink = screen.getByRole('link', { name: /chat/i });
+      expect(within(chatLink).getByText('4')).toBeInTheDocument();
+    });
   });
 });

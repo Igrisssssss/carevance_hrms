@@ -1,5 +1,6 @@
 const { app, BrowserWindow, desktopCapturer, ipcMain, powerMonitor, shell } = require('electron');
 const path = require('path');
+const fs = require('fs');
 let activeWin = null;
 
 try {
@@ -9,7 +10,20 @@ try {
 }
 
 const DEFAULT_APP_URL = 'http://localhost:5173';
-const APP_URL = process.env.APP_URL || DEFAULT_APP_URL;
+const readConfiguredAppUrl = () => {
+  try {
+    const configPath = path.join(__dirname, 'app-config.json');
+    if (!fs.existsSync(configPath)) {
+      return '';
+    }
+
+    const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    return typeof parsed.appUrl === 'string' ? parsed.appUrl.trim() : '';
+  } catch {
+    return '';
+  }
+};
+const APP_URL = process.env.APP_URL || readConfiguredAppUrl() || DEFAULT_APP_URL;
 const APP_ICON = process.platform === 'win32'
   ? path.join(__dirname, 'assets', 'icon.ico')
   : path.join(__dirname, 'assets', 'icon.png');

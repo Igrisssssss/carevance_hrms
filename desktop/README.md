@@ -20,7 +20,11 @@ npm start
 
 ## URL Selection
 
-`desktop/main.cjs` reads the frontend URL from the `APP_URL` process environment variable.
+`desktop/main.cjs` reads the frontend URL from:
+
+1. the `APP_URL` process environment variable
+2. `desktop/app-config.json`
+3. fallback `http://localhost:5173`
 
 Default:
 
@@ -33,6 +37,13 @@ Override for another local or deployed frontend:
 ```powershell
 $env:APP_URL="https://your-frontend-domain.com"
 npm start
+```
+
+When building the installer, set `APP_URL` before the build command so the packaged app opens your deployed frontend by default:
+
+```powershell
+$env:APP_URL="https://your-frontend-domain.com"
+npm run dist:win
 ```
 
 ## Build Windows Artifacts
