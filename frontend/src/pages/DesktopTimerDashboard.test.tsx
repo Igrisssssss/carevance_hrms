@@ -1,6 +1,7 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { armAutoStart } from '@/lib/desktopTimerSession';
 import DesktopTimerDashboard from '@/pages/DesktopTimerDashboard';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
@@ -67,6 +68,7 @@ describe('DesktopTimerDashboard', () => {
       created_at: '',
       updated_at: '',
     };
+    armAutoStart(1);
 
     mocks.summaryMock
       .mockResolvedValueOnce({
@@ -201,6 +203,32 @@ describe('DesktopTimerDashboard', () => {
 
     await waitFor(() => {
       expect(mocks.updateMock).toHaveBeenCalledWith(99, expect.objectContaining({ project_id: 7, task_id: 42 }));
+    });
+  });
+
+  it('does not auto-start just from remounting when login did not arm it', async () => {
+    sessionStorage.clear();
+    mocks.summaryMock.mockReset();
+    mocks.summaryMock.mockResolvedValue({
+      data: {
+        active_timer: null,
+        today_entries: [],
+        today_total_elapsed_duration: 0,
+        all_time_total_elapsed_duration: 0,
+        team_members_count: 4,
+        new_members_this_week: 1,
+        productivity_score: 82,
+        active_projects_count: 1,
+        total_projects_count: 1,
+      },
+    });
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    expect(await screen.findByRole('button', { name: /start timer/i })).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(mocks.startMock).not.toHaveBeenCalled();
     });
   });
 
@@ -362,6 +390,7 @@ describe('DesktopTimerDashboard', () => {
       email: 'different@example.com',
       name: 'Different Employee',
     };
+    armAutoStart(2);
 
     mocks.summaryMock.mockReset();
     mocks.summaryMock

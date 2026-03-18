@@ -1,5 +1,6 @@
 export const ACTIVE_TIMER_KEY = 'active_timer_snapshot';
 const AUTO_START_SUPPRESSED_KEY = 'desktop_timer_auto_start_suppressed';
+const AUTO_START_ARMED_KEY = 'desktop_timer_auto_start_armed';
 const IDLE_AUTO_STOP_NOTICE_KEY = 'desktop_timer_idle_auto_stop_notice';
 export const DESKTOP_TIMER_IDLE_STOP_EVENT = 'desktop-timer:idle-auto-stop';
 
@@ -26,6 +27,23 @@ export const clearAutoStartSuppression = (userId?: number | null) => {
 export const isAutoStartSuppressed = (userId?: number | null) => {
   if (!userId) return false;
   return sessionStorage.getItem(getAutoStartSuppressionKey(userId)) === '1';
+};
+
+const getAutoStartArmedKey = (userId?: number | null) => getStorageScopedKey(AUTO_START_ARMED_KEY, userId);
+
+export const armAutoStart = (userId?: number | null) => {
+  if (!userId) return;
+  sessionStorage.setItem(getAutoStartArmedKey(userId), '1');
+};
+
+export const clearAutoStartArm = (userId?: number | null) => {
+  if (!userId) return;
+  sessionStorage.removeItem(getAutoStartArmedKey(userId));
+};
+
+export const isAutoStartArmed = (userId?: number | null) => {
+  if (!userId) return false;
+  return sessionStorage.getItem(getAutoStartArmedKey(userId)) === '1';
 };
 
 const getIdleAutoStopNoticeKey = (userId?: number | null) => getStorageScopedKey(IDLE_AUTO_STOP_NOTICE_KEY, userId);
@@ -62,6 +80,8 @@ export const clearDesktopTimerSession = () => {
     .filter((key) =>
       key === AUTO_START_SUPPRESSED_KEY
       || key.startsWith(`${AUTO_START_SUPPRESSED_KEY}:`)
+      || key === AUTO_START_ARMED_KEY
+      || key.startsWith(`${AUTO_START_ARMED_KEY}:`)
       || key === IDLE_AUTO_STOP_NOTICE_KEY
       || key.startsWith(`${IDLE_AUTO_STOP_NOTICE_KEY}:`)
     );

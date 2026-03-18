@@ -101,6 +101,7 @@ describe('useDesktopTracker', () => {
         title: 'Tracking Work',
         url: null,
       }),
+      revealWindow: vi.fn().mockResolvedValue(true),
     };
   });
 
@@ -133,6 +134,7 @@ describe('useDesktopTracker', () => {
       'You were idle for 5 minutes, so your timer was stopped.'
     );
     expect(idleStopListener).toHaveBeenCalledTimes(1);
+    expect(window.desktopTracker?.revealWindow).toHaveBeenCalledTimes(1);
 
     window.removeEventListener(DESKTOP_TIMER_IDLE_STOP_EVENT, idleStopListener as EventListener);
   });

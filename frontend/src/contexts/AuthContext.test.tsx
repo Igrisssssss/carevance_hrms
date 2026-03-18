@@ -1,8 +1,10 @@
 import { waitFor, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { isAutoStartArmed } from '@/lib/desktopTimerSession';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { renderWithProviders } from '@/test/renderWithProviders';
-import { authApi } from '@/services/api';
+import { authApi, timeEntryApi } from '@/services/api';
 
 vi.mock('@/services/api', async () => {
   const actual = await vi.importActual<typeof import('@/services/api')>('@/services/api');
@@ -15,17 +17,27 @@ vi.mock('@/services/api', async () => {
       logout: vi.fn(),
       register: vi.fn(),
     },
+    timeEntryApi: {
+      ...actual.timeEntryApi,
+      stop: vi.fn(),
+    },
   };
 });
 
 function AuthProbe() {
-  const { isLoading, isAuthenticated, user } = useAuth();
+  const { isLoading, isAuthenticated, user, login, logout } = useAuth();
 
   return (
     <div>
       <span data-testid="loading">{String(isLoading)}</span>
       <span data-testid="authenticated">{String(isAuthenticated)}</span>
       <span data-testid="user-email">{user?.email || ''}</span>
+      <button type="button" onClick={() => void login('employee@example.com', 'password123')}>
+        Login
+      </button>
+      <button type="button" onClick={() => void logout()}>
+        Logout
+      </button>
     </div>
   );
 }
@@ -33,6 +45,7 @@ function AuthProbe() {
 describe('AuthProvider', () => {
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
     vi.clearAllMocks();
   });
 
@@ -73,6 +86,49 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('loading')).toHaveTextContent('false');
       expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
       expect(screen.getByTestId('user-email')).toHaveTextContent('fresh@example.com');
+    });
+  });
+
+  it('arms auto-start on employee login and stops the timer on logout', async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(authApi.login).mockResolvedValue({
+      data: {
+        token: 'employee-token',
+        user: {
+          id: 7,
+          name: 'Employee User',
+          email: 'employee@example.com',
+          role: 'employee',
+          organization_id: 2,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        organization: null,
+      },
+    } as any);
+    vi.mocked(authApi.logout).mockResolvedValue({ data: { success: true } } as any);
+    vi.mocked(timeEntryApi.stop).mockResolvedValue({ data: null } as any);
+
+    renderWithProviders(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await user.click(await screen.findByRole('button', { name: /login/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+    });
+    expect(isAutoStartArmed(7)).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: /logout/i }));
+
+    await waitFor(() => {
+      expect(timeEntryApi.stop).toHaveBeenCalledWith({ timer_slot: 'primary' });
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
     });
   });
 });

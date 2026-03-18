@@ -184,6 +184,10 @@ export const useDesktopTracker = () => {
               });
             }
 
+            if (typeof desktopApi.revealWindow === 'function') {
+              await desktopApi.revealWindow();
+            }
+
             return;
           }
         } else {

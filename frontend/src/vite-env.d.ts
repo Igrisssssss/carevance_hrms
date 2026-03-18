@@ -8,6 +8,7 @@ interface DesktopTrackerBridge {
     title: string | null;
     url: string | null;
   } | null>;
+  revealWindow: () => Promise<boolean>;
 }
 
 interface AppRuntimeConfig {

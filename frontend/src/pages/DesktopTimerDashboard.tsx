@@ -3,11 +3,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, projectApi } from '@/services/api';
 import {
   ACTIVE_TIMER_KEY,
+  clearAutoStartArm,
   clearAutoStartSuppression,
   clearIdleAutoStopNotice,
   consumeIdleAutoStopNotice,
   DESKTOP_TIMER_IDLE_STOP_EVENT,
   type DesktopTimerIdleStopDetail,
+  isAutoStartArmed,
   isAutoStartSuppressed,
   suppressAutoStart,
 } from '@/lib/desktopTimerSession';
@@ -158,6 +160,7 @@ export default function DesktopTimerDashboard() {
       if (!activeFromApi) {
         localStorage.removeItem(ACTIVE_TIMER_KEY);
       } else {
+        clearAutoStartArm(userId);
         clearAutoStartSuppression(userId);
         hasRestoredSnapshotRef.current = false;
       }
@@ -283,11 +286,17 @@ export default function DesktopTimerDashboard() {
     }
 
     if (activeTimer) {
+      clearAutoStartArm(userId);
       hasAttemptedAutoStartRef.current = true;
       return;
     }
 
-    if (hasAttemptedAutoStartRef.current || isStarting || isAutoStartSuppressed(userId)) {
+    if (
+      hasAttemptedAutoStartRef.current
+      || isStarting
+      || isAutoStartSuppressed(userId)
+      || !isAutoStartArmed(userId)
+    ) {
       return;
     }
 
@@ -307,6 +316,7 @@ export default function DesktopTimerDashboard() {
         task_id: isAutoStart ? null : selectedTaskId,
         timer_slot: 'primary',
       });
+      clearAutoStartArm(userId);
       clearAutoStartSuppression(userId);
       syncTimerEntryLocally(response.data);
       setAttendanceToday((prev: any) => ({

@@ -14,6 +14,7 @@ const APP_ICON = process.platform === 'win32'
   ? path.join(__dirname, 'assets', 'icon.ico')
   : path.join(__dirname, 'assets', 'icon.png');
 const APP_ID = 'com.carevance.tracker';
+let mainWindow = null;
 
 app.setName('CareVance Tracker');
 
@@ -22,7 +23,7 @@ if (process.platform === 'win32') {
 }
 
 const createWindow = () => {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1366,
     height: 860,
     minWidth: 1024,
@@ -42,6 +43,68 @@ const createWindow = () => {
     shell.openExternal(url);
     return { action: 'deny' };
   });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+};
+
+const revealMainWindow = () => {
+  const targetWindow = mainWindow && !mainWindow.isDestroyed()
+    ? mainWindow
+    : BrowserWindow.getAllWindows()[0];
+
+  if (!targetWindow) {
+    return false;
+  }
+
+  if (targetWindow.isMinimized()) {
+    targetWindow.restore();
+  }
+
+  if (targetWindow.isFullScreen()) {
+    targetWindow.setFullScreen(false);
+  }
+
+  if (!targetWindow.isMaximized()) {
+    targetWindow.maximize();
+  }
+
+  if (!targetWindow.isVisible()) {
+    targetWindow.show();
+  }
+
+  targetWindow.setSkipTaskbar(false);
+  targetWindow.setFocusable(true);
+  targetWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+  targetWindow.flashFrame(true);
+
+  const bringToFront = () => {
+    if (targetWindow.isDestroyed()) {
+      return;
+    }
+
+    app.focus();
+    targetWindow.show();
+    if (typeof targetWindow.moveTop === 'function') {
+      targetWindow.moveTop();
+    }
+    targetWindow.focus();
+    targetWindow.webContents.focus();
+  };
+
+  bringToFront();
+  setTimeout(bringToFront, 150);
+  setTimeout(bringToFront, 500);
+
+  setTimeout(() => {
+    if (!targetWindow.isDestroyed()) {
+      targetWindow.setAlwaysOnTop(false);
+      targetWindow.flashFrame(false);
+    }
+  }, 3000);
+
+  return true;
 };
 
 ipcMain.handle('desktop:capture-screenshot', async () => {
@@ -74,6 +137,10 @@ ipcMain.handle('desktop:get-active-window-context', async () => {
   } catch {
     return null;
   }
+});
+
+ipcMain.handle('desktop:reveal-window', async () => {
+  return revealMainWindow();
 });
 
 app.whenReady().then(() => {
