@@ -322,6 +322,9 @@ Build on Windows:
 cd desktop
 npm install
 $env:APP_URL="https://app.yourdomain.com"
+$env:DESKTOP_UPDATE_PROVIDER="github"
+$env:DESKTOP_UPDATE_OWNER="YOUR_GITHUB_OWNER"
+$env:DESKTOP_UPDATE_REPO="YOUR_GITHUB_REPO"
 npm run dist:win
 ```
 
@@ -332,6 +335,12 @@ Upload the installer to GitHub Releases, then set:
 ```env
 DESKTOP_WINDOWS_DOWNLOAD_URL=https://github.com/YOUR_USERNAME/YOUR_REPO/releases/download/v1.0.1/CareVance-Tracker-Setup-1.0.1-x64.exe
 ```
+
+For the in-app updater:
+
+- keep publishing Windows releases to the same public GitHub repository
+- write release notes in each GitHub Release body
+- users need this updater-enabled installer once, then future releases can be downloaded and installed from inside the desktop app
 
 The frontend download buttons will then use:
 

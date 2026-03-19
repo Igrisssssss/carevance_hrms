@@ -1,6 +1,6 @@
 {
   "name": "carevance-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "CareVance Tracker desktop timer and activity tracker",
   "private": true,
   "author": "CareVance",
@@ -27,6 +27,14 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Igrisssssss",
+        "repo": "carevance_hrms",
+        "releaseType": "release"
+      }
+    ],
     "asar": true,
     "npmRebuild": false,
     "win": {
@@ -53,6 +61,7 @@
     "electron-builder": "^25.1.8"
   },
   "dependencies": {
-    "active-win": "^8.2.1"
+    "active-win": "^8.2.1",
+    "electron-updater": "^6.6.2"
   }
 }

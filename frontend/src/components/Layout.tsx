@@ -3,8 +3,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { hasAdminAccess } from '@/lib/permissions';
 import { webAppUrl } from '@/lib/runtimeConfig';
-import { chatApi, notificationApi } from '@/services/api';
+import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi } from '@/services/api';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
+import DesktopUpdatePanel from '@/components/desktop/DesktopUpdatePanel';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import { topNavigation } from '@/navigation/dashboardNavigation';
 import {
@@ -14,6 +15,8 @@ import {
   LogOut,
   MessageSquare,
   Settings,
+  Sparkles,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -25,8 +28,10 @@ export default function Layout() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [unreadChatMessages, setUnreadChatMessages] = useState(0);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [updatePanelOpen, setUpdatePanelOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
   const isAdminView = hasAdminAccess(user);
@@ -87,6 +92,19 @@ export default function Layout() {
             };
           }
 
+          if (group.label === 'Settings') {
+            const itemsWithCounts = filteredItems?.map((item) =>
+              item.label === 'Approval Inbox'
+                ? { ...item, unreadCount: pendingApprovals }
+                : item
+            );
+
+            return {
+              ...group,
+              items: itemsWithCounts,
+            };
+          }
+
           return {
             ...group,
             items: filteredItems,
@@ -94,7 +112,7 @@ export default function Layout() {
         })
         .filter((group) => group.to || (group.items?.length || 0) > 0);
     },
-    [isAdminView, isDesktopShell, unreadChatMessages]
+    [isAdminView, isDesktopShell, pendingApprovals, unreadChatMessages]
   );
 
   const handleLogout = async () => {
@@ -133,20 +151,37 @@ export default function Layout() {
 
     const loadAlerts = async () => {
       try {
-        const [notificationResponse, chatUnreadResponse] = await Promise.all([
+        const approvalPromise = isAdminView
+          ? Promise.all([
+              leaveApi.list({ status: 'pending' }),
+              attendanceTimeEditApi.list({ status: 'pending' }),
+            ])
+          : Promise.resolve(null);
+
+        const [notificationResponse, chatUnreadResponse, approvalResponses] = await Promise.all([
           notificationApi.list({ limit: 20 }),
           chatApi.getUnreadSummary(),
+          approvalPromise,
         ]);
 
         if (!active) return;
         setNotifications(notificationResponse.data?.data || []);
         setUnreadNotifications(Number(notificationResponse.data?.unread_count || 0));
         setUnreadChatMessages(Number(chatUnreadResponse.data?.unread_messages || 0));
+        if (approvalResponses) {
+          const [leaveResponse, timeEditResponse] = approvalResponses;
+          const leaveCount = Number(leaveResponse.data?.data?.length || 0);
+          const timeEditCount = Number(timeEditResponse.data?.data?.length || 0);
+          setPendingApprovals(leaveCount + timeEditCount);
+        } else {
+          setPendingApprovals(0);
+        }
       } catch {
         if (active) {
           setNotifications([]);
           setUnreadNotifications(0);
           setUnreadChatMessages(0);
+          setPendingApprovals(0);
         }
       }
     };
@@ -158,7 +193,7 @@ export default function Layout() {
       active = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [isAdminView]);
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#eef5ff_45%,#f8fafc_100%)]">
@@ -175,6 +210,7 @@ export default function Layout() {
             setMobileNavigationOpen((prev) => !prev);
             setNotificationsOpen(false);
             setProfileOpen(false);
+            setUpdatePanelOpen(false);
           }}
           onToggleNotifications={() => {
             setNotificationsOpen((prev) => !prev);
@@ -268,6 +304,19 @@ export default function Layout() {
                       <Settings className="h-4 w-4 text-slate-400" />
                       Settings
                     </Link>
+                    {isDesktopShell ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfileOpen(false);
+                          setUpdatePanelOpen(true);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-[18px] px-3 py-2.5 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
+                      >
+                        <Sparkles className="h-4 w-4 text-slate-400" />
+                        Updates
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={async () => {
@@ -289,6 +338,22 @@ export default function Layout() {
         <main className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-12 animate-fade-in">
           <Outlet />
         </main>
+
+        {isDesktopShell && updatePanelOpen ? (
+          <div className="fixed inset-0 z-40 flex items-start justify-center bg-slate-950/28 px-4 py-20 backdrop-blur-sm sm:px-6">
+            <div className="relative w-full max-w-4xl">
+              <button
+                type="button"
+                onClick={() => setUpdatePanelOpen(false)}
+                aria-label="Close updates dialog"
+                className="absolute -top-14 right-0 inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/35 bg-slate-950/65 text-white shadow-lg transition hover:bg-slate-950/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/80"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <DesktopUpdatePanel />
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

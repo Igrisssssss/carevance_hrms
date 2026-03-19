@@ -46,6 +46,7 @@ describe('AuthProvider', () => {
   beforeEach(() => {
     sessionStorage.clear();
     localStorage.clear();
+    delete window.desktopTracker;
     vi.clearAllMocks();
   });
 
@@ -130,5 +131,114 @@ describe('AuthProvider', () => {
       expect(timeEntryApi.stop).toHaveBeenCalledWith({ timer_slot: 'primary' });
       expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
     });
+  });
+
+  it('restores desktop auth from local storage and keeps it out of session storage', async () => {
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+    };
+
+    localStorage.setItem('token', 'desktop-token');
+    localStorage.setItem('user', JSON.stringify({
+      id: 9,
+      name: 'Desktop User',
+      email: 'desktop@example.com',
+      role: 'employee',
+      organization_id: 3,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+
+    vi.mocked(authApi.me).mockResolvedValue({
+      data: {
+        success: true,
+        id: 9,
+        name: 'Desktop User',
+        email: 'desktop@example.com',
+        role: 'employee',
+        organization_id: 3,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    } as any);
+
+    renderWithProviders(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+      expect(screen.getByTestId('user-email')).toHaveTextContent('desktop@example.com');
+    });
+
+    expect(localStorage.getItem('token')).toBe('desktop-token');
+    expect(sessionStorage.getItem('token')).toBeNull();
+  });
+
+  it('stops the employee timer before the desktop shell closes', async () => {
+    let prepareForCloseHandler: (() => void | Promise<void>) | null = null;
+    const confirmCloseReady = vi.fn().mockResolvedValue(true);
+
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+      onPrepareForClose: (callback) => {
+        prepareForCloseHandler = callback;
+      },
+      clearPrepareForCloseListeners: vi.fn(),
+      confirmCloseReady,
+    };
+
+    localStorage.setItem('token', 'desktop-token');
+    localStorage.setItem('user', JSON.stringify({
+      id: 7,
+      name: 'Desktop Employee',
+      email: 'employee@example.com',
+      role: 'employee',
+      organization_id: 2,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+
+    vi.mocked(authApi.me).mockResolvedValue({
+      data: {
+        success: true,
+        id: 7,
+        name: 'Desktop Employee',
+        email: 'employee@example.com',
+        role: 'employee',
+        organization_id: 2,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    } as any);
+    vi.mocked(timeEntryApi.stop).mockResolvedValue({ data: null } as any);
+
+    renderWithProviders(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+    });
+
+    await prepareForCloseHandler?.();
+
+    expect(timeEntryApi.stop).toHaveBeenCalledWith({ timer_slot: 'primary' });
+    expect(confirmCloseReady).toHaveBeenCalledTimes(1);
   });
 });

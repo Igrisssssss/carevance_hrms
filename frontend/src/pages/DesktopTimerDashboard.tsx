@@ -11,6 +11,7 @@ import {
   type DesktopTimerIdleStopDetail,
   isAutoStartArmed,
   isAutoStartSuppressed,
+  seedDesktopLaunchAutoStart,
   suppressAutoStart,
 } from '@/lib/desktopTimerSession';
 import PageHeader from '@/components/dashboard/PageHeader';
@@ -279,6 +280,14 @@ export default function DesktopTimerDashboard() {
     }
     setSelectedTaskId(activeTimer.task_id || null);
   }, [activeTimer?.id, activeTimer?.project_id, activeTimer?.task_id, projectTasks, selectedTaskId]);
+
+  useEffect(() => {
+    if (user?.role !== 'employee' || !userId) {
+      return;
+    }
+
+    seedDesktopLaunchAutoStart(userId);
+  }, [user?.role, userId]);
 
   useEffect(() => {
     if (isLoading || user?.role !== 'employee') {

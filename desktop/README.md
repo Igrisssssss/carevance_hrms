@@ -5,6 +5,7 @@ The desktop app is an Electron 33 shell around the web frontend. It exposes desk
 - screenshot capture
 - system idle time
 - active window context
+- in-app desktop update checks with patch notes
 
 ## Run
 
@@ -46,11 +47,39 @@ $env:APP_URL="https://your-frontend-domain.com"
 npm run dist:win
 ```
 
+## Desktop Update Feed
+
+The packaged desktop app can show an update panel, check for new releases, download them, and restart to install.
+
+Build-time environment variables:
+
+```powershell
+$env:DESKTOP_UPDATE_PROVIDER="github"
+$env:DESKTOP_UPDATE_OWNER="YOUR_GITHUB_OWNER"
+$env:DESKTOP_UPDATE_REPO="YOUR_GITHUB_REPO"
+```
+
+Or for a generic feed:
+
+```powershell
+$env:DESKTOP_UPDATE_PROVIDER="generic"
+$env:DESKTOP_UPDATE_URL="https://downloads.yourdomain.com/desktop-updates"
+```
+
+Notes:
+
+- GitHub-based auto-update works best with public GitHub Releases.
+- Release notes shown in the desktop app come from the release notes/body of the published release.
+- Existing users need one new desktop installer that includes this updater. After that, future releases can update inside the app.
+
 ## Build Windows Artifacts
 
 ```powershell
 cd desktop
 npm install
+$env:DESKTOP_UPDATE_PROVIDER="github"
+$env:DESKTOP_UPDATE_OWNER="YOUR_GITHUB_OWNER"
+$env:DESKTOP_UPDATE_REPO="YOUR_GITHUB_REPO"
 npm run dist:win
 npm run dist:portable
 ```
@@ -67,3 +96,4 @@ Typical files:
 - Upload the installer to a public URL such as GitHub Releases.
 - Put that URL in backend `DESKTOP_WINDOWS_DOWNLOAD_URL`.
 - The frontend can then use the backend endpoint `/api/downloads/desktop/windows`.
+- Publish release notes in the GitHub Release body so the in-app update panel can show patch notes.

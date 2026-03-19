@@ -43,6 +43,7 @@ vi.mock('@/services/api', async () => {
 describe('Layout navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete window.desktopTracker;
     apiMocks.getUnreadSummary.mockResolvedValue({ data: { unread_messages: 0, unread_conversations: 0, unread_senders: 0 } });
     apiMocks.leaveList.mockResolvedValue({ data: { data: [] } });
     apiMocks.attendanceTimeEditList.mockResolvedValue({ data: { data: [] } });
@@ -118,5 +119,53 @@ describe('Layout navigation', () => {
       const chatLink = screen.getByRole('link', { name: /chat/i });
       expect(within(chatLink).getByText('4')).toBeInTheDocument();
     });
+  });
+
+  it('shows desktop updates inside the profile menu and opens the update panel', async () => {
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+      getUpdateState: vi.fn().mockResolvedValue({
+        enabled: true,
+        status: 'current',
+        currentVersion: '1.0.2',
+        message: 'You are already on the latest desktop version.',
+        releaseNotes: '',
+        releaseDate: null,
+        availableVersion: null,
+        downloadedVersion: null,
+        progressPercent: 0,
+      }),
+      checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(),
+      installUpdate: vi.fn(),
+      onUpdateState: vi.fn(),
+      clearUpdateStateListeners: vi.fn(),
+    };
+
+    authState.value = {
+      user: {
+        id: 2,
+        name: 'Employee',
+        email: 'employee@example.com',
+        role: 'employee',
+        organization_id: 1,
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+      logout: vi.fn(),
+      token: 'test-token',
+    };
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    fireEvent.click(await screen.findByRole('button', { name: /employee/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^updates$/i }));
+
+    expect(await screen.findByText(/desktop updates/i)).toBeInTheDocument();
+    expect(screen.getByText(/carevance tracker v1.0.2/i)).toBeInTheDocument();
   });
 });

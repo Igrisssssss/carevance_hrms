@@ -1,7 +1,14 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { User, Organization, OwnerSignupRequest } from '@/types';
 import { authApi, invitationApi, timeEntryApi } from '@/services/api';
-import { armAutoStart, clearDesktopTimerSession } from '@/lib/desktopTimerSession';
+import {
+  clearAuthStorage,
+  getStoredAuthValue,
+  migrateStoredAuth,
+  removeStoredAuthValue,
+  setStoredAuthValue,
+} from '@/lib/authStorage';
+import { ACTIVE_TIMER_KEY, armAutoStart, clearDesktopTimerSession } from '@/lib/desktopTimerSession';
 import { apiUrl } from '@/lib/runtimeConfig';
 
 interface AuthContextType {
@@ -41,10 +48,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const isActiveRef = useRef(true);
 
-  const clearStoredAuth = () => {
-    sessionStorage.removeItem('token');
-    sessionStorage.removeItem('user');
-    sessionStorage.removeItem('organization');
+  const clearStoredAuthState = () => {
+    clearAuthStorage();
     clearDesktopTimerSession();
   };
 
@@ -52,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setToken(null);
     setOrganization(null);
-    clearStoredAuth();
+    clearStoredAuthState();
   };
 
   const storeAuthState = (nextToken: string, nextUser: User, nextOrganization?: Organization | null) => {
@@ -64,15 +69,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(nextUser);
     setOrganization(nextOrganization ?? null);
 
-    sessionStorage.setItem('token', nextToken);
-    sessionStorage.setItem('user', JSON.stringify(nextUser));
+    setStoredAuthValue('token', nextToken);
+    setStoredAuthValue('user', JSON.stringify(nextUser));
 
     if (nextOrganization) {
-      sessionStorage.setItem('organization', JSON.stringify(nextOrganization));
+      setStoredAuthValue('organization', JSON.stringify(nextOrganization));
       return;
     }
 
-    sessionStorage.removeItem('organization');
+    removeStoredAuthValue('organization');
   };
 
   const extractUserFromMeResponse = (payload: unknown): User | null => {
@@ -111,6 +116,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const bootstrapAuth = async () => {
+      migrateStoredAuth();
+
       const params = new URLSearchParams(window.location.search);
       const desktopToken = params.get('desktop_token');
 
@@ -134,12 +141,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (isActiveRef.current) {
                 storeAuthState(nextToken, nextUser, nextOrg);
               } else {
-                sessionStorage.setItem('token', nextToken);
-                sessionStorage.setItem('user', JSON.stringify(nextUser));
+                setStoredAuthValue('token', nextToken);
+                setStoredAuthValue('user', JSON.stringify(nextUser));
                 if (nextOrg) {
-                  sessionStorage.setItem('organization', JSON.stringify(nextOrg));
+                  setStoredAuthValue('organization', JSON.stringify(nextOrg));
                 } else {
-                  sessionStorage.removeItem('organization');
+                  removeStoredAuthValue('organization');
                 }
               }
             }
@@ -153,9 +160,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         cleanDesktopTokenFromUrl();
       }
 
-      const storedToken = sessionStorage.getItem('token');
-      const storedUser = sessionStorage.getItem('user');
-      const storedOrg = sessionStorage.getItem('organization');
+      const storedToken = getStoredAuthValue('token');
+      const storedUser = getStoredAuthValue('user');
+      const storedOrg = getStoredAuthValue('organization');
 
       if (storedToken) {
         if (isActiveRef.current) {
@@ -167,7 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setUser(JSON.parse(storedUser));
             }
           } catch {
-            sessionStorage.removeItem('user');
+            removeStoredAuthValue('user');
           }
         }
         if (storedOrg) {
@@ -176,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setOrganization(JSON.parse(storedOrg));
             }
           } catch {
-            sessionStorage.removeItem('organization');
+            removeStoredAuthValue('organization');
           }
         }
         if (!DEMO_MODE) {
@@ -206,6 +213,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!window.desktopTracker?.onPrepareForClose || !window.desktopTracker?.confirmCloseReady) {
+      return;
+    }
+
+    window.desktopTracker.onPrepareForClose(async () => {
+      try {
+        if (!DEMO_MODE && user?.role === 'employee' && token) {
+          try {
+            await timeEntryApi.stop({ timer_slot: 'primary' });
+          } catch (error) {
+            const status = getResponseStatus(error);
+            if (status !== 404 && status !== 401 && status !== 403) {
+              console.error('Timer stop on desktop close error:', error);
+            }
+          }
+        }
+
+        localStorage.removeItem(ACTIVE_TIMER_KEY);
+      } finally {
+        try {
+          await window.desktopTracker?.confirmCloseReady?.();
+        } catch (error) {
+          console.error('Desktop close confirmation error:', error);
+        }
+      }
+    });
+
+    return () => {
+      window.desktopTracker?.clearPrepareForCloseListeners?.();
+    };
+  }, [token, user?.role]);
+
   const fetchUser = async () => {
     try {
       const response = await authApi.me();
@@ -224,10 +264,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(nextUser);
-      sessionStorage.setItem('user', JSON.stringify(nextUser));
+      setStoredAuthValue('user', JSON.stringify(nextUser));
       if (nextOrganization) {
         setOrganization(nextOrganization);
-        sessionStorage.setItem('organization', JSON.stringify(nextOrganization));
+        setStoredAuthValue('organization', JSON.stringify(nextOrganization));
       }
     } catch (error) {
       console.error('Failed to fetch user:', error);
@@ -357,15 +397,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateUser = (updatedUser: User) => {
     setUser(updatedUser);
-    sessionStorage.setItem('user', JSON.stringify(updatedUser));
+    setStoredAuthValue('user', JSON.stringify(updatedUser));
   };
 
   const updateOrganization = (updatedOrganization: Organization | null) => {
     setOrganization(updatedOrganization);
     if (updatedOrganization) {
-      sessionStorage.setItem('organization', JSON.stringify(updatedOrganization));
+      setStoredAuthValue('organization', JSON.stringify(updatedOrganization));
     } else {
-      sessionStorage.removeItem('organization');
+      removeStoredAuthValue('organization');
     }
   };
 
