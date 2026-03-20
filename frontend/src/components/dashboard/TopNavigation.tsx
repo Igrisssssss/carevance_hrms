@@ -94,6 +94,9 @@ function MenuItemRow({
         <p className="whitespace-nowrap font-medium">{item.label}</p>
         <p className="text-xs text-slate-500">{description}</p>
       </div>
+      <div className="ml-auto flex items-center self-center">
+        <Badge count={item.unreadCount} active={active} />
+      </div>
     </>
   );
 
@@ -352,6 +355,12 @@ export default function TopNavigation({
   }, [mobile, openGroup, visibleGroups]);
 
   const overflowIsActive = overflowGroups.some((group) => hasActivePath(location.pathname, group));
+  const overflowHasUnread = overflowGroups.some((group) => {
+    if (group.unreadCount && group.unreadCount > 0) {
+      return true;
+    }
+    return (group.items || []).some((item) => item.unreadCount && item.unreadCount > 0);
+  });
   const renderedGroups = mobile ? groups : visibleGroups;
 
   const renderMeasurementItem = (group: NavGroup) => {
@@ -567,10 +576,14 @@ export default function TopNavigation({
                       onClick={() => setOpenGroup((current) => (current === OVERFLOW_MENU_KEY ? null : OVERFLOW_MENU_KEY))}
                       className={cn(
                         desktopPillBaseClassName,
+                        overflowHasUnread ? 'relative' : '',
                         overflowIsActive || openGroup === OVERFLOW_MENU_KEY ? desktopPillActiveClassName : desktopPillInactiveClassName
                       )}
                     >
                       <span className="whitespace-nowrap">More</span>
+                      {overflowHasUnread ? (
+                        <span className="absolute left-1/2 top-3 h-2.5 w-2.5 translate-x-0.5 -translate-y-1/2 rounded-full border-2 border-white bg-rose-500" />
+                      ) : null}
                       <ChevronDown className={cn('h-4 w-4 shrink-0 transition', openGroup === OVERFLOW_MENU_KEY ? 'rotate-180' : '')} />
                     </button>
                   </div>
