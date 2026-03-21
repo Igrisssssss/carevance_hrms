@@ -224,6 +224,29 @@ class ReportWorkingTimeTest extends TestCase
         }
     }
 
+    public function test_attendance_report_marks_employee_as_working_when_live_timer_exists(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-03-21 10:15:00'));
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+            $this->createOpenEntryFor($employee, '2026-03-21 10:05:00');
+
+            $query = http_build_query([
+                'start_date' => '2026-03-01',
+                'end_date' => '2026-03-21',
+                'user_id' => $employee->id,
+            ]);
+
+            $this->getJson("/api/reports/attendance?{$query}", $headers)
+                ->assertOk()
+                ->assertJsonPath('data.0.user.id', $employee->id)
+                ->assertJsonPath('data.0.is_working', true);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     private function createAuthenticatedEmployee(string $role = 'employee'): array
     {
         $organization = Organization::create([

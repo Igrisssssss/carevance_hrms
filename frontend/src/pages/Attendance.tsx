@@ -660,6 +660,22 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   }, [calendarMonth, isAdmin, mode]);
 
   useEffect(() => {
+    if (mode !== 'full') return;
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+
+      void fetchAttendance();
+      void fetchCalendar();
+      void fetchToday();
+    }, 30000);
+
+    return () => window.clearInterval(interval);
+  }, [calendarMonth, calendarScope, countryFilter, endDate, isAdmin, mode, query, selectedUserId, startDate]);
+
+  useEffect(() => {
     if (!isAdmin) return;
     if (rows.length === 0) {
       setSelectedUserId(null);

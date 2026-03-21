@@ -627,8 +627,39 @@ class ReportController extends Controller
                 ->values();
         }
         $workingDaysCount = max(1, $workingDates->count());
+        $userIds = $users->pluck('id')->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->values();
+        $activeTimeEntryUserIds = $userIds->isEmpty()
+            ? collect()
+            : TimeEntry::query()
+                ->whereIn('user_id', $userIds)
+                ->whereNull('end_time')
+                ->distinct()
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique();
+        $openAttendanceUserIds = $userIds->isEmpty()
+            ? collect()
+            : AttendanceRecord::query()
+                ->where('organization_id', $currentUser->organization_id)
+                ->whereIn('user_id', $userIds)
+                ->whereDate('attendance_date', now()->toDateString())
+                ->whereNotNull('check_in_at')
+                ->whereNull('check_out_at')
+                ->distinct()
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique();
 
-        $rows = $users->map(function (User $user) use ($startDate, $endDate, $workingDaysCount, $workingDates, $weekendDates, $currentUser) {
+        $rows = $users->map(function (User $user) use (
+            $startDate,
+            $endDate,
+            $workingDaysCount,
+            $workingDates,
+            $weekendDates,
+            $currentUser,
+            $activeTimeEntryUserIds,
+            $openAttendanceUserIds,
+        ) {
             $records = AttendanceRecord::query()
                 ->where('organization_id', $currentUser->organization_id)
                 ->where('user_id', $user->id)
@@ -667,12 +698,8 @@ class ReportController extends Controller
             $leaveDays = $approvedLeaveDates->count();
             $attendanceRate = (float) round(($daysPresent / $workingDaysCount) * 100, 2);
 
-            $isWorking = AttendanceRecord::where('organization_id', $currentUser->organization_id)
-                ->where('user_id', $user->id)
-                ->whereDate('attendance_date', now()->toDateString())
-                ->whereNotNull('check_in_at')
-                ->whereNull('check_out_at')
-                ->exists();
+            $isWorking = $activeTimeEntryUserIds->contains((int) $user->id)
+                || $openAttendanceUserIds->contains((int) $user->id);
 
             return [
                 'user' => [
