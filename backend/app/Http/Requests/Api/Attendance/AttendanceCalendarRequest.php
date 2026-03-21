@@ -11,6 +11,8 @@ class AttendanceCalendarRequest extends ApiFormRequest
         return [
             'month' => ['nullable', 'regex:/^\d{4}\-\d{2}$/'],
             'user_id' => 'nullable|integer',
+            'scope' => 'nullable|in:selected,overall',
+            'country' => 'nullable|string|max:64',
         ];
     }
 }

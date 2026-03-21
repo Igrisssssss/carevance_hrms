@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
+use App\Models\AttendanceHoliday;
 use App\Models\AttendanceRecord;
 use App\Models\LeaveRequest;
 use App\Models\Project;
@@ -579,6 +580,7 @@ class ReportController extends Controller
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
             'q' => 'nullable|string|max:255',
+            'country' => 'nullable|string|max:64',
         ]);
 
         $currentUser = $request->user();
@@ -618,6 +620,12 @@ class ReportController extends Controller
         }
 
         $users = $usersQuery->orderBy('name')->get();
+        $countryFilter = AttendanceHoliday::normalizeCountry((string) $request->get('country', 'ALL'));
+        if ($countryFilter !== 'ALL') {
+            $users = $users
+                ->filter(fn (User $user) => AttendanceHoliday::countryForSettings($user->settings) === $countryFilter)
+                ->values();
+        }
         $workingDaysCount = max(1, $workingDates->count());
 
         $rows = $users->map(function (User $user) use ($startDate, $endDate, $workingDaysCount, $workingDates, $weekendDates, $currentUser) {

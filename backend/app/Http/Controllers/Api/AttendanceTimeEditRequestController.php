@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AttendanceHoliday;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceTimeEditRequest;
+use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Services\AppNotificationService;
 use App\Services\Audit\AuditLogService;
@@ -67,6 +69,27 @@ class AttendanceTimeEditRequestController extends Controller
 
         $date = Carbon::parse($request->attendance_date)->toDateString();
         $extraSeconds = (int) $request->extra_minutes * 60;
+
+        $hasApprovedLeave = LeaveRequest::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->where('user_id', $currentUser->id)
+            ->where('status', 'approved')
+            ->whereDate('start_date', '<=', $date)
+            ->whereDate('end_date', '>=', $date)
+            ->exists();
+        if ($hasApprovedLeave) {
+            return response()->json(['message' => 'Time edit request is not allowed on approved leave days.'], 422);
+        }
+
+        $userCountry = AttendanceHoliday::countryForSettings($currentUser->settings);
+        $isHoliday = AttendanceHoliday::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->whereDate('holiday_date', $date)
+            ->whereIn('country', ['ALL', $userCountry])
+            ->exists();
+        if ($isHoliday) {
+            return response()->json(['message' => 'Time edit request is not allowed on holidays.'], 422);
+        }
 
         $hasPending = AttendanceTimeEditRequest::where('organization_id', $currentUser->organization_id)
             ->where('user_id', $currentUser->id)

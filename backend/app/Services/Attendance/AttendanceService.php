@@ -2,6 +2,7 @@
 
 namespace App\Services\Attendance;
 
+use App\Models\AttendanceHoliday;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\LeaveRequest;
@@ -151,11 +152,27 @@ class AttendanceService
         $month = $request->get('month', now()->format('Y-m'));
         $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
         $monthEnd = $monthStart->copy()->endOfMonth();
+        $scope = (string) $request->get('scope', 'selected');
+
+        if ($scope === 'overall' && $this->canManage($currentUser)) {
+            return $this->overallCalendarPayload($request, $currentUser, $monthStart, $monthEnd);
+        }
+
         $targetUserId = $this->resolveTargetUserId($currentUser, $request);
 
         if (!$targetUserId) {
             return ['status' => 403, 'payload' => ['message' => 'Forbidden']];
         }
+
+        $targetUser = User::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->where('id', $targetUserId)
+            ->first();
+        if (!$targetUser) {
+            return ['status' => 403, 'payload' => ['message' => 'Forbidden']];
+        }
+
+        $targetCountry = AttendanceHoliday::countryForSettings($targetUser->settings);
 
         $records = AttendanceRecord::where('organization_id', $currentUser->organization_id)
             ->where('user_id', $targetUserId)
@@ -181,11 +198,24 @@ class AttendanceService
             ->unique()
             ->flip();
 
+        $holidays = AttendanceHoliday::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->whereBetween('holiday_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+            ->whereIn('country', ['ALL', $targetCountry])
+            ->orderBy('holiday_date')
+            ->get();
+
+        $holidayByDate = $holidays
+            ->sortBy(fn (AttendanceHoliday $holiday) => $holiday->country === $targetCountry ? 0 : 1)
+            ->groupBy(fn (AttendanceHoliday $holiday) => Carbon::parse($holiday->holiday_date)->toDateString())
+            ->map(fn ($group) => $group->first());
+
         $days = [];
         $present = 0;
         $absent = 0;
         $weekend = 0;
         $leaveDays = 0;
+        $holidayDays = 0;
         $late = 0;
         $totalWorked = 0;
         $today = now()->toDateString();
@@ -195,8 +225,17 @@ class AttendanceService
             $isWeekend = $date->isWeekend();
             $record = $records->get($dateStr);
             $isLeave = $leaveDateSet->has($dateStr);
+            $holiday = $holidayByDate->get($dateStr);
+            $isHoliday = (bool) $holiday;
 
-            if ($isLeave) {
+            if ($isHoliday) {
+                $status = 'holiday';
+                $holidayDays++;
+                if ($record && $record->check_in_at) {
+                    $present++;
+                    $totalWorked += $this->calculateEffectiveWorkedSeconds($record);
+                }
+            } elseif ($isLeave) {
                 $status = 'leave';
                 $leaveDays++;
             } elseif ($record && $record->check_in_at && !$record->check_out_at) {
@@ -225,10 +264,18 @@ class AttendanceService
                 'status' => $status,
                 'is_weekend' => $isWeekend,
                 'is_leave' => $isLeave,
+                'is_holiday' => $isHoliday,
                 'check_in_at' => $record?->check_in_at,
                 'check_out_at' => $record?->check_out_at,
                 'late_minutes' => (int) ($record?->late_minutes ?? 0),
                 'worked_seconds' => $record ? $this->calculateEffectiveWorkedSeconds($record) : 0,
+                'holiday' => $holiday ? [
+                    'id' => $holiday->id,
+                    'date' => $dateStr,
+                    'country' => $holiday->country,
+                    'title' => $holiday->title,
+                    'details' => $holiday->details,
+                ] : null,
             ];
         }
 
@@ -236,15 +283,211 @@ class AttendanceService
             'status' => 200,
             'payload' => [
                 'month' => $month,
+                'scope' => 'selected',
                 'user_id' => $targetUserId,
+                'viewer_country' => $targetCountry,
                 'days' => $days,
                 'summary' => [
                     'present_days' => $present,
                     'absent_days' => $absent,
                     'weekend_days' => $weekend,
                     'leave_days' => $leaveDays,
+                    'holiday_days' => $holidayDays,
                     'late_days' => $late,
                     'total_worked_seconds' => (int) $totalWorked,
+                    'overall_employee_count' => 1,
+                ],
+            ],
+        ];
+    }
+
+    private function overallCalendarPayload(Request $request, User $currentUser, Carbon $monthStart, Carbon $monthEnd): array
+    {
+        $countryFilter = AttendanceHoliday::normalizeCountry((string) $request->get('country', 'ALL'));
+
+        $users = User::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->get(['id', 'settings']);
+
+        if ($countryFilter !== 'ALL') {
+            $users = $users
+                ->filter(fn (User $user) => AttendanceHoliday::countryForSettings($user->settings) === $countryFilter)
+                ->values();
+        }
+
+        $userIds = $users->pluck('id')->values();
+        $totalEmployees = $userIds->count();
+
+        if ($userIds->isEmpty()) {
+            $days = collect(CarbonPeriod::create($monthStart, $monthEnd))
+                ->map(function (Carbon $date) {
+                    return [
+                        'date' => $date->toDateString(),
+                        'status' => 'none',
+                        'is_weekend' => $date->isWeekend(),
+                        'is_leave' => false,
+                        'is_holiday' => false,
+                        'check_in_at' => null,
+                        'check_out_at' => null,
+                        'late_minutes' => 0,
+                        'worked_seconds' => 0,
+                        'holiday' => null,
+                    ];
+                })
+                ->values()
+                ->all();
+
+            return [
+                'status' => 200,
+                'payload' => [
+                    'month' => $monthStart->format('Y-m'),
+                    'scope' => 'overall',
+                    'user_id' => null,
+                    'viewer_country' => $countryFilter,
+                    'days' => $days,
+                    'summary' => [
+                        'present_days' => 0,
+                        'absent_days' => 0,
+                        'weekend_days' => collect($days)->where('is_weekend', true)->count(),
+                        'leave_days' => 0,
+                        'holiday_days' => 0,
+                        'late_days' => 0,
+                        'total_worked_seconds' => 0,
+                        'overall_employee_count' => 0,
+                    ],
+                ],
+            ];
+        }
+
+        $records = AttendanceRecord::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->whereIn('user_id', $userIds->all())
+            ->whereBetween('attendance_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+            ->get(['attendance_date', 'check_in_at', 'check_out_at', 'worked_seconds', 'manual_adjustment_seconds', 'late_minutes']);
+
+        $recordsByDate = $records->groupBy(fn (AttendanceRecord $record) => Carbon::parse($record->attendance_date)->toDateString());
+
+        $leaveCountsByDate = collect();
+        $approvedLeaves = LeaveRequest::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->whereIn('user_id', $userIds->all())
+            ->where('status', 'approved')
+            ->whereDate('start_date', '<=', $monthEnd->toDateString())
+            ->whereDate('end_date', '>=', $monthStart->toDateString())
+            ->get(['user_id', 'start_date', 'end_date']);
+
+        foreach ($approvedLeaves as $leave) {
+            foreach (CarbonPeriod::create($leave->start_date, $leave->end_date) as $date) {
+                $dateStr = $date->toDateString();
+                if ($dateStr < $monthStart->toDateString() || $dateStr > $monthEnd->toDateString()) {
+                    continue;
+                }
+                $leaveCountsByDate->put($dateStr, (int) $leaveCountsByDate->get($dateStr, 0) + 1);
+            }
+        }
+
+        $holidayQuery = AttendanceHoliday::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->whereBetween('holiday_date', [$monthStart->toDateString(), $monthEnd->toDateString()]);
+
+        if ($countryFilter !== 'ALL') {
+            $holidayQuery->whereIn('country', ['ALL', $countryFilter]);
+        }
+
+        $holidays = $holidayQuery
+            ->orderBy('holiday_date')
+            ->get();
+
+        $holidayByDate = $holidays
+            ->sortBy(fn (AttendanceHoliday $holiday) => $holiday->country === $countryFilter ? 0 : 1)
+            ->groupBy(fn (AttendanceHoliday $holiday) => Carbon::parse($holiday->holiday_date)->toDateString())
+            ->map(fn ($group) => $group->first());
+
+        $days = [];
+        $present = 0;
+        $absent = 0;
+        $weekend = 0;
+        $leaveDays = 0;
+        $holidayDays = 0;
+        $late = 0;
+        $totalWorked = 0;
+        $today = now()->toDateString();
+
+        foreach (CarbonPeriod::create($monthStart, $monthEnd) as $date) {
+            $dateStr = $date->toDateString();
+            $isWeekend = $date->isWeekend();
+            $dayRecords = $recordsByDate->get($dateStr, collect());
+            $presentCount = $dayRecords->filter(fn ($record) => (bool) $record->check_in_at)->count();
+            $lateCount = $dayRecords->filter(fn ($record) => (int) $record->late_minutes > 0)->count();
+            $workedSeconds = (int) $dayRecords->sum(fn ($record) => (int) ($record->worked_seconds ?? 0) + (int) ($record->manual_adjustment_seconds ?? 0));
+            $leaveCount = (int) $leaveCountsByDate->get($dateStr, 0);
+            $holiday = $holidayByDate->get($dateStr);
+            $isHoliday = (bool) $holiday;
+
+            if ($isHoliday) {
+                $status = 'holiday';
+                $holidayDays++;
+                if ($presentCount > 0) {
+                    $present++;
+                }
+            } elseif ($presentCount > 0) {
+                $status = $presentCount >= $totalEmployees ? 'present' : 'checked_in';
+                $present++;
+            } elseif ($leaveCount > 0) {
+                $status = 'leave';
+                $leaveDays++;
+            } else {
+                $status = 'none';
+                if ($isWeekend) {
+                    $weekend++;
+                } elseif ($dateStr <= $today) {
+                    $absent++;
+                }
+            }
+
+            if ($lateCount > 0) {
+                $late++;
+            }
+
+            $totalWorked += $workedSeconds;
+
+            $days[] = [
+                'date' => $dateStr,
+                'status' => $status,
+                'is_weekend' => $isWeekend,
+                'is_leave' => $leaveCount > 0,
+                'is_holiday' => $isHoliday,
+                'check_in_at' => null,
+                'check_out_at' => null,
+                'late_minutes' => $lateCount,
+                'worked_seconds' => $workedSeconds,
+                'holiday' => $holiday ? [
+                    'id' => $holiday->id,
+                    'date' => $dateStr,
+                    'country' => $holiday->country,
+                    'title' => $holiday->title,
+                    'details' => $holiday->details,
+                ] : null,
+            ];
+        }
+
+        return [
+            'status' => 200,
+            'payload' => [
+                'month' => $monthStart->format('Y-m'),
+                'scope' => 'overall',
+                'user_id' => null,
+                'viewer_country' => $countryFilter,
+                'days' => $days,
+                'summary' => [
+                    'present_days' => $present,
+                    'absent_days' => $absent,
+                    'weekend_days' => $weekend,
+                    'leave_days' => $leaveDays,
+                    'holiday_days' => $holidayDays,
+                    'late_days' => $late,
+                    'total_worked_seconds' => (int) $totalWorked,
+                    'overall_employee_count' => $totalEmployees,
                 ],
             ],
         ];

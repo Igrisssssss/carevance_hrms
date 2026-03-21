@@ -347,7 +347,7 @@ export const reportApi = {
   team: (params?: { start_date?: string; end_date?: string }) => 
     api.get('/reports/team', { params }),
 
-  attendance: (params?: { start_date?: string; end_date?: string; user_id?: number; q?: string }) =>
+  attendance: (params?: { start_date?: string; end_date?: string; user_id?: number; q?: string; country?: string }) =>
     api.get('/reports/attendance', { params }),
 
   employeeInsights: (params?: { start_date?: string; end_date?: string; user_id?: number; group_ids?: number[]; q?: string }) =>
@@ -403,27 +403,39 @@ export const attendanceApi = {
 
   checkOut: () => api.post('/attendance/check-out'),
 
-  calendar: (params?: { month?: string; user_id?: number }) =>
+  calendar: (params?: { month?: string; user_id?: number; scope?: 'selected' | 'overall'; country?: string }) =>
     api.get<{
       month: string;
       user_id: number;
+      scope?: 'selected' | 'overall';
+      viewer_country?: string;
       days: Array<{
         date: string;
-        status: 'present' | 'checked_in' | 'leave' | 'none';
+        status: 'present' | 'checked_in' | 'leave' | 'holiday' | 'none';
         is_weekend: boolean;
         is_leave?: boolean;
+        is_holiday?: boolean;
         check_in_at?: string | null;
         check_out_at?: string | null;
         late_minutes: number;
         worked_seconds: number;
+        holiday?: {
+          id: number;
+          date: string;
+          country: string;
+          title: string;
+          details?: string | null;
+        } | null;
       }>;
       summary: {
         present_days: number;
         absent_days: number;
         weekend_days: number;
         leave_days?: number;
+        holiday_days?: number;
         late_days: number;
         total_worked_seconds: number;
+        overall_employee_count?: number;
       };
     }>('/attendance/calendar', { params }),
 
@@ -439,6 +451,44 @@ export const attendanceApi = {
         is_checked_in: boolean;
       }>;
     }>('/attendance/summary', { params }),
+};
+
+export const attendanceHolidayApi = {
+  list: (params?: { month?: string; country?: string }) =>
+    api.get<{
+      data: Array<{
+        id: number;
+        organization_id: number;
+        holiday_date: string;
+        country: string;
+        title: string;
+        details?: string | null;
+        created_by?: number | null;
+        updated_by?: number | null;
+        created_at: string;
+        updated_at: string;
+      }>;
+    }>('/attendance/holidays', { params }),
+
+  upsert: (data: { holiday_date: string; country?: string; title: string; details?: string }) =>
+    api.post<{
+      message: string;
+      data: {
+        id: number;
+        organization_id: number;
+        holiday_date: string;
+        country: string;
+        title: string;
+        details?: string | null;
+        created_by?: number | null;
+        updated_by?: number | null;
+        created_at: string;
+        updated_at: string;
+      };
+    }>('/attendance/holidays', data),
+
+  delete: (id: number) =>
+    api.delete<{ message: string }>(`/attendance/holidays/${id}`),
 };
 
 export const leaveApi = {

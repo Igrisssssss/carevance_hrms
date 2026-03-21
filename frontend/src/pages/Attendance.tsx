@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { activityApi, attendanceApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, reportGroupApi, screenshotApi, userApi } from '@/services/api';
+import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, reportGroupApi, screenshotApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess } from '@/lib/permissions';
 import PageHeader from '@/components/dashboard/PageHeader';
@@ -9,7 +9,7 @@ import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
-import { FieldLabel, TextInput, TextareaInput } from '@/components/ui/FormField';
+import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Briefcase, CalendarDays, Clock, Eye, FolderKanban, Layers3, Users } from 'lucide-react';
 import type { UserProfile360 } from '@/types';
@@ -85,6 +85,44 @@ const parseTimeToMinutes = (time: string) => {
   return h * 60 + m;
 };
 
+const HOLIDAY_COUNTRIES = [
+  { value: 'ALL', label: 'All Countries' },
+  { value: 'INDIA', label: 'India' },
+  { value: 'USA', label: 'USA' },
+  { value: 'UK', label: 'UK' },
+  { value: 'UAE', label: 'UAE' },
+  { value: 'AUSTRALIA', label: 'Australia' },
+];
+
+const normalizeCountryValue = (value?: string | null) => {
+  const normalized = String(value || '').trim().toUpperCase();
+  return normalized || 'ALL';
+};
+
+const resolveCountryFromSettings = (settings?: Record<string, any> | null) => {
+  const explicitCountry = normalizeCountryValue(settings?.country);
+  if (explicitCountry !== 'ALL') {
+    return explicitCountry;
+  }
+
+  const timezone = String(settings?.timezone || '').trim().toLowerCase();
+  if (timezone === 'asia/kolkata') return 'INDIA';
+  if (timezone.startsWith('america/')) return 'USA';
+  if (timezone === 'europe/london') return 'UK';
+  if (timezone === 'asia/dubai') return 'UAE';
+  if (timezone.startsWith('australia/')) return 'AUSTRALIA';
+
+  return 'ALL';
+};
+
+const formatCountryLabel = (value?: string | null) => {
+  const normalized = normalizeCountryValue(value);
+  const known = HOLIDAY_COUNTRIES.find((country) => country.value === normalized);
+  if (known) return known.label;
+  if (normalized === 'ALL') return 'All Countries';
+  return normalized;
+};
+
 const buildMonthGrid = (month: string) => {
   // month: YYYY-MM
   const [y, m] = month.split('-').map((v) => Number(v));
@@ -123,6 +161,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const navigate = useNavigate();
   const { user, organization } = useAuth();
   const [query, setQuery] = useState('');
+  const [countryFilter, setCountryFilter] = useState('ALL');
+  const [calendarScope, setCalendarScope] = useState<'selected' | 'overall'>('selected');
   const [startDate, setStartDate] = useState(formatLocalDate(new Date(new Date().setDate(1))));
   const [endDate, setEndDate] = useState(formatLocalDate(new Date()));
   const [rows, setRows] = useState<any[]>([]);
@@ -160,6 +200,15 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [calendarDays, setCalendarDays] = useState<any[]>([]);
   const [calendarSummary, setCalendarSummary] = useState<any | null>(null);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
+  const [holidayItems, setHolidayItems] = useState<any[]>([]);
+  const [isHolidayLoading, setIsHolidayLoading] = useState(false);
+  const [isHolidaySubmitting, setIsHolidaySubmitting] = useState(false);
+  const [isHolidayDeleting, setIsHolidayDeleting] = useState(false);
+  const [holidayDate, setHolidayDate] = useState(formatLocalDate(new Date()));
+  const [holidayCountry, setHolidayCountry] = useState('ALL');
+  const [holidayTitle, setHolidayTitle] = useState('');
+  const [holidayDetails, setHolidayDetails] = useState('');
+  const [selectedHolidayId, setSelectedHolidayId] = useState<number | null>(null);
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [isLeaveLoading, setIsLeaveLoading] = useState(false);
   const [isLeaveSubmitting, setIsLeaveSubmitting] = useState(false);
@@ -173,6 +222,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [extraMinutes, setExtraMinutes] = useState(60);
   const [timeEditMessage, setTimeEditMessage] = useState('');
   const [punchFeedback, setPunchFeedbackState] = useState<SectionFeedback>(null);
+  const [holidayFeedback, setHolidayFeedbackState] = useState<SectionFeedback>(null);
   const [leaveFeedback, setLeaveFeedbackState] = useState<SectionFeedback>(null);
   const [timeEditFeedback, setTimeEditFeedbackState] = useState<SectionFeedback>(null);
   const [employeeProfile, setEmployeeProfile] = useState<UserProfile360 | null>(null);
@@ -196,6 +246,19 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }
 
     setPunchFeedbackState(null);
+  };
+  const setHolidayFeedback = (nextMessage = '', nextError = '') => {
+    if (nextMessage) {
+      setHolidayFeedbackState({ tone: 'success', message: nextMessage });
+      return;
+    }
+
+    if (nextError) {
+      setHolidayFeedbackState({ tone: 'error', message: nextError });
+      return;
+    }
+
+    setHolidayFeedbackState(null);
   };
   const setLeaveFeedback = (nextMessage = '', nextError = '') => {
     if (nextMessage) {
@@ -230,6 +293,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         start_date: startDate,
         end_date: endDate,
         q: isAdmin ? query || undefined : undefined,
+        country: isAdmin && countryFilter !== 'ALL' ? countryFilter : undefined,
       });
       const payload = response.data as any;
       const nextRows = payload?.data || [];
@@ -296,7 +360,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     try {
       const res = await attendanceApi.calendar({
         month: calendarMonth,
-        user_id: isAdmin ? selectedUserId || undefined : undefined,
+        user_id: isAdmin && calendarScope === 'selected' ? selectedUserId || undefined : undefined,
+        scope: isAdmin ? calendarScope : undefined,
+        country: isAdmin && countryFilter !== 'ALL' ? countryFilter : undefined,
       });
 
       setCalendarDays(res.data.days || []);
@@ -305,6 +371,89 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       console.error('Attendance calendar fetch failed:', e);
     } finally {
       setIsCalendarLoading(false);
+    }
+  };
+
+  const fetchHolidays = async () => {
+    if (!isAdmin) {
+      setHolidayItems([]);
+      return;
+    }
+
+    setIsHolidayLoading(true);
+    try {
+      const res = await attendanceHolidayApi.list({ month: calendarMonth });
+      setHolidayItems((res.data as any)?.data || []);
+    } catch (e) {
+      console.error('Attendance holidays fetch failed:', e);
+    } finally {
+      setIsHolidayLoading(false);
+    }
+  };
+
+  const saveHoliday = async () => {
+    if (!holidayDate) {
+      setHolidayFeedback('', 'Please select a holiday date.');
+      return;
+    }
+
+    if (!holidayTitle.trim()) {
+      setHolidayFeedback('', 'Please enter a holiday title.');
+      return;
+    }
+
+    setIsHolidaySubmitting(true);
+    setHolidayFeedback();
+
+    try {
+      const response = await attendanceHolidayApi.upsert({
+        holiday_date: holidayDate,
+        country: holidayCountry,
+        title: holidayTitle.trim(),
+        details: holidayDetails.trim() || undefined,
+      });
+
+      const savedHoliday = (response.data as any)?.data || null;
+      setSelectedHolidayId(savedHoliday?.id ?? null);
+      await Promise.all([fetchHolidays(), fetchCalendar()]);
+      setHolidayFeedback((response.data as any)?.message || 'Holiday saved successfully.');
+    } catch (error) {
+      console.error('Save holiday failed:', error);
+      setHolidayFeedback('', (error as any)?.response?.data?.message || 'Failed to save holiday.');
+    } finally {
+      setIsHolidaySubmitting(false);
+    }
+  };
+
+  const deleteHoliday = async () => {
+    const targetHoliday = selectedHolidayId
+      ? holidayItems.find((item) => item.id === selectedHolidayId)
+      : holidayItems.find((item) => item.holiday_date === holidayDate && normalizeCountryValue(item.country) === normalizeCountryValue(holidayCountry));
+
+    if (!targetHoliday?.id) {
+      setHolidayFeedback('', 'No holiday found for the selected date and country.');
+      return;
+    }
+
+    if (!confirm('Delete this holiday?')) {
+      return;
+    }
+
+    setIsHolidayDeleting(true);
+    setHolidayFeedback();
+
+    try {
+      await attendanceHolidayApi.delete(targetHoliday.id);
+      setSelectedHolidayId(null);
+      setHolidayTitle('');
+      setHolidayDetails('');
+      await Promise.all([fetchHolidays(), fetchCalendar()]);
+      setHolidayFeedback('Holiday deleted successfully.');
+    } catch (error) {
+      console.error('Delete holiday failed:', error);
+      setHolidayFeedback('', (error as any)?.response?.data?.message || 'Failed to delete holiday.');
+    } finally {
+      setIsHolidayDeleting(false);
     }
   };
 
@@ -423,6 +572,16 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       return;
     }
 
+    const requestedDay = calendarDays.find((day) => day?.date === timeEditDate);
+    if (requestedDay?.status === 'holiday' || requestedDay?.is_holiday) {
+      setTimeEditFeedback('', 'Time edit request is not allowed on holidays.');
+      return;
+    }
+    if (requestedDay?.status === 'leave' || requestedDay?.is_leave) {
+      setTimeEditFeedback('', 'Time edit request is not allowed on leave days.');
+      return;
+    }
+
     setIsTimeEditSubmitting(true);
     setTimeEditFeedback();
     try {
@@ -472,6 +631,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   }, [startDate, endDate, mode]);
 
   useEffect(() => {
+    if (mode !== 'full' || !isAdmin) return;
+    fetchAttendance();
+  }, [countryFilter, isAdmin, mode]);
+
+  useEffect(() => {
     fetchTimeEditRequests();
     if (mode !== 'full') return;
     fetchToday();
@@ -480,10 +644,41 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   useEffect(() => {
     if (mode !== 'full') return;
-    if (selectedUserId || !isAdmin) {
+    if (!isAdmin) {
+      fetchCalendar();
+      return;
+    }
+
+    if (calendarScope === 'overall' || selectedUserId) {
       fetchCalendar();
     }
-  }, [calendarMonth, isAdmin, mode, selectedUserId]);
+  }, [calendarMonth, calendarScope, countryFilter, isAdmin, mode, selectedUserId]);
+
+  useEffect(() => {
+    if (mode !== 'full' || !isAdmin) return;
+    fetchHolidays();
+  }, [calendarMonth, isAdmin, mode]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (rows.length === 0) {
+      setSelectedUserId(null);
+      return;
+    }
+
+    const hasSelectedRow = rows.some((row) => row?.user?.id === selectedUserId);
+    if (!hasSelectedRow) {
+      setSelectedUserId(rows[0].user.id);
+    }
+  }, [isAdmin, rows, selectedUserId]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const preferredCountry = resolveCountryFromSettings((user as any)?.settings);
+    if (preferredCountry !== 'ALL') {
+      setHolidayCountry(preferredCountry);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     if (mode !== 'full' || isAdmin || !user?.id) return;
@@ -633,6 +828,31 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     for (const d of calendarDays) map.set(d.date, d);
     return map;
   }, [calendarDays]);
+  const holidayMapByDateAndCountry = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const holiday of holidayItems) {
+      map.set(`${holiday.holiday_date}|${normalizeCountryValue(holiday.country)}`, holiday);
+    }
+    return map;
+  }, [holidayItems]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const selectedKey = `${holidayDate}|${normalizeCountryValue(holidayCountry)}`;
+    const matchedHoliday = holidayMapByDateAndCountry.get(selectedKey);
+
+    if (!matchedHoliday) {
+      setSelectedHolidayId(null);
+      setHolidayTitle('');
+      setHolidayDetails('');
+      return;
+    }
+
+    setSelectedHolidayId(matchedHoliday.id);
+    setHolidayTitle(matchedHoliday.title || '');
+    setHolidayDetails(matchedHoliday.details || '');
+  }, [holidayCountry, holidayDate, holidayMapByDateAndCountry, isAdmin]);
+
   const employeeSummaryStats = useMemo(
     () => [
       {
@@ -767,7 +987,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     <div className="space-y-6 animate-fade-in">
       <PageHeader eyebrow="Attendance operations" title="Attendance" description={isAdmin ? 'Track attendance, punches, leave, and overtime requests across the team.' : 'Review your attendance, punches, leave requests, and overtime history.'} />
 
-      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-4">
+      <FilterPanel className={`grid grid-cols-1 gap-3 ${isAdmin ? 'md:grid-cols-6' : 'md:grid-cols-3'}`}>
         <div>
           <FieldLabel>Start Date</FieldLabel>
           <TextInput type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -785,6 +1005,25 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search employee..."
             />
+          </div>
+        )}
+        {isAdmin && (
+          <div>
+            <FieldLabel>Country</FieldLabel>
+            <SelectInput value={countryFilter} onChange={(e) => setCountryFilter(normalizeCountryValue(e.target.value))}>
+              {HOLIDAY_COUNTRIES.map((country) => (
+                <option key={country.value} value={country.value}>{country.label}</option>
+              ))}
+            </SelectInput>
+          </div>
+        )}
+        {isAdmin && (
+          <div>
+            <FieldLabel>Calendar View</FieldLabel>
+            <SelectInput value={calendarScope} onChange={(e) => setCalendarScope(e.target.value as 'selected' | 'overall')}>
+              <option value="selected">Selected Employee</option>
+              <option value="overall">Overall</option>
+            </SelectInput>
           </div>
         )}
         <div className="flex items-end">
@@ -1022,6 +1261,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       </div>
 
       <SurfaceCard className="overflow-hidden">
+        <div className="max-h-[26rem] overflow-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-slate-200 bg-slate-50/80">
             <tr>
@@ -1059,12 +1299,22 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             ))}
           </tbody>
         </table>
+        </div>
       </SurfaceCard>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <SurfaceCard className="lg:col-span-2 p-4">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="font-semibold text-gray-900">Attendance Calendar</h2>
+            <div>
+              <h2 className="font-semibold text-gray-900">Attendance Calendar</h2>
+              {isAdmin ? (
+                <p className="text-xs text-slate-500 mt-1">
+                  {calendarScope === 'overall'
+                    ? `Overall view (${formatCountryLabel(countryFilter)})`
+                    : `Selected employee${selectedRow?.user?.name ? `: ${selectedRow.user.name}` : ''}`}
+                </p>
+              ) : null}
+            </div>
 
             <div className="flex items-center gap-2">
               <Button
@@ -1117,6 +1367,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                   const statusLabel =
                     status === 'leave'
                       ? 'take a leave'
+                      : status === 'holiday'
+                        ? item?.holiday?.title || 'holiday'
                       : status === 'none'
                         ? ''
                         : String(status).replace('_', ' ');
@@ -1128,24 +1380,59 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                         ? 'bg-blue-50 border-blue-200 text-blue-900'
                         : status === 'leave'
                           ? 'bg-red-50 border-red-200 text-red-900'
+                          : status === 'holiday'
+                            ? 'bg-amber-50 border-amber-200 text-amber-900'
                           : 'bg-gray-50 border-gray-200 text-gray-600';
+                  const canEditHolidayCell = isAdmin && inMonth;
+                  const tooltip = item
+                    ? [
+                        item.date,
+                        `status ${status}`,
+                        item?.holiday?.title ? `holiday ${item.holiday.title}` : null,
+                        item?.holiday?.country ? `country ${formatCountryLabel(item.holiday.country)}` : null,
+                        `worked ${formatDuration(item.worked_seconds || 0)}`,
+                        `late ${item.late_minutes || 0}m`,
+                      ]
+                        .filter(Boolean)
+                        .join(' - ')
+                    : ds;
 
                   return (
                     <div
                       key={ds}
-                      className={`min-h-[68px] rounded-lg border px-2 py-2 ${color} ${inMonth ? '' : 'opacity-40'}`}
-                      title={
-                        item
-                          ? `${item.date} • ${status} • worked ${formatDuration(item.worked_seconds)} • late ${item.late_minutes}m`
-                          : ds
-                      }
+                      className={`min-h-[68px] rounded-lg border px-2 py-2 ${color} ${inMonth ? '' : 'opacity-40'} ${canEditHolidayCell ? 'cursor-pointer transition hover:ring-1 hover:ring-sky-300' : ''}`}
+                      title={tooltip}
+                      onClick={() => {
+                        if (!canEditHolidayCell) return;
+                        setHolidayFeedback();
+                        setHolidayDate(ds);
+
+                        const matchingHoliday = holidayMapByDateAndCountry.get(`${ds}|${normalizeCountryValue(holidayCountry)}`);
+                        if (matchingHoliday) {
+                          setSelectedHolidayId(matchingHoliday.id);
+                          setHolidayTitle(matchingHoliday.title || '');
+                          setHolidayDetails(matchingHoliday.details || '');
+                          return;
+                        }
+
+                        if (item?.holiday?.country) {
+                          setHolidayCountry(normalizeCountryValue(item.holiday.country));
+                        } else {
+                          setSelectedHolidayId(null);
+                          setHolidayTitle('');
+                          setHolidayDetails('');
+                        }
+                      }}
                     >
                       <div className="flex items-start justify-between">
                         <div className="text-xs font-semibold">{d.getDate()}</div>
                         {item?.late_minutes > 0 ? <div className="text-[10px] font-semibold text-red-700">Late</div> : null}
                       </div>
                       {statusLabel ? (
-                        <div className="mt-1 text-[10px] uppercase tracking-wide">{statusLabel}</div>
+                        <div className={`mt-1 text-[10px] ${status === 'holiday' ? 'font-semibold leading-4' : 'uppercase tracking-wide'}`}>{statusLabel}</div>
+                      ) : null}
+                      {status === 'holiday' && item?.holiday?.country ? (
+                        <div className="mt-1 text-[10px] font-medium">{formatCountryLabel(item.holiday.country)}</div>
                       ) : null}
                       {item?.worked_seconds ? (
                         <div className="mt-1 text-[11px] font-medium">{formatDuration(item.worked_seconds)}</div>
@@ -1162,6 +1449,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           <h2 className="font-semibold text-gray-900 mb-3">Monthly Summary</h2>
           {calendarSummary ? (
             <div className="space-y-3 text-sm">
+              {isAdmin && calendarScope === 'overall' ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Employees Covered</span>
+                  <span className="font-semibold text-gray-900">{calendarSummary.overall_employee_count || 0}</span>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between">
                 <span className="text-gray-600">Present Days</span>
                 <span className="font-semibold text-gray-900">{calendarSummary.present_days}</span>
@@ -1175,6 +1468,10 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 <span className="font-semibold text-gray-900">{calendarSummary.weekend_days}</span>
               </div>
               <div className="flex items-center justify-between">
+                <span className="text-gray-600">Holiday Days</span>
+                <span className="font-semibold text-gray-900">{calendarSummary.holiday_days || 0}</span>
+              </div>
+              <div className="flex items-center justify-between">
                 <span className="text-gray-600">Late Days</span>
                 <span className="font-semibold text-gray-900">{calendarSummary.late_days}</span>
               </div>
@@ -1186,6 +1483,104 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           ) : (
             <p className="text-sm text-gray-500">No summary available.</p>
           )}
+
+          {isAdmin ? (
+            <div className="mt-6 border-t border-slate-200 pt-4">
+              <div className="mb-3">
+                <h3 className="text-sm font-semibold text-gray-900">Holiday Editor</h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Holidays are visible only to employees in the selected country.
+                </p>
+              </div>
+
+              {holidayFeedback ? (
+                <div className="mb-3">
+                  <FeedbackBanner tone={holidayFeedback.tone} message={holidayFeedback.message} />
+                </div>
+              ) : null}
+
+              <div className="space-y-3">
+                <div>
+                  <FieldLabel>Date</FieldLabel>
+                  <TextInput type="date" value={holidayDate} onChange={(e) => setHolidayDate(e.target.value)} />
+                </div>
+
+                <div>
+                  <FieldLabel>Country</FieldLabel>
+                  <SelectInput value={holidayCountry} onChange={(e) => setHolidayCountry(normalizeCountryValue(e.target.value))}>
+                    {HOLIDAY_COUNTRIES.map((country) => (
+                      <option key={country.value} value={country.value}>{country.label}</option>
+                    ))}
+                  </SelectInput>
+                </div>
+
+                <div>
+                  <FieldLabel>Holiday Name</FieldLabel>
+                  <TextInput
+                    value={holidayTitle}
+                    onChange={(e) => setHolidayTitle(e.target.value)}
+                    placeholder="Example: Republic Day"
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Details (Optional)</FieldLabel>
+                  <TextareaInput
+                    value={holidayDetails}
+                    onChange={(e) => setHolidayDetails(e.target.value)}
+                    rows={3}
+                    placeholder="Holiday details visible in attendance calendar."
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={saveHoliday} disabled={isHolidaySubmitting}>
+                    {isHolidaySubmitting ? 'Saving...' : selectedHolidayId ? 'Update Holiday' : 'Save Holiday'}
+                  </Button>
+                  <Button onClick={deleteHoliday} variant="danger" disabled={isHolidayDeleting || !selectedHolidayId}>
+                    {isHolidayDeleting ? 'Deleting...' : 'Delete Holiday'}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">This Month Holidays</p>
+                  <Button onClick={fetchHolidays} variant="ghost" size="sm" disabled={isHolidayLoading}>
+                    {isHolidayLoading ? 'Refreshing...' : 'Refresh'}
+                  </Button>
+                </div>
+
+                {isHolidayLoading ? (
+                  <p className="text-xs text-slate-500">Loading holidays...</p>
+                ) : holidayItems.length === 0 ? (
+                  <p className="text-xs text-slate-500">No holidays added for this month.</p>
+                ) : (
+                  <div className="max-h-44 space-y-2 overflow-auto pr-1">
+                    {holidayItems.map((holiday) => (
+                      <button
+                        key={holiday.id}
+                        type="button"
+                        onClick={() => {
+                          setHolidayDate(holiday.holiday_date);
+                          setHolidayCountry(normalizeCountryValue(holiday.country));
+                          setHolidayTitle(holiday.title || '');
+                          setHolidayDetails(holiday.details || '');
+                          setSelectedHolidayId(holiday.id);
+                          setHolidayFeedback();
+                        }}
+                        className={`w-full rounded-lg border px-2.5 py-2 text-left text-xs transition ${selectedHolidayId === holiday.id ? 'border-sky-300 bg-sky-50' : 'border-slate-200 hover:border-sky-200'}`}
+                      >
+                        <p className="font-semibold text-slate-900">{holiday.holiday_date} - {holiday.title}</p>
+                        <p className="mt-0.5 text-slate-500">{formatCountryLabel(holiday.country)}</p>
+                        {holiday.details ? <p className="mt-1 text-slate-500">{holiday.details}</p> : null}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
         </SurfaceCard>
       </div>
 
