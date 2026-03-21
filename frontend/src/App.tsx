@@ -33,6 +33,59 @@ const EmployeeManagementWorkspace = lazy(() => import('@/pages/EmployeeManagemen
 const AddUserPage = lazy(() => import('@/pages/AddUserPage'));
 const BillingSettingsPage = lazy(() => import('@/pages/BillingSettingsPage'));
 
+const CHUNK_RELOAD_KEY = 'carevance:chunk-reload';
+const isChunkLoadFailure = (error: unknown) => {
+  const message = String(
+    (error as { message?: string })?.message
+      || (error as { reason?: { message?: string } })?.reason?.message
+      || ''
+  ).toLowerCase();
+
+  return message.includes('failed to fetch dynamically imported module')
+    || message.includes('importing a module script failed')
+    || message.includes('chunkloaderror')
+    || message.includes('loading chunk');
+};
+
+function ChunkRecoveryBridge() {
+  useEffect(() => {
+    const recover = () => {
+      const currentPath = `${window.location.pathname}${window.location.search}`;
+      const lastRecoveredPath = window.sessionStorage.getItem(CHUNK_RELOAD_KEY);
+
+      if (lastRecoveredPath === currentPath) {
+        window.sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+        return;
+      }
+
+      window.sessionStorage.setItem(CHUNK_RELOAD_KEY, currentPath);
+      window.location.reload();
+    };
+
+    const handleWindowError = (event: ErrorEvent) => {
+      if (isChunkLoadFailure(event.error || event.message)) {
+        recover();
+      }
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (isChunkLoadFailure(event.reason)) {
+        recover();
+      }
+    };
+
+    window.addEventListener('error', handleWindowError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('error', handleWindowError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
+  return null;
+}
+
 function PayrollReturnBridge() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
@@ -147,6 +200,7 @@ function App() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-background" />}>
       <>
+        <ChunkRecoveryBridge />
         <PayrollReturnBridge />
         <Routes>
           <Route path="/" element={<HomeRoute />} />

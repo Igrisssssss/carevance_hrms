@@ -26,6 +26,7 @@ const readConfiguredAppConfig = () => {
 };
 const APP_CONFIG = readConfiguredAppConfig();
 const APP_URL = process.env.APP_URL || (typeof APP_CONFIG.appUrl === 'string' ? APP_CONFIG.appUrl.trim() : '') || DEFAULT_APP_URL;
+const IS_REMOTE_APP_URL = /^https?:\/\//i.test(APP_URL);
 const APP_ICON = process.platform === 'win32'
   ? path.join(__dirname, 'assets', 'icon.ico')
   : path.join(__dirname, 'assets', 'icon.png');
@@ -144,7 +145,7 @@ const proceedToCloseWindow = () => {
   return true;
 };
 
-const createWindow = () => {
+const createWindow = async () => {
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 860,
@@ -159,7 +160,15 @@ const createWindow = () => {
     },
   });
 
-  mainWindow.loadURL(APP_URL);
+  if (app.isPackaged && IS_REMOTE_APP_URL) {
+    try {
+      await mainWindow.webContents.session.clearCache();
+    } catch {
+      // Best-effort cache clearing to avoid stale chunk files after web deployments.
+    }
+  }
+
+  await mainWindow.loadURL(APP_URL);
 
   mainWindow.webContents.on('did-finish-load', () => {
     broadcastUpdateState();
@@ -453,7 +462,7 @@ ipcMain.handle('desktop:install-update', async () => {
 });
 
 app.whenReady().then(() => {
-  createWindow();
+  void createWindow();
   initializeAutoUpdater();
 
   app.on('activate', () => {
