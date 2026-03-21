@@ -40,4 +40,8 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+    'desktop' => [
+        'windows_download_url' => env('DESKTOP_WINDOWS_DOWNLOAD_URL'),
+    ],
+
 ];

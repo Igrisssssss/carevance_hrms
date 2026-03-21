@@ -9,7 +9,7 @@ class DesktopDownloadController extends Controller
 {
     public function windows(Request $request)
     {
-        $downloadUrl = (string) env('DESKTOP_WINDOWS_DOWNLOAD_URL', '');
+        $downloadUrl = (string) config('services.desktop.windows_download_url', '');
         if ($downloadUrl === '') {
             return response()->json(['message' => 'Desktop download is not configured.'], 404);
         }
