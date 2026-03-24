@@ -1,7 +1,7 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
-import { hasAdminAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { webAppUrl } from '@/lib/runtimeConfig';
 import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi } from '@/services/api';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
@@ -35,6 +35,7 @@ export default function Layout() {
   const notificationsRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
   const isAdminView = hasAdminAccess(user);
+  const isStrictAdminView = hasStrictAdminAccess(user);
   const isDesktopShell = Boolean(window.desktopTracker);
   const webAppBaseUrl = webAppUrl.replace(/\/+$/, '');
 
@@ -80,9 +81,17 @@ export default function Layout() {
         : topNavigation;
 
       return navigationGroups
-        .filter((group) => (group.adminOnly ? isAdminView : true))
+        .filter((group) => {
+          if (group.strictAdminOnly) return isStrictAdminView;
+          if (group.adminOnly) return isAdminView;
+          return true;
+        })
         .map((group) => {
-          const filteredItems = group.items?.filter((item) => (item.adminOnly ? isAdminView : true));
+          const filteredItems = group.items?.filter((item) => {
+            if (item.strictAdminOnly) return isStrictAdminView;
+            if (item.adminOnly) return isAdminView;
+            return true;
+          });
 
           if (group.label === 'Chat') {
             return {
@@ -112,7 +121,7 @@ export default function Layout() {
         })
         .filter((group) => group.to || (group.items?.length || 0) > 0);
     },
-    [isAdminView, isDesktopShell, pendingApprovals, unreadChatMessages]
+    [isAdminView, isDesktopShell, isStrictAdminView, pendingApprovals, unreadChatMessages]
   );
 
   const handleLogout = async () => {

@@ -3,8 +3,14 @@ import type { Organization, User } from '@/types';
 export const hasAdminAccess = (user: User | null | undefined): boolean =>
   Boolean(user && (user.role === 'admin' || user.role === 'manager'));
 
+export const hasStrictAdminAccess = (user: User | null | undefined): boolean =>
+  user?.role === 'admin';
+
 export const isEmployeeUser = (user: User | null | undefined): boolean =>
   user?.role === 'employee';
+
+export const isTrackedTimerUser = (user: User | null | undefined): boolean =>
+  Boolean(user && (user.role === 'employee' || user.role === 'manager'));
 
 export const getAssignableRoles = (
   user: User | null | undefined,

@@ -37,6 +37,11 @@ class ReportController extends Controller
         return $user && in_array($user->role, ['admin', 'manager'], true);
     }
 
+    private function restrictMonitoringToEmployees(?User $user): bool
+    {
+        return $user?->role === 'manager';
+    }
+
     public function dashboard(Request $request)
     {
         $user = $request->user();
@@ -274,6 +279,9 @@ class ReportController extends Controller
             ->values();
 
         $usersQuery = User::where('organization_id', $currentUser->organization_id);
+        if ($this->restrictMonitoringToEmployees($currentUser)) {
+            $usersQuery->where('role', 'employee');
+        }
         if (!$this->canViewAll($currentUser)) {
             $usersQuery->where('id', $currentUser->id);
         } else {
@@ -604,6 +612,9 @@ class ReportController extends Controller
             ->values();
 
         $usersQuery = User::where('organization_id', $currentUser->organization_id);
+        if ($this->restrictMonitoringToEmployees($currentUser)) {
+            $usersQuery->where('role', 'employee');
+        }
         if (!$this->canViewAll($currentUser)) {
             $usersQuery->where('id', $currentUser->id);
         } else {
@@ -758,6 +769,9 @@ class ReportController extends Controller
             ->values();
 
         $usersQuery = User::where('organization_id', $currentUser->organization_id);
+        if ($this->restrictMonitoringToEmployees($currentUser)) {
+            $usersQuery->where('role', 'employee');
+        }
         if (!$this->canViewAll($currentUser)) {
             $usersQuery->where('id', $currentUser->id);
         } else {
@@ -842,6 +856,7 @@ class ReportController extends Controller
         }
 
         $selectedUser = User::where('organization_id', $currentUser->organization_id)
+            ->when($this->restrictMonitoringToEmployees($currentUser), fn ($query) => $query->where('role', 'employee'))
             ->where('id', $selectedUserId)
             ->first();
         if (!$selectedUser) {

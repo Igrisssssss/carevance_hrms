@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   startMock: vi.fn(),
   stopMock: vi.fn(),
   updateMock: vi.fn(),
+  updateTaskStatusMock: vi.fn(),
   todayMock: vi.fn(),
   getProjectsMock: vi.fn(),
   getProjectTasksMock: vi.fn(),
@@ -45,6 +46,9 @@ vi.mock('@/services/api', async () => {
       stop: mocks.stopMock,
       update: mocks.updateMock,
       today: mocks.todayMock,
+    },
+    taskApi: {
+      updateStatus: mocks.updateTaskStatusMock,
     },
     projectApi: {
       getAll: mocks.getProjectsMock,
@@ -141,6 +145,13 @@ describe('DesktopTimerDashboard', () => {
       ],
     });
 
+    mocks.updateTaskStatusMock.mockResolvedValue({
+      data: {
+        id: 42,
+        status: 'in_progress',
+      },
+    });
+
     mocks.startMock.mockResolvedValue({
       data: {
         id: 99,
@@ -203,6 +214,10 @@ describe('DesktopTimerDashboard', () => {
 
     await waitFor(() => {
       expect(mocks.updateMock).toHaveBeenCalledWith(99, expect.objectContaining({ project_id: 7, task_id: 42 }));
+    });
+
+    await waitFor(() => {
+      expect(mocks.updateTaskStatusMock).toHaveBeenCalledWith(42, 'in_progress');
     });
   });
 

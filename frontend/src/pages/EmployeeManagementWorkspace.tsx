@@ -10,7 +10,7 @@ import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
-import { getAssignableRoles } from '@/lib/permissions';
+import { getAssignableRoles, hasStrictAdminAccess } from '@/lib/permissions';
 import { KeyRound, MailPlus, ShieldCheck, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
@@ -54,7 +54,12 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'manager' | 'employee' | 'client'>('employee');
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const isStrictAdmin = hasStrictAdminAccess(user);
   const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
+  const employeeRoleOptions = useMemo(
+    () => allowedRoles.filter((role): role is 'admin' | 'manager' | 'employee' => role !== 'client'),
+    [allowedRoles]
+  );
 
   const usersQuery = useQuery({
     queryKey: ['employee-workspace-users'],
@@ -237,11 +242,32 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                 ))}
               </SelectInput>
             </div>
+            {isStrictAdmin && selectedUser ? (
+              <div>
+                <FieldLabel>Promote / Change Role</FieldLabel>
+                <SelectInput
+                  value={selectedUser.role}
+                  onChange={(event) =>
+                    updateRoleMutation.mutate({
+                      userId: selectedUser.id,
+                      role: event.target.value as 'admin' | 'manager' | 'employee',
+                    })
+                  }
+                  disabled={updateRoleMutation.isPending}
+                >
+                  {employeeRoleOptions.map((role) => (
+                    <option key={role} value={role}>
+                      {role.charAt(0).toUpperCase() + role.slice(1)}
+                    </option>
+                  ))}
+                </SelectInput>
+              </div>
+            ) : null}
           </FilterPanel>
 
           <DataTable
             title="Employee Directory"
-            description="Role, work state, and tracked hours from the existing users endpoint."
+            description={isStrictAdmin ? 'Role, work state, tracked hours, and admin-only promotion controls from the existing users endpoint.' : 'Role, work state, and tracked hours from the existing users endpoint.'}
             rows={users}
             emptyMessage="No employees found."
             columns={[
@@ -250,6 +276,31 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               { key: 'working', header: 'Working', render: (row: any) => (row.is_working ? 'Yes' : 'No') },
               { key: 'project', header: 'Current Project', render: (row: any) => row.current_project || 'No active timer' },
               { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.total_elapsed_duration || row.total_duration || 0) },
+              ...(isStrictAdmin
+                ? [{
+                    key: 'promote',
+                    header: 'Promote',
+                    render: (row: any) => (
+                      <SelectInput
+                        value={row.role}
+                        onChange={(event) =>
+                          updateRoleMutation.mutate({
+                            userId: row.id,
+                            role: event.target.value as 'admin' | 'manager' | 'employee',
+                          })
+                        }
+                        disabled={updateRoleMutation.isPending}
+                        className="min-w-[10rem]"
+                      >
+                        {employeeRoleOptions.map((role) => (
+                          <option key={role} value={role}>
+                            {role.charAt(0).toUpperCase() + role.slice(1)}
+                          </option>
+                        ))}
+                      </SelectInput>
+                    ),
+                  }]
+                : []),
             ]}
           />
 

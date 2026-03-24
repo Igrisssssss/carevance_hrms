@@ -306,4 +306,75 @@ class ScreenshotSecurityTest extends TestCase
             Carbon::setTestNow();
         }
     }
+
+    public function test_manager_screenshot_index_only_returns_employee_screenshots(): void
+    {
+        try {
+            Carbon::setTestNow(Carbon::parse('2026-03-16 09:00:00'));
+
+            $organization = Organization::create([
+                'name' => 'CareVance',
+                'slug' => 'carevance',
+            ]);
+
+            $manager = User::create([
+                'name' => 'Manager User',
+                'email' => 'manager@example.com',
+                'password' => 'password123',
+                'role' => 'manager',
+                'organization_id' => $organization->id,
+            ]);
+
+            $employee = User::create([
+                'name' => 'Employee User',
+                'email' => 'employee@example.com',
+                'password' => 'password123',
+                'role' => 'employee',
+                'organization_id' => $organization->id,
+            ]);
+
+            $anotherManager = User::create([
+                'name' => 'Another Manager',
+                'email' => 'another-manager@example.com',
+                'password' => 'password123',
+                'role' => 'manager',
+                'organization_id' => $organization->id,
+            ]);
+
+            $employeeEntry = TimeEntry::create([
+                'user_id' => $employee->id,
+                'start_time' => '2026-03-16 09:00:00',
+                'end_time' => '2026-03-16 10:00:00',
+                'duration' => 3600,
+                'billable' => true,
+            ]);
+
+            $managerEntry = TimeEntry::create([
+                'user_id' => $anotherManager->id,
+                'start_time' => '2026-03-16 09:00:00',
+                'end_time' => '2026-03-16 10:00:00',
+                'duration' => 3600,
+                'billable' => true,
+            ]);
+
+            $employeeScreenshot = Screenshot::create([
+                'time_entry_id' => $employeeEntry->id,
+                'filename' => 'employee.png',
+            ]);
+
+            Screenshot::create([
+                'time_entry_id' => $managerEntry->id,
+                'filename' => 'manager.png',
+            ]);
+
+            $this->getJson('/api/screenshots?start_date=2026-03-16&end_date=2026-03-16', $this->apiHeadersFor($manager))
+                ->assertOk()
+                ->assertJsonPath('total', 1)
+                ->assertJsonCount(1, 'data')
+                ->assertJsonPath('data.0.id', $employeeScreenshot->id)
+                ->assertJsonPath('data.0.user.role', 'employee');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
 }

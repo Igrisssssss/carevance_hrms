@@ -25,6 +25,11 @@ class ScreenshotController extends Controller
         return $user && in_array($user->role, ['admin', 'manager'], true);
     }
 
+    private function restrictMonitoringToEmployees(?User $user): bool
+    {
+        return $user?->role === 'manager';
+    }
+
     /**
      * Display a listing of the resource.
      */
@@ -290,6 +295,9 @@ class ScreenshotController extends Controller
             ->with(['timeEntry.user:id,name,email,role'])
             ->whereHas('timeEntry.user', function ($query) use ($user) {
                 $query->where('organization_id', $user->organization_id);
+                if ($this->restrictMonitoringToEmployees($user)) {
+                    $query->where('role', 'employee');
+                }
             })
             ->when(!$this->canViewAll($user), function ($query) use ($user) {
                 $query->whereHas('timeEntry', function ($timeEntryQuery) use ($user) {

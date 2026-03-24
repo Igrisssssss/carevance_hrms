@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { activityApi, reportApi, screenshotApi, userApi } from '@/services/api';
 import PageHeader from '@/components/dashboard/PageHeader';
 import FilterPanel from '@/components/dashboard/FilterPanel';
@@ -113,6 +114,7 @@ const modeCopy: Record<MonitoringWorkspaceMode, { title: string; description: st
 };
 
 export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspaceMode }) {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [startDate, setStartDate] = useState(toDate(monthStart));
@@ -243,7 +245,10 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
 
   const isLoading = usersQuery.isLoading || dataQuery.isLoading;
   const isError = usersQuery.isError || dataQuery.isError;
-  const users = usersQuery.data || [];
+  const users = useMemo(
+    () => (usersQuery.data || []).filter((employee: any) => user?.role !== 'manager' || employee.role === 'employee'),
+    [user?.role, usersQuery.data]
+  );
   const usersById = useMemo(
     () => new Map(users.map((employee: any) => [Number(employee.id), employee])),
     [users]

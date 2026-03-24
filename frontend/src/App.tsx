@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { hasAdminAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 
 const LandingPage = lazy(() => import('@/pages/LandingPage'));
 const PricingPage = lazy(() => import('@/pages/PricingPage'));
@@ -182,6 +182,24 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!hasAdminAccess(user)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+function StrictAdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!hasStrictAdminAccess(user)) {
     return <Navigate to="/dashboard" replace />;
   }
 

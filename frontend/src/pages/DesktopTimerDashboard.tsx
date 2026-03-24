@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, projectApi } from '@/services/api';
+import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, projectApi, taskApi } from '@/services/api';
 import {
   ACTIVE_TIMER_KEY,
   clearAutoStartArm,
@@ -14,6 +14,7 @@ import {
   seedDesktopLaunchAutoStart,
   suppressAutoStart,
 } from '@/lib/desktopTimerSession';
+import { isTrackedTimerUser } from '@/lib/permissions';
 import PageHeader from '@/components/dashboard/PageHeader';
 import MetricCard from '@/components/dashboard/MetricCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
@@ -282,15 +283,15 @@ export default function DesktopTimerDashboard() {
   }, [activeTimer?.id, activeTimer?.project_id, activeTimer?.task_id, projectTasks, selectedTaskId]);
 
   useEffect(() => {
-    if (user?.role !== 'employee' || !userId) {
+    if (!isTrackedTimerUser(user) || !userId) {
       return;
     }
 
     seedDesktopLaunchAutoStart(userId);
-  }, [user?.role, userId]);
+  }, [user, userId]);
 
   useEffect(() => {
-    if (isLoading || user?.role !== 'employee') {
+    if (isLoading || !isTrackedTimerUser(user)) {
       return;
     }
 
@@ -311,7 +312,7 @@ export default function DesktopTimerDashboard() {
 
     hasAttemptedAutoStartRef.current = true;
     void handleStartTimer(true);
-  }, [activeTimer?.id, isLoading, isStarting, user?.role, userId]);
+  }, [activeTimer?.id, isLoading, isStarting, user, userId]);
 
   const handleStartTimer = async (isAutoStart = false) => {
     setIsStarting(true);
@@ -431,12 +432,21 @@ export default function DesktopTimerDashboard() {
     setNotice('');
 
     try {
+      const nextTask = taskId ? projectTasks.find((task) => task.id === taskId) || null : null;
       const response = await timeEntryApi.update(activeTimer.id, {
         project_id: selectedProjectId,
         task_id: taskId,
       });
+
+      if (nextTask && nextTask.status !== 'in_progress') {
+        await taskApi.updateStatus(nextTask.id, 'in_progress');
+        setProjectTasks((current) =>
+          current.map((task) => (task.id === nextTask.id ? { ...task, status: 'in_progress' } : task))
+        );
+      }
+
       syncTimerEntryLocally(response.data);
-      setNotice(taskId ? 'Task updated for the running timer.' : 'Task cleared from the running timer.');
+      setNotice(taskId ? 'Task updated for the running timer and moved to In Progress.' : 'Task cleared from the running timer.');
     } catch (error: any) {
       console.error('Error updating timer task:', error);
       setSelectedTaskId(activeTimer.task_id || null);

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { isTrackedTimerUser } from '@/lib/permissions';
 import {
   emitDesktopTimerIdleStop,
   setIdleAutoStopNotice,
@@ -64,9 +65,9 @@ export const useDesktopTracker = () => {
   }, []);
 
   useEffect(() => {
-    const isEmployee = user?.role === 'employee';
+    const isTrackedUser = isTrackedTimerUser(user);
     const desktopApi = window.desktopTracker;
-    if (!isAuthenticated || !isEmployee || !desktopApi) {
+    if (!isAuthenticated || !isTrackedUser || !desktopApi) {
       activeSegmentRef.current = null;
       pendingIdleRewindRef.current.clear();
       return;
@@ -249,5 +250,5 @@ export const useDesktopTracker = () => {
       void tick();
     }, ACTIVITY_TRACK_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [isAuthenticated, user?.role, userId]);
+  }, [isAuthenticated, user, userId]);
 };

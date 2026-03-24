@@ -247,6 +247,74 @@ class ReportWorkingTimeTest extends TestCase
         }
     }
 
+    public function test_manager_employee_insights_only_returns_employee_monitoring_rows(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-03-16 11:15:00'));
+
+        try {
+            $organization = Organization::create([
+                'name' => 'CareVance Org',
+                'slug' => 'carevance-org',
+            ]);
+
+            $manager = User::create([
+                'name' => 'Manager',
+                'email' => 'manager@example.com',
+                'password' => Hash::make('password123'),
+                'role' => 'manager',
+                'organization_id' => $organization->id,
+            ]);
+
+            $employee = User::create([
+                'name' => 'Employee',
+                'email' => 'employee@example.com',
+                'password' => Hash::make('password123'),
+                'role' => 'employee',
+                'organization_id' => $organization->id,
+            ]);
+
+            $anotherManager = User::create([
+                'name' => 'Second Manager',
+                'email' => 'second-manager@example.com',
+                'password' => Hash::make('password123'),
+                'role' => 'manager',
+                'organization_id' => $organization->id,
+            ]);
+
+            $employeeEntry = $this->createOpenEntryFor($employee);
+            $managerEntry = $this->createOpenEntryFor($anotherManager, '2026-03-16 10:50:00');
+
+            Activity::create([
+                'user_id' => $employee->id,
+                'time_entry_id' => $employeeEntry->id,
+                'type' => 'app',
+                'name' => 'VS Code',
+                'duration' => 600,
+                'recorded_at' => '2026-03-16 11:00:00',
+            ]);
+
+            Activity::create([
+                'user_id' => $anotherManager->id,
+                'time_entry_id' => $managerEntry->id,
+                'type' => 'app',
+                'name' => 'Slack',
+                'duration' => 600,
+                'recorded_at' => '2026-03-16 11:05:00',
+            ]);
+
+            $response = $this->getJson('/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16', $this->apiHeadersFor($manager))
+                ->assertOk();
+
+            $this->assertCount(1, $response->json('matched_users'));
+            $this->assertSame($employee->id, $response->json('matched_users.0.id'));
+            $this->assertCount(1, $response->json('live_monitoring.all_users'));
+            $this->assertSame($employee->id, $response->json('live_monitoring.all_users.0.user.id'));
+            $this->assertSame('employee', $response->json('live_monitoring.all_users.0.user.role'));
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     private function createAuthenticatedEmployee(string $role = 'employee'): array
     {
         $organization = Organization::create([

@@ -436,7 +436,7 @@ export default function Tasks() {
                 </div>
               </div>
 
-              <div className="space-y-4 p-4">
+              <div className="max-h-[38rem] space-y-4 overflow-y-auto p-4">
                 {columnTasks.length === 0 ? <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 p-5 text-sm text-slate-500">No tasks in {section.label.toLowerCase()} right now.</div> : null}
 
                 {columnTasks.map((task) => {
