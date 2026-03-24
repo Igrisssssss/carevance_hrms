@@ -254,6 +254,7 @@ export const timeEntryApi = {
     timer_slot?: 'primary' | 'secondary';
     auto_stopped_for_idle?: boolean;
     idle_seconds?: number;
+    last_activity_at?: string;
   }) => 
     api.post<TimeEntry>('/time-entries/stop', data || {}),
   

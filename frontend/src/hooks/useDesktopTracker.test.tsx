@@ -120,7 +120,7 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
     });
 
-    expect(mocks.deleteActivityMock).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteActivityMock).not.toHaveBeenCalled();
     expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
       type: 'idle',
       duration: 180,
@@ -132,6 +132,7 @@ describe('useDesktopTracker', () => {
       timer_slot: 'primary',
       auto_stopped_for_idle: true,
       idle_seconds: 300,
+      last_activity_at: '2026-03-18T09:00:00.000Z',
     });
     expect(sessionStorage.getItem('desktop_timer_auto_start_suppressed:1')).toBe('1');
     expect(sessionStorage.getItem('desktop_timer_idle_auto_stop_notice:1')).toBe(
@@ -141,5 +142,20 @@ describe('useDesktopTracker', () => {
     expect(window.desktopTracker?.revealWindow).toHaveBeenCalledTimes(1);
 
     window.removeEventListener(DESKTOP_TIMER_IDLE_STOP_EVENT, idleStopListener as EventListener);
+  });
+
+  it('does not stop the timer when recent real activity resets the continuous idle countdown', async () => {
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4 * 60 * 1000 + 55 * 1000);
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new Event('scroll'));
+      await vi.advanceTimersByTimeAsync(10 * 1000);
+    });
+
+    expect(mocks.stopMock).not.toHaveBeenCalled();
   });
 });

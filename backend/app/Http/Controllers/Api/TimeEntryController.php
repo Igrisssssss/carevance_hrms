@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
+use App\Models\Activity;
 use App\Models\LeaveRequest;
 use App\Models\Project;
 use App\Models\Task;
@@ -17,9 +18,12 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class TimeEntryController extends Controller
 {
+    private const IDLE_AUTO_STOP_SECONDS = 300;
+
     public function __construct(
         private readonly TimeEntryDurationService $timeEntryDurationService,
         private readonly IdleAutoStopMailService $idleAutoStopMailService,
@@ -238,6 +242,7 @@ class TimeEntryController extends Controller
             'timer_slot' => 'nullable|in:primary,secondary',
             'auto_stopped_for_idle' => 'nullable|boolean',
             'idle_seconds' => 'nullable|integer|min:1|max:86400',
+            'last_activity_at' => 'nullable|date',
         ]);
 
         $user = $request->user();
@@ -255,6 +260,32 @@ class TimeEntryController extends Controller
         }
 
         $stoppedAt = now();
+        $idleContext = null;
+        $shouldSendIdleEmail = false;
+
+        if ($request->boolean('auto_stopped_for_idle')) {
+            $idleContext = $this->buildIdleAutoStopContext(
+                userId: (int) $user->id,
+                runningEntries: $runningEntries,
+                stoppedAt: $stoppedAt,
+                reportedIdleSeconds: (int) $request->input('idle_seconds', 0),
+                reportedLastActivityAt: $request->input('last_activity_at')
+                    ? Carbon::parse((string) $request->input('last_activity_at'))
+                    : null,
+            );
+
+            if (! $idleContext['eligible']) {
+                Log::warning('Idle auto-stop rejected by backend validation.', $idleContext['log']);
+
+                return response()->json([
+                    'message' => 'Idle auto-stop validation failed because recent activity was detected.',
+                ], 409);
+            }
+
+            $shouldSendIdleEmail = true;
+            Log::info('Idle auto-stop validated.', $idleContext['log']);
+        }
+
         $this->closeRunningEntries($runningEntries, $stoppedAt);
         $timeEntry = $runningEntries->first();
 
@@ -262,12 +293,18 @@ class TimeEntryController extends Controller
             $this->ensureAttendanceCheckedOutForBreak($user->id, $stoppedAt);
         }
 
-        if ($request->boolean('auto_stopped_for_idle')) {
-            $this->idleAutoStopMailService->send(
+        if ($shouldSendIdleEmail && $idleContext) {
+            $emailSent = $this->idleAutoStopMailService->send(
                 user: $user,
-                idleSeconds: (int) $request->input('idle_seconds', 0),
+                idleSeconds: (int) $idleContext['resolved_idle_seconds'],
                 stoppedAt: $stoppedAt,
+                dedupeKey: (string) $idleContext['dedupe_key'],
             );
+
+            Log::info('Idle auto-stop completed.', [
+                ...$idleContext['log'],
+                'email_sent' => $emailSent,
+            ]);
         }
 
         return response()->json($timeEntry->load('project', 'task'));
@@ -526,5 +563,88 @@ class TimeEntryController extends Controller
         }
 
         return [$projectId, $taskId];
+    }
+
+    private function buildIdleAutoStopContext(
+        int $userId,
+        Collection $runningEntries,
+        Carbon $stoppedAt,
+        int $reportedIdleSeconds,
+        ?Carbon $reportedLastActivityAt = null,
+    ): array {
+        $entry = $runningEntries->sortByDesc('start_time')->first();
+        $sessionStartAt = $entry?->start_time ? Carbon::parse($entry->start_time) : $stoppedAt;
+
+        $activityQuery = Activity::query()
+            ->where('user_id', $userId)
+            ->whereBetween('recorded_at', [$sessionStartAt, $stoppedAt])
+            ->where(function (Builder $query) use ($entry) {
+                if (! $entry?->id) {
+                    $query->whereNull('time_entry_id');
+
+                    return;
+                }
+
+                $query->where('time_entry_id', $entry->id)
+                    ->orWhereNull('time_entry_id');
+            });
+
+        $lastNonIdleActivity = (clone $activityQuery)
+            ->where('type', '!=', 'idle')
+            ->orderByDesc('recorded_at')
+            ->first();
+
+        $lastIdleActivity = (clone $activityQuery)
+            ->where('type', 'idle')
+            ->orderByDesc('recorded_at')
+            ->first();
+
+        $lastActiveAt = $reportedLastActivityAt && $reportedLastActivityAt->betweenIncluded($sessionStartAt, $stoppedAt)
+            ? $reportedLastActivityAt
+            : ($lastNonIdleActivity?->recorded_at
+                ? Carbon::parse($lastNonIdleActivity->recorded_at)
+                : $sessionStartAt);
+
+        $idleStartAt = $lastActiveAt;
+
+        $continuousIdleSeconds = max(0, $idleStartAt->diffInSeconds($stoppedAt));
+        $trackedIdleSeconds = max($reportedIdleSeconds, (int) ($lastIdleActivity?->duration ?? 0));
+        $resolvedIdleSeconds = min($continuousIdleSeconds, $trackedIdleSeconds);
+        $totalIdleSeconds = (clone $activityQuery)
+            ->where('type', 'idle')
+            ->sum('duration');
+
+        $log = [
+            'session_id' => $entry?->id,
+            'employee_id' => $userId,
+            'timer_start_time' => $sessionStartAt->toIso8601String(),
+            'last_activity_time' => $lastNonIdleActivity?->recorded_at
+                ? Carbon::parse($lastNonIdleActivity->recorded_at)->toIso8601String()
+                : null,
+            'reported_last_activity_time' => $reportedLastActivityAt?->toIso8601String(),
+            'idle_start_time' => $idleStartAt->toIso8601String(),
+            'idle_end_time' => $stoppedAt->toIso8601String(),
+            'continuous_idle_duration' => $continuousIdleSeconds,
+            'reported_idle_duration' => $reportedIdleSeconds,
+            'tracked_idle_duration' => (int) ($lastIdleActivity?->duration ?? 0),
+            'total_idle_duration' => (int) $totalIdleSeconds,
+            'resolved_idle_duration' => $resolvedIdleSeconds,
+            'timer_stop_reason' => 'continuous_idle_threshold',
+            'email_sent' => false,
+        ];
+
+        return [
+            'eligible' => $trackedIdleSeconds >= self::IDLE_AUTO_STOP_SECONDS
+                && $continuousIdleSeconds >= self::IDLE_AUTO_STOP_SECONDS
+                && $resolvedIdleSeconds >= self::IDLE_AUTO_STOP_SECONDS,
+            'resolved_idle_seconds' => $resolvedIdleSeconds,
+            'dedupe_key' => sprintf(
+                'idle-auto-stop:%d:%d:%s',
+                $userId,
+                (int) ($entry?->id ?? 0),
+                $stoppedAt->copy()->startOfMinute()->toIso8601String()
+            ),
+            'log' => $log,
+        ];
     }
 }

@@ -14,6 +14,24 @@ const IDLE_THRESHOLD_SECONDS = 3 * 60;
 const IDLE_AUTO_STOP_THRESHOLD_SECONDS = 5 * 60;
 const BROWSER_APP_KEYWORDS = ['chrome', 'edge', 'firefox', 'brave', 'opera', 'safari', 'vivaldi'];
 const IDLE_AUTO_STOP_MESSAGE = 'You were idle for 5 minutes, so your timer was stopped.';
+const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
+  'mousemove',
+  'mousedown',
+  'mouseup',
+  'keydown',
+  'keyup',
+  'click',
+  'dblclick',
+  'wheel',
+  'scroll',
+  'focus',
+  'touchstart',
+  'touchmove',
+  'pointerdown',
+  'pointermove',
+];
+
+let desktopTrackerRunSequence = 0;
 
 type ActiveSegment = {
   activityId: number;
@@ -46,6 +64,7 @@ export const useDesktopTracker = () => {
   const activeSegmentRef = useRef<ActiveSegment | null>(null);
   const lastScreenshotAtRef = useRef<number>(0);
   const pendingIdleRewindRef = useRef<Map<number, number>>(new Map());
+  const lastAutoStoppedEntryIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     const markInput = () => {
@@ -53,14 +72,22 @@ export const useDesktopTracker = () => {
       pendingIdleRewindRef.current.clear();
     };
 
-    window.addEventListener('mousemove', markInput);
-    window.addEventListener('keydown', markInput);
-    window.addEventListener('mousedown', markInput);
+    const markVisibleActivity = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        markInput();
+      }
+    };
+
+    ACTIVITY_EVENTS.forEach((eventName) => {
+      window.addEventListener(eventName, markInput);
+    });
+    document.addEventListener('visibilitychange', markVisibleActivity);
 
     return () => {
-      window.removeEventListener('mousemove', markInput);
-      window.removeEventListener('keydown', markInput);
-      window.removeEventListener('mousedown', markInput);
+      ACTIVITY_EVENTS.forEach((eventName) => {
+        window.removeEventListener(eventName, markInput);
+      });
+      document.removeEventListener('visibilitychange', markVisibleActivity);
     };
   }, []);
 
@@ -70,13 +97,18 @@ export const useDesktopTracker = () => {
     if (!isAuthenticated || !isTrackedUser || !desktopApi) {
       activeSegmentRef.current = null;
       pendingIdleRewindRef.current.clear();
+      lastAutoStoppedEntryIdRef.current = null;
       return;
     }
+    const runId = ++desktopTrackerRunSequence;
+    const isCurrentRun = () => desktopTrackerRunSequence === runId;
     let inFlight = false;
     lastTickAtRef.current = Date.now();
+    lastInputRef.current = Date.now();
     activeSegmentRef.current = null;
     lastScreenshotAtRef.current = Date.now();
     pendingIdleRewindRef.current.clear();
+    lastAutoStoppedEntryIdRef.current = null;
 
     const rewindTrackedIdleWindow = async (recordedAt: string) => {
       const rewindPoints = Array.from(pendingIdleRewindRef.current.entries());
@@ -96,11 +128,12 @@ export const useDesktopTracker = () => {
     };
 
     const tick = async () => {
-      if (inFlight) return;
+      if (inFlight || !isCurrentRun()) return;
       const now = Date.now();
+      const previousTickAt = lastTickAtRef.current ?? now;
       const elapsedSeconds = Math.max(
         1,
-        Math.round((now - (lastTickAtRef.current ?? now)) / 1000)
+        Math.round((now - previousTickAt) / 1000)
       );
       lastTickAtRef.current = now;
       inFlight = true;
@@ -109,12 +142,18 @@ export const useDesktopTracker = () => {
         const activeEntry = active.data;
         if (!activeEntry?.id) {
           activeSegmentRef.current = null;
+          lastAutoStoppedEntryIdRef.current = null;
           return;
         }
 
-        const idleSecondsFromInput = Math.floor((now - lastInputRef.current) / 1000);
-        const idleSecondsSystem = await desktopApi.getSystemIdleSeconds();
-        const idleSeconds = Math.max(idleSecondsFromInput, idleSecondsSystem);
+        const idleSecondsFromInput = Math.max(0, Math.floor((now - lastInputRef.current) / 1000));
+        const idleSecondsSystem = Math.max(0, await desktopApi.getSystemIdleSeconds());
+        const idleSeconds = Math.min(idleSecondsFromInput, idleSecondsSystem);
+        const trackedWindowEnd = Math.min(now, Math.max(lastInputRef.current, previousTickAt));
+        const trackedSecondsThisTick = Math.max(
+          0,
+          Math.round((trackedWindowEnd - previousTickAt) / 1000)
+        );
         const activeContext = typeof desktopApi.getActiveWindowContext === 'function'
           ? await desktopApi.getActiveWindowContext()
           : null;
@@ -164,14 +203,55 @@ export const useDesktopTracker = () => {
           }
 
           if (idleSeconds >= IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
+            if (lastAutoStoppedEntryIdRef.current === activeEntry.id) {
+              return;
+            }
+
             try {
+              console.info('[desktop-tracker] idle auto-stop requested', {
+                session_id: activeEntry.id,
+                employee_id: userId,
+                timer_start_time: activeEntry.start_time,
+                last_activity_time: new Date(lastInputRef.current).toISOString(),
+                idle_end_time: recordedAt,
+                continuous_idle_duration: idleSeconds,
+                timer_stop_reason: 'continuous_idle_threshold',
+              });
               await timeEntryApi.stop({
                 timer_slot: 'primary',
                 auto_stopped_for_idle: true,
                 idle_seconds: idleSeconds,
+                last_activity_at: new Date(lastInputRef.current).toISOString(),
               });
+              lastAutoStoppedEntryIdRef.current = activeEntry.id;
             } catch (error: any) {
               const status = error?.response?.status;
+              if (status === 404) {
+                activeSegmentRef.current = null;
+                pendingIdleRewindRef.current.clear();
+                return;
+              }
+
+              if (status === 409) {
+                if (activeSegmentRef.current?.kind === 'idle') {
+                  try {
+                    await activityApi.delete(activeSegmentRef.current.activityId);
+                  } catch (deleteError) {
+                    console.warn('Desktop tracker idle validation rewind failed:', deleteError);
+                  }
+                }
+                activeSegmentRef.current = null;
+                pendingIdleRewindRef.current.clear();
+                lastInputRef.current = Date.now();
+                console.info('[desktop-tracker] idle auto-stop rejected by backend validation', {
+                  session_id: activeEntry.id,
+                  employee_id: userId,
+                  timer_start_time: activeEntry.start_time,
+                  last_activity_time: new Date(lastInputRef.current).toISOString(),
+                });
+                return;
+              }
+
               if (status !== 404) {
                 throw error;
               }
@@ -196,11 +276,15 @@ export const useDesktopTracker = () => {
             return;
           }
         } else {
+          if (trackedSecondsThisTick <= 0) {
+            return;
+          }
+
           const payload = {
             time_entry_id: activeEntry.id,
             type: activityType,
             name: contextName,
-            duration: elapsedSeconds,
+            duration: trackedSecondsThisTick,
             recorded_at: recordedAt,
           };
           const signature = `${payload.time_entry_id}:${payload.type}:${payload.name}`;
@@ -208,7 +292,7 @@ export const useDesktopTracker = () => {
 
           if (currentSegment?.kind === 'tracked' && currentSegment.signature === signature) {
             const baselineDuration = currentSegment.durationSeconds;
-            const nextDuration = baselineDuration + elapsedSeconds;
+            const nextDuration = baselineDuration + trackedSecondsThisTick;
             await activityApi.update(currentSegment.activityId, {
               duration: nextDuration,
               recorded_at: recordedAt,
@@ -249,6 +333,11 @@ export const useDesktopTracker = () => {
     const interval = setInterval(() => {
       void tick();
     }, ACTIVITY_TRACK_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (desktopTrackerRunSequence === runId) {
+        desktopTrackerRunSequence += 1;
+      }
+    };
   }, [isAuthenticated, user, userId]);
 };

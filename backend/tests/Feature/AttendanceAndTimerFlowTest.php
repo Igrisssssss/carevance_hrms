@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Mail\IdleTimerStoppedMail;
+use App\Models\Activity;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\Organization;
@@ -138,6 +139,11 @@ class AttendanceAndTimerFlowTest extends TestCase
             'timer_slot' => 'primary',
         ], $headers)->assertCreated();
 
+        $timeEntry = TimeEntry::query()->latest('id')->firstOrFail();
+        $timeEntry->update([
+            'start_time' => now()->subMinutes(10),
+        ]);
+
         $this->postJson('/api/time-entries/stop', [
             'timer_slot' => 'primary',
             'auto_stopped_for_idle' => true,
@@ -148,6 +154,154 @@ class AttendanceAndTimerFlowTest extends TestCase
             return $mail->hasTo($user->email)
                 && $mail->idleSeconds === 300
                 && $mail->idleDurationLabel === '5 minutes';
+        });
+    }
+
+    public function test_idle_activity_updates_do_not_auto_stop_the_timer_or_send_email(): void
+    {
+        Mail::fake();
+
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $user = User::create([
+            'name' => 'Employee',
+            'email' => 'idle-activity@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $headers = $this->apiHeadersFor($user);
+
+        $startResponse = $this->postJson('/api/time-entries/start', [
+            'description' => 'Primary timer',
+            'timer_slot' => 'primary',
+        ], $headers)->assertCreated();
+
+        $timeEntryId = (int) $startResponse->json('id');
+        TimeEntry::query()->whereKey($timeEntryId)->update([
+            'start_time' => now()->subMinutes(10),
+        ]);
+
+        $activityResponse = $this->postJson('/api/activities', [
+            'time_entry_id' => $timeEntryId,
+            'type' => 'idle',
+            'name' => 'System Idle - Visual Studio Code',
+            'duration' => 180,
+            'recorded_at' => now()->subMinutes(2)->toIso8601String(),
+        ], $headers)->assertCreated();
+
+        $activityId = (int) $activityResponse->json('id');
+
+        $this->putJson("/api/activities/{$activityId}", [
+            'duration' => 300,
+            'recorded_at' => now()->toIso8601String(),
+        ], $headers)->assertOk();
+
+        $timeEntry = TimeEntry::findOrFail($timeEntryId);
+        $this->assertNull($timeEntry->end_time);
+        Mail::assertNothingQueued();
+    }
+
+    public function test_idle_auto_stop_requires_true_continuous_idle_before_stopping(): void
+    {
+        Mail::fake();
+
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $user = User::create([
+            'name' => 'Employee',
+            'email' => 'validation@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $headers = $this->apiHeadersFor($user);
+
+        $startResponse = $this->postJson('/api/time-entries/start', [
+            'description' => 'Primary timer',
+            'timer_slot' => 'primary',
+        ], $headers)->assertCreated();
+
+        $timeEntryId = (int) $startResponse->json('id');
+        TimeEntry::query()->whereKey($timeEntryId)->update([
+            'start_time' => now()->subMinutes(10),
+        ]);
+
+        Activity::create([
+            'user_id' => $user->id,
+            'time_entry_id' => $timeEntryId,
+            'type' => 'app',
+            'name' => 'Visual Studio Code',
+            'duration' => 10,
+            'recorded_at' => now()->subSeconds(10),
+        ]);
+
+        Activity::create([
+            'user_id' => $user->id,
+            'time_entry_id' => $timeEntryId,
+            'type' => 'idle',
+            'name' => 'System Idle - Visual Studio Code',
+            'duration' => 300,
+            'recorded_at' => now(),
+        ]);
+
+        $this->postJson('/api/time-entries/stop', [
+            'timer_slot' => 'primary',
+            'auto_stopped_for_idle' => true,
+            'idle_seconds' => 300,
+        ], $headers)
+            ->assertStatus(409)
+            ->assertJsonPath('message', 'Idle auto-stop validation failed because recent activity was detected.');
+
+        $timeEntry = TimeEntry::findOrFail($timeEntryId);
+        $this->assertNull($timeEntry->end_time);
+        Mail::assertNothingQueued();
+    }
+
+    public function test_idle_auto_stop_email_duration_does_not_round_up_to_the_next_minute(): void
+    {
+        Mail::fake();
+
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $user = User::create([
+            'name' => 'Employee',
+            'email' => 'format@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $headers = $this->apiHeadersFor($user);
+
+        $startResponse = $this->postJson('/api/time-entries/start', [
+            'description' => 'Primary timer',
+            'timer_slot' => 'primary',
+        ], $headers)->assertCreated();
+
+        $timeEntryId = (int) $startResponse->json('id');
+        TimeEntry::query()->whereKey($timeEntryId)->update([
+            'start_time' => now()->subMinutes(10),
+        ]);
+
+        Activity::create([
+            'user_id' => $user->id,
+            'time_entry_id' => $timeEntryId,
+            'type' => 'idle',
+            'name' => 'System Idle - Visual Studio Code',
+            'duration' => 301,
+            'recorded_at' => now(),
+        ]);
+
+        $this->postJson('/api/time-entries/stop', [
+            'timer_slot' => 'primary',
+            'auto_stopped_for_idle' => true,
+            'idle_seconds' => 301,
+        ], $headers)->assertOk();
+
+        Mail::assertQueued(IdleTimerStoppedMail::class, function (IdleTimerStoppedMail $mail) use ($user) {
+            return $mail->hasTo($user->email)
+                && $mail->idleSeconds === 301
+                && $mail->idleDurationLabel === '5 minutes 1 second';
         });
     }
 }
