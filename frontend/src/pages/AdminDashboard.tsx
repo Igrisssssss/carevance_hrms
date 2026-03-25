@@ -338,11 +338,12 @@ export default function AdminDashboard() {
     queryKey: ['admin-dashboard-users'],
     queryFn: async () => {
       const response = await userApi.getAll({ period: 'all' });
-      return (response.data || []).filter((item: any) => item.role === 'employee');
+      return (response.data || []).filter((item: any) => item.role !== 'client');
     },
   });
 
-  const employees = usersQuery.data || [];
+  const organizationUsers = usersQuery.data || [];
+  const employees = organizationUsers.filter((item: any) => item.role === 'employee');
 
   useEffect(() => {
     if (filters.scope === 'employee' && filters.selectedEmployeeId === '' && employees.length > 0) {
@@ -351,16 +352,16 @@ export default function AdminDashboard() {
   }, [employees, filters.scope, filters.selectedEmployeeId]);
 
   const organizationQuery = useQuery({
-    queryKey: ['admin-dashboard-organization', filters.startDate, filters.endDate, employees.map((employee: any) => employee.id).join(',')],
+    queryKey: ['admin-dashboard-organization', filters.startDate, filters.endDate, organizationUsers.map((user: any) => user.id).join(',')],
     enabled: filters.scope === 'organization' && usersQuery.isSuccess,
     queryFn: async () => {
       const payrollMonth = filters.endDate.slice(0, 7);
-      const employeeTimeEntriesResponses = employees.length === 0
+      const organizationTimeEntryResponses = organizationUsers.length === 0
         ? []
         : await Promise.all(
-            employees.map((employee: any) =>
+            organizationUsers.map((user: any) =>
               timeEntryApi.getAll({
-                user_id: Number(employee.id),
+                user_id: Number(user.id),
                 start_date: filters.startDate,
                 end_date: filters.endDate,
                 page: 1,
@@ -397,7 +398,7 @@ export default function AdminDashboard() {
         overall: overallResponse.data,
         insights: insightsResponse.data,
         websiteActivity: websiteActivityResponse.data?.data || [],
-        timeEntries: employeeTimeEntriesResponses.flatMap((response) => response.data?.data || []),
+        timeEntries: organizationTimeEntryResponses.flatMap((response) => response.data?.data || []),
         pendingLeaves: leaveResponse.data?.data || [],
         pendingTimeEdits: timeEditResponse.data?.data || [],
         payrollRecords: payrollResponse.data?.data || [],
