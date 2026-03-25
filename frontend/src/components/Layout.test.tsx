@@ -168,4 +168,55 @@ describe('Layout navigation', () => {
     expect(await screen.findByText(/desktop updates/i)).toBeInTheDocument();
     expect(screen.getByText(/carevance tracker v1.0.2/i)).toBeInTheDocument();
   });
+
+  it('shows a direct payroll navigation item in desktop shell for admins only', async () => {
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+      getUpdateState: vi.fn(),
+      checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(),
+      installUpdate: vi.fn(),
+      onUpdateState: vi.fn(),
+      clearUpdateStateListeners: vi.fn(),
+    };
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    const { rerender } = renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    fireEvent.click(await screen.findByRole('button', { name: /payroll/i }));
+
+    await waitFor(() => {
+      expect(openSpy).toHaveBeenCalledWith(
+        expect.stringContaining('/payroll?desktop_token=test-token'),
+        '_blank',
+        'noopener,noreferrer'
+      );
+    });
+
+    authState.value = {
+      user: {
+        id: 2,
+        name: 'Employee',
+        email: 'employee@example.com',
+        role: 'employee',
+        organization_id: 1,
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+      logout: vi.fn(),
+      token: 'test-token',
+    };
+
+    rerender(<Layout />);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /payroll/i })).not.toBeInTheDocument();
+    });
+
+    openSpy.mockRestore();
+  });
 });

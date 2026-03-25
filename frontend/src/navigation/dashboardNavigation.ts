@@ -76,9 +76,18 @@ export const topNavigation: NavGroup[] = [
   },
   {
     label: 'Payroll',
-    to: '/payroll',
     icon: Wallet,
     adminOnly: true,
+    items: [
+      { label: 'Payroll Overview', to: '/payroll', icon: Wallet, adminOnly: true },
+      { label: 'Pay Runs', to: '/payroll/runs', icon: FileSpreadsheet, adminOnly: true },
+      { label: 'Payroll Profiles', to: '/payroll/employees', icon: Users, adminOnly: true },
+      { label: 'Components', to: '/payroll/components', icon: SquareKanban, adminOnly: true },
+      { label: 'Adjustments', to: '/payroll/reimbursements', icon: Fingerprint, adminOnly: true },
+      { label: 'Payslips', to: '/payroll/payslips', icon: FileClock, adminOnly: true },
+      { label: 'Reports', to: '/payroll/reports', icon: LineChart, adminOnly: true },
+      { label: 'Settings', to: '/payroll/settings', icon: Settings, adminOnly: true },
+    ],
   },
   {
     label: 'Task',

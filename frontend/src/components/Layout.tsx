@@ -16,6 +16,7 @@ import {
   MessageSquare,
   Settings,
   Sparkles,
+  Wallet,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -71,6 +72,14 @@ export default function Layout() {
               externalPath: '/dashboard',
               external: true,
               icon: LayoutDashboard,
+            },
+            {
+              label: 'Payroll',
+              to: '/desktop-web-payroll',
+              externalPath: '/payroll',
+              external: true,
+              icon: Wallet,
+              adminOnly: true,
             },
             {
               label: 'Chat',

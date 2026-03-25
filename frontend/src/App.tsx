@@ -22,7 +22,7 @@ const Settings = lazy(() => import('@/pages/Settings'));
 const Monitoring = lazy(() => import('@/pages/Monitoring'));
 const Attendance = lazy(() => import('@/pages/Attendance'));
 const Chat = lazy(() => import('@/pages/Chat'));
-const Payroll = lazy(() => import('@/pages/Payroll'));
+const PayrollWorkspace = lazy(() => import('@/pages/PayrollWorkspace'));
 const UserManagement = lazy(() => import('@/pages/UserManagement'));
 const AuditLogs = lazy(() => import('@/pages/AuditLogs'));
 const ApprovalInbox = lazy(() => import('@/pages/ApprovalInbox'));
@@ -297,7 +297,14 @@ function App() {
             <Route path="reports/productivity" element={<AdminRoute><ReportsWorkspace mode="productivity" /></AdminRoute>} />
             <Route path="reports/custom-export" element={<AdminRoute><ReportsWorkspace mode="custom-export" /></AdminRoute>} />
             <Route path="invoices" element={<AdminRoute><Invoices /></AdminRoute>} />
-            <Route path="payroll" element={<AdminRoute><Payroll /></AdminRoute>} />
+            <Route path="payroll" element={<PayrollWorkspace mode="overview" />} />
+            <Route path="payroll/runs" element={<PayrollWorkspace mode="runs" />} />
+            <Route path="payroll/employees" element={<PayrollWorkspace mode="employees" />} />
+            <Route path="payroll/components" element={<PayrollWorkspace mode="components" />} />
+            <Route path="payroll/reimbursements" element={<PayrollWorkspace mode="reimbursements" />} />
+            <Route path="payroll/payslips" element={<PayrollWorkspace mode="payslips" />} />
+            <Route path="payroll/reports" element={<PayrollWorkspace mode="reports" />} />
+            <Route path="payroll/settings" element={<PayrollWorkspace mode="settings" />} />
             <Route path="user-management" element={<Navigate to="/employees" replace />} />
             <Route path="employees" element={<AdminRoute><EmployeeManagementWorkspace mode="employees" /></AdminRoute>} />
             <Route path="employees/teams" element={<AdminRoute><EmployeeManagementWorkspace mode="teams" /></AdminRoute>} />

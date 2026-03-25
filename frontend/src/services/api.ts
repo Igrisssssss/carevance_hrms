@@ -27,6 +27,15 @@ import type {
   PayrollComponent,
   PayrollRecord,
   PayrollTransaction,
+  PayrollWorkspaceOverview,
+  PayrollRun,
+  PayrollProfile,
+  SalaryComponentMaster,
+  SalaryTemplate,
+  PayrollAdjustment,
+  ReimbursementClaim,
+  PayrollReportsPayload,
+  PayrollSettingsPayload,
   AppNotificationItem,
   UserProfile360,
   PaginatedResponse,
@@ -722,6 +731,90 @@ export const payrollApi = {
     api.get<Blob>(`/payroll/payslips/${id}/pdf`, {
       responseType: 'blob' as AxiosRequestConfig['responseType'],
     }),
+};
+
+export const payrollWorkspaceApi = {
+  overview: (params?: { payroll_month?: string }) =>
+    api.get<PayrollWorkspaceOverview>('/payroll/workspace/overview', { params }),
+
+  getRuns: (params?: { payroll_month?: string }) =>
+    api.get<{ data: PayrollRun[] }>('/payroll/workspace/runs', { params }),
+
+  getRun: (id: number) =>
+    api.get<{ run: PayrollRun; summary: Record<string, any>; warnings: Array<{ user_id: number; warnings: string[] }> }>(`/payroll/workspace/runs/${id}`),
+
+  updateRunStatus: (id: number, status: string) =>
+    api.post<PayrollRun>(`/payroll/workspace/runs/${id}/status`, { status }),
+
+  getProfiles: () =>
+    api.get<{ employees: Array<{ id: number; name: string; email: string; role: string }>; templates: SalaryTemplate[]; profiles: PayrollProfile[] }>('/payroll/workspace/profiles'),
+
+  createProfile: (data: Partial<PayrollProfile> & { user_id: number; template_effective_from?: string }) =>
+    api.post<PayrollProfile>('/payroll/workspace/profiles', data),
+
+  updateProfile: (id: number, data: Partial<PayrollProfile> & { user_id: number; template_effective_from?: string }) =>
+    api.put<PayrollProfile>(`/payroll/workspace/profiles/${id}`, data),
+
+  getComponents: () =>
+    api.get<{ data: SalaryComponentMaster[] }>('/payroll/workspace/components'),
+
+  createComponent: (data: Partial<SalaryComponentMaster> & { name: string; code: string; category: string; value_type: string }) =>
+    api.post<SalaryComponentMaster>('/payroll/workspace/components', data),
+
+  updateComponent: (id: number, data: Partial<SalaryComponentMaster> & { name: string; code: string; category: string; value_type: string }) =>
+    api.put<SalaryComponentMaster>(`/payroll/workspace/components/${id}`, data),
+
+  deleteComponent: (id: number) =>
+    api.delete<{ message: string }>(`/payroll/workspace/components/${id}`),
+
+  getTemplates: () =>
+    api.get<{ components: SalaryComponentMaster[]; data: SalaryTemplate[] }>('/payroll/workspace/templates'),
+
+  createTemplate: (data: {
+    name: string;
+    description?: string;
+    currency?: string;
+    is_active?: boolean;
+    components?: Array<{ salary_component_id: number; value_type: 'fixed' | 'percentage'; value: number; sort_order?: number; is_enabled?: boolean }>;
+  }) => api.post<SalaryTemplate>('/payroll/workspace/templates', data),
+
+  updateTemplate: (id: number, data: {
+    name: string;
+    description?: string;
+    currency?: string;
+    is_active?: boolean;
+    components?: Array<{ salary_component_id: number; value_type: 'fixed' | 'percentage'; value: number; sort_order?: number; is_enabled?: boolean }>;
+  }) => api.put<SalaryTemplate>(`/payroll/workspace/templates/${id}`, data),
+
+  deleteTemplate: (id: number) =>
+    api.delete<{ message: string }>(`/payroll/workspace/templates/${id}`),
+
+  getAdjustments: (params?: { effective_month?: string }) =>
+    api.get<{ employees: Array<{ id: number; name: string; email: string; role: string }>; adjustments: PayrollAdjustment[]; reimbursements: ReimbursementClaim[] }>('/payroll/workspace/adjustments', { params }),
+
+  createAdjustment: (data: Partial<PayrollAdjustment> & { user_id: number; title: string; kind: string; effective_month: string; amount: number }) =>
+    api.post<PayrollAdjustment>('/payroll/workspace/adjustments', data),
+
+  updateAdjustment: (id: number, data: Partial<PayrollAdjustment> & { user_id: number; title: string; kind: string; effective_month: string; amount: number }) =>
+    api.put<PayrollAdjustment>(`/payroll/workspace/adjustments/${id}`, data),
+
+  approveAdjustment: (id: number, approval_note?: string) =>
+    api.post<PayrollAdjustment>(`/payroll/workspace/adjustments/${id}/approve`, { approval_note }),
+
+  rejectAdjustment: (id: number, approval_note?: string) =>
+    api.post<PayrollAdjustment>(`/payroll/workspace/adjustments/${id}/reject`, { approval_note }),
+
+  applyAdjustment: (id: number, approval_note?: string) =>
+    api.post<PayrollAdjustment>(`/payroll/workspace/adjustments/${id}/apply`, { approval_note }),
+
+  reports: (params?: { payroll_month?: string }) =>
+    api.get<PayrollReportsPayload>('/payroll/workspace/reports', { params }),
+
+  settings: () =>
+    api.get<PayrollSettingsPayload>('/payroll/workspace/settings'),
+
+  updateSettings: (data: Partial<PayrollSettingsPayload>) =>
+    api.put<PayrollSettingsPayload>('/payroll/workspace/settings', data),
 };
 
 export const notificationApi = {

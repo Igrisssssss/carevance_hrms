@@ -61,6 +61,16 @@ class User extends Authenticatable
         return $this->hasMany(Payroll::class);
     }
 
+    public function payrollProfile(): HasOne
+    {
+        return $this->hasOne(PayrollProfile::class);
+    }
+
+    public function salaryAssignments(): HasMany
+    {
+        return $this->hasMany(EmployeeSalaryAssignment::class);
+    }
+
     public function sentChatMessages()
     {
         return $this->hasMany(ChatMessage::class, 'sender_id');

@@ -1,9 +1,34 @@
 <?php
 
 use App\Http\Controllers\Api\PayrollController;
+use App\Http\Controllers\Api\PayrollWorkspaceController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('role:admin,manager')->group(function () {
+Route::get('/payroll/workspace/overview', [PayrollWorkspaceController::class, 'overview']);
+Route::get('/payroll/workspace/runs', [PayrollWorkspaceController::class, 'payRuns']);
+Route::get('/payroll/workspace/runs/{id}', [PayrollWorkspaceController::class, 'showPayRun']);
+Route::post('/payroll/workspace/runs/{id}/status', [PayrollWorkspaceController::class, 'updatePayRunStatus']);
+Route::get('/payroll/workspace/profiles', [PayrollWorkspaceController::class, 'profiles']);
+Route::post('/payroll/workspace/profiles', [PayrollWorkspaceController::class, 'storeProfile']);
+Route::put('/payroll/workspace/profiles/{id}', [PayrollWorkspaceController::class, 'updateProfile']);
+Route::get('/payroll/workspace/components', [PayrollWorkspaceController::class, 'components']);
+Route::post('/payroll/workspace/components', [PayrollWorkspaceController::class, 'storeComponent']);
+Route::put('/payroll/workspace/components/{id}', [PayrollWorkspaceController::class, 'updateComponent']);
+Route::delete('/payroll/workspace/components/{id}', [PayrollWorkspaceController::class, 'deleteComponent']);
+Route::get('/payroll/workspace/templates', [PayrollWorkspaceController::class, 'templates']);
+Route::post('/payroll/workspace/templates', [PayrollWorkspaceController::class, 'storeTemplate']);
+Route::put('/payroll/workspace/templates/{id}', [PayrollWorkspaceController::class, 'updateTemplate']);
+Route::delete('/payroll/workspace/templates/{id}', [PayrollWorkspaceController::class, 'deleteTemplate']);
+Route::get('/payroll/workspace/adjustments', [PayrollWorkspaceController::class, 'adjustments']);
+Route::post('/payroll/workspace/adjustments', [PayrollWorkspaceController::class, 'storeAdjustment']);
+Route::put('/payroll/workspace/adjustments/{id}', [PayrollWorkspaceController::class, 'updateAdjustment']);
+Route::post('/payroll/workspace/adjustments/{id}/approve', [PayrollWorkspaceController::class, 'updateAdjustmentStatus'])->defaults('status', 'approve');
+Route::post('/payroll/workspace/adjustments/{id}/reject', [PayrollWorkspaceController::class, 'updateAdjustmentStatus'])->defaults('status', 'reject');
+Route::post('/payroll/workspace/adjustments/{id}/apply', [PayrollWorkspaceController::class, 'updateAdjustmentStatus'])->defaults('status', 'apply');
+Route::get('/payroll/workspace/reports', [PayrollWorkspaceController::class, 'reports']);
+Route::get('/payroll/workspace/settings', [PayrollWorkspaceController::class, 'settings']);
+Route::put('/payroll/workspace/settings', [PayrollWorkspaceController::class, 'updateSettings']);
 Route::get('/payroll/structures', [PayrollController::class, 'structures']);
 Route::post('/payroll/structures', [PayrollController::class, 'upsertStructure']);
 Route::put('/payroll/structures/{id}', [PayrollController::class, 'updateStructure']);

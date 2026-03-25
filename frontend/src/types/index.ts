@@ -460,6 +460,204 @@ export interface PayrollTransaction {
   updated_at: string;
 }
 
+export interface PayrollWorkspaceOverview {
+  month: string;
+  summary: {
+    gross_payroll: number;
+    net_payroll: number;
+    employees_in_current_run: number;
+    pending_approvals: number;
+    paid_count: number;
+    failed_or_pending_payouts: number;
+    total_overtime_value: number;
+    reimbursements_pending: number;
+  };
+  current_pay_run: PayrollRun | null;
+  missing_profiles: PayrollReadinessWarning[];
+  recent_transactions: Array<{
+    id: number;
+    provider: string;
+    status: string;
+    amount: number;
+    currency: string;
+    created_at: string;
+    employee?: Pick<User, 'id' | 'name' | 'email'> | null;
+  }>;
+  pending_actions: {
+    leave_requests: number;
+    attendance_time_edits: number;
+    payroll_adjustments: number;
+  };
+  status_distribution: Record<string, number>;
+  quick_links: Record<string, number>;
+  readiness_warnings: PayrollReadinessWarning[];
+}
+
+export interface PayrollReadinessWarning {
+  user_id: number;
+  name: string;
+  email: string;
+  warnings: string[];
+}
+
+export interface PayrollRun {
+  id: number;
+  run_code: string;
+  payroll_month: string;
+  status: string;
+  currency: string;
+  items_count?: number;
+  gross_payroll?: number;
+  net_payroll?: number;
+  paid_count?: number;
+  failed_payouts?: number;
+  warnings_count?: number;
+  generated_at?: string | null;
+  locked_at?: string | null;
+  items?: PayrollRunItem[];
+  summary?: Record<string, any>;
+  warnings?: Array<{ user_id: number; warnings: string[] }>;
+}
+
+export interface PayrollRunItem {
+  id: number;
+  pay_run_id: number;
+  organization_id: number;
+  user_id: number;
+  payroll_id?: number | null;
+  payroll_profile_id?: number | null;
+  payable_days: number;
+  worked_seconds: number;
+  overtime_seconds: number;
+  approved_leave_days: number;
+  approved_time_edit_seconds: number;
+  gross_pay: number;
+  total_deductions: number;
+  net_pay: number;
+  status: string;
+  payout_status: string;
+  salary_breakdown?: Record<string, any> | null;
+  attendance_summary?: Record<string, any> | null;
+  warnings?: string[] | null;
+  user?: User;
+  payroll?: PayrollRecord;
+  payroll_profile?: PayrollProfile | null;
+}
+
+export interface PayrollProfile {
+  id: number;
+  organization_id: number;
+  user_id: number;
+  salary_template_id?: number | null;
+  currency: string;
+  payout_method: string;
+  bank_name?: string | null;
+  bank_account_number?: string | null;
+  bank_ifsc_swift?: string | null;
+  payment_email?: string | null;
+  tax_identifier?: string | null;
+  payroll_eligible: boolean;
+  reimbursements_eligible: boolean;
+  is_active: boolean;
+  earning_components?: Array<Record<string, any>> | null;
+  deduction_components?: Array<Record<string, any>> | null;
+  bonus_amount: number;
+  tax_amount: number;
+  meta?: Record<string, any> | null;
+  user?: User;
+  salary_template?: SalaryTemplate | null;
+}
+
+export interface SalaryComponentMaster {
+  id: number;
+  organization_id: number;
+  name: string;
+  code: string;
+  category: 'basic' | 'allowance' | 'overtime' | 'bonus' | 'reimbursement' | 'penalty' | 'tax' | 'deduction' | 'other';
+  value_type: 'fixed' | 'percentage';
+  default_value: number;
+  is_taxable: boolean;
+  is_active: boolean;
+  meta?: Record<string, any> | null;
+}
+
+export interface SalaryTemplateComponentItem {
+  id: number;
+  salary_template_id: number;
+  salary_component_id: number;
+  value_type: 'fixed' | 'percentage';
+  value: number;
+  sort_order: number;
+  is_enabled: boolean;
+  component?: SalaryComponentMaster;
+}
+
+export interface SalaryTemplate {
+  id: number;
+  organization_id: number;
+  name: string;
+  description?: string | null;
+  currency: string;
+  is_active: boolean;
+  components: SalaryTemplateComponentItem[];
+}
+
+export interface PayrollAdjustment {
+  id: number;
+  organization_id: number;
+  user_id: number;
+  payroll_profile_id?: number | null;
+  reimbursement_id?: number | null;
+  title: string;
+  description?: string | null;
+  kind: 'reimbursement' | 'bonus' | 'manual_deduction' | 'penalty' | 'one_time_adjustment';
+  effective_month: string;
+  amount: number;
+  currency: string;
+  status: 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'applied';
+  approval_note?: string | null;
+  approved_at?: string | null;
+  applied_at?: string | null;
+  user?: User;
+  reimbursement?: ReimbursementClaim | null;
+}
+
+export interface ReimbursementClaim {
+  id: number;
+  organization_id: number;
+  user_id: number;
+  title: string;
+  description?: string | null;
+  expense_date?: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  approved_at?: string | null;
+  user?: User;
+}
+
+export interface PayrollReportsPayload {
+  monthly_summary: Record<string, any>;
+  employee_payroll_sheet: Array<Record<string, any>>;
+  department_payroll_cost: Array<Record<string, any>>;
+  deductions_report: Array<Record<string, any>>;
+  payout_status_report: Array<Record<string, any>>;
+  attendance_vs_payable_days: Array<Record<string, any>>;
+  overtime_summary: Array<Record<string, any>>;
+}
+
+export interface PayrollSettingsPayload {
+  id: number;
+  organization_id: number;
+  payroll_calendar?: Record<string, any> | null;
+  default_payout_method?: Record<string, any> | null;
+  overtime_rules?: Record<string, any> | null;
+  late_deduction_rules?: Record<string, any> | null;
+  leave_mapping?: Record<string, any> | null;
+  approval_workflow?: Record<string, any> | null;
+  payslip_branding?: Record<string, any> | null;
+}
+
 export interface AppNotificationItem {
   id: number;
   type: 'announcement' | 'news' | 'salary_credited' | string;

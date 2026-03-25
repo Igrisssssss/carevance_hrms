@@ -25,6 +25,7 @@ use App\Services\Audit\AuditLogService;
 use App\Services\Payroll\PayrollCalculatorService;
 use App\Services\Payroll\PayrollDomainService;
 use App\Services\Payroll\PayrollPayoutManager;
+use App\Services\Payroll\PayrollWorkspaceService;
 use App\Services\Payroll\StripePayrollPayoutService;
 use Carbon\Carbon;
 use Dompdf\Dompdf;
@@ -42,6 +43,7 @@ class PayrollController extends Controller
         private readonly PayrollCalculatorService $payrollCalculatorService,
         private readonly PayrollDomainService $payrollDomainService,
         private readonly PayrollPayoutManager $payrollPayoutManager,
+        private readonly PayrollWorkspaceService $payrollWorkspaceService,
         private readonly StripePayrollPayoutService $stripePayrollPayoutService,
     ) {
     }
@@ -136,12 +138,15 @@ class PayrollController extends Controller
             &$skipped
         ) {
             foreach ($employees as $employee) {
-                $structure = $this->payrollDomainService->resolvePayrollStructure(
+                $compensation = $this->payrollWorkspaceService->compensationSnapshot(
                     (int) $currentUser->organization_id,
                     (int) $employee->id,
-                    $periodStart,
-                    null
+                    (string) $request->payroll_month
                 );
+                $profile = \App\Models\PayrollProfile::query()
+                    ->where('organization_id', $currentUser->organization_id)
+                    ->where('user_id', $employee->id)
+                    ->first();
 
                 $existing = Payroll::where('organization_id', $currentUser->organization_id)
                     ->where('user_id', $employee->id)
@@ -156,14 +161,13 @@ class PayrollController extends Controller
                     continue;
                 }
 
-                if ($structure) {
-                    [, $allowanceTotal] = $this->payrollDomainService->computeComponents($structure->allowances->toArray(), (float) $structure->basic_salary);
-                    [, $deductionTotal] = $this->payrollDomainService->computeComponents($structure->deductions->toArray(), (float) $structure->basic_salary);
-                    $basicSalary = round((float) $structure->basic_salary, 2);
-                    $allowances = round((float) $allowanceTotal, 2);
-                    $deductions = round((float) $deductionTotal, 2);
-                    $bonus = 0.0;
-                    $tax = 0.0;
+                if (($compensation['source'] ?? 'none') !== 'none') {
+                    $snapshot = $compensation['snapshot'] ?? [];
+                    $basicSalary = round((float) ($snapshot['basic_salary'] ?? 0), 2);
+                    $allowances = round((float) ($snapshot['allowances'] ?? 0), 2);
+                    $deductions = round((float) ($snapshot['deductions'] ?? 0), 2);
+                    $bonus = round((float) ($snapshot['bonus'] ?? 0) + (float) ($profile?->bonus_amount ?? 0), 2);
+                    $tax = round((float) ($snapshot['tax'] ?? 0) + (float) ($profile?->tax_amount ?? 0), 2);
                 } else {
                     // Fallback: generate a draft payroll even when structure is missing.
                     $lastPayroll = Payroll::where('organization_id', $currentUser->organization_id)
@@ -859,19 +863,26 @@ class PayrollController extends Controller
         $periodStart = Carbon::createFromFormat('Y-m', $request->period_month)->startOfMonth();
         $periodEnd = $periodStart->copy()->endOfMonth();
 
-        $structure = $this->payrollDomainService->resolvePayrollStructure(
-            $currentUser->organization_id,
-            $targetUser->id,
-            $periodStart,
-            $request->get('payroll_structure_id')
+        $compensation = $this->payrollWorkspaceService->compensationSnapshot(
+            (int) $currentUser->organization_id,
+            (int) $targetUser->id,
+            (string) $request->period_month
         );
-        if (!$structure) {
-            return response()->json(['message' => 'No payroll structure found for selected period'], 422);
+        if (($compensation['source'] ?? 'none') === 'none') {
+            return response()->json(['message' => 'No payroll structure or salary template found for selected period'], 422);
         }
 
-        $basicSalary = (float) $structure->basic_salary;
-        [$allowances, $allowanceTotal] = $this->payrollDomainService->computeComponents($structure->allowances->toArray(), $basicSalary);
-        [$deductions, $deductionTotal] = $this->payrollDomainService->computeComponents($structure->deductions->toArray(), $basicSalary);
+        $structure = $compensation['structure'] ?? null;
+        $snapshot = $compensation['snapshot'] ?? [];
+        $profile = \App\Models\PayrollProfile::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->where('user_id', $targetUser->id)
+            ->first();
+        $basicSalary = (float) ($snapshot['basic_salary'] ?? 0);
+        $allowances = $snapshot['earnings_components'] ?? [];
+        $deductions = $snapshot['deduction_components'] ?? [];
+        $allowanceTotal = (float) ($snapshot['allowances'] ?? 0) + (float) ($snapshot['bonus'] ?? 0) + (float) ($profile?->bonus_amount ?? 0);
+        $deductionTotal = (float) ($snapshot['deductions'] ?? 0) + (float) ($snapshot['tax'] ?? 0) + (float) ($profile?->tax_amount ?? 0);
         $net = max(0, $basicSalary + $allowanceTotal - $deductionTotal);
 
         $payslip = Payslip::updateOrCreate(
@@ -881,8 +892,8 @@ class PayrollController extends Controller
                 'period_month' => $request->period_month,
             ],
             [
-                'payroll_structure_id' => $structure->id,
-                'currency' => $structure->currency ?: 'INR',
+                'payroll_structure_id' => $structure?->id,
+                'currency' => $structure?->currency ?: (string) config('payroll.default_currency', 'INR'),
                 'basic_salary' => round($basicSalary, 2),
                 'total_allowances' => round($allowanceTotal, 2),
                 'total_deductions' => round($deductionTotal, 2),
