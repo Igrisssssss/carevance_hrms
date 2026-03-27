@@ -1,86 +1,93 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import PageHeader from '@/components/dashboard/PageHeader';
-import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
+import FilterPanel from '@/components/dashboard/FilterPanel';
+import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
-import StatusBadge from '@/components/ui/StatusBadge';
-import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
+import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { payrollWorkspaceApi } from '@/services/api';
 import type { PayrollProfile } from '@/types';
-import { Landmark, UserRound, Wallet } from 'lucide-react';
-import { formatPayrollCurrency, payrollStatusTone } from '@/features/payroll/utils';
+import { Landmark, Receipt, UserRound, Wallet } from 'lucide-react';
+import PayrollSectionCard from '@/features/payroll/components/PayrollSectionCard';
+import PayrollStatusBadge from '@/features/payroll/components/PayrollStatusBadge';
+import PayrollProfileForm, { type PayrollProfileFormValue } from '@/features/payroll/components/PayrollProfileForm';
+import { defaultPayrollMonth, formatPayrollCurrency, formatPayrollMonth, maskBankAccount, templateAssignmentLabel } from '@/features/payroll/utils';
 
-const emptyForm = {
-  user_id: '',
-  salary_template_id: '',
-  currency: 'INR',
-  payout_method: 'mock',
-  bank_name: '',
-  bank_account_number: '',
-  bank_ifsc_swift: '',
-  payment_email: '',
-  tax_identifier: '',
-  payroll_eligible: true,
-  reimbursements_eligible: true,
-  is_active: true,
-  bonus_amount: 0,
-  tax_amount: 0,
-  template_effective_from: new Date().toISOString().slice(0, 10),
+const profileWarnings = (profile: PayrollProfile) => {
+  const warnings: string[] = [];
+  if (!profile.salary_template_id) warnings.push('Missing salary template');
+  if (!profile.payout_method) warnings.push('Missing payout method');
+  if (!profile.bank_account_number && !profile.payment_email) warnings.push('Missing payout destination');
+  if (!profile.payroll_eligible) warnings.push('Payroll eligibility disabled');
+  if (!profile.is_active) warnings.push('Profile inactive');
+  return warnings;
+};
+
+const formatRevisionDate = (value?: string | null) => {
+  if (!value) return 'Not recorded';
+  return new Date(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
 export default function PayrollProfilesView() {
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
-  const [form, setForm] = useState<any>(emptyForm);
+  const [draftUserId, setDraftUserId] = useState<number | undefined>(undefined);
+  const [payrollMonth, setPayrollMonth] = useState(defaultPayrollMonth());
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'configured' | 'missing'>('all');
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const profilesQuery = useQuery({
-    queryKey: ['payroll-workspace-profiles'],
-    queryFn: async () => {
-      const response = await payrollWorkspaceApi.getProfiles();
-      return response.data;
-    },
+    queryKey: ['payroll-workspace-profiles', payrollMonth],
+    queryFn: async () => (await payrollWorkspaceApi.getProfiles({ payroll_month: payrollMonth })).data,
   });
 
   const profiles = profilesQuery.data?.profiles || [];
   const employees = profilesQuery.data?.employees || [];
   const templates = profilesQuery.data?.templates || [];
+  const profileByUserId = useMemo(() => new Map(profiles.map((profile) => [profile.user_id, profile])), [profiles]);
+  const missingEmployees = useMemo(() => employees.filter((employee) => !profileByUserId.has(employee.id)), [employees, profileByUserId]);
+
+  const filteredProfiles = useMemo(
+    () => profiles.filter((profile) => {
+      const haystack = `${profile.user?.name || ''} ${profile.user?.email || ''}`.toLowerCase();
+      return !search.trim() || haystack.includes(search.toLowerCase());
+    }),
+    [profiles, search]
+  );
+
+  const filteredMissing = useMemo(
+    () => missingEmployees.filter((employee) => {
+      const haystack = `${employee.name} ${employee.email}`.toLowerCase();
+      return !search.trim() || haystack.includes(search.toLowerCase());
+    }),
+    [missingEmployees, search]
+  );
 
   const selectedProfile = useMemo(
-    () => profiles.find((item) => item.id === selectedProfileId) || null,
+    () => profiles.find((profile) => profile.id === selectedProfileId) || null,
     [profiles, selectedProfileId]
   );
 
-  useEffect(() => {
-    if (selectedProfile) {
-      setForm({
-        user_id: selectedProfile.user_id,
-        salary_template_id: selectedProfile.salary_template_id || '',
-        currency: selectedProfile.currency || 'INR',
-        payout_method: selectedProfile.payout_method || 'mock',
-        bank_name: selectedProfile.bank_name || '',
-        bank_account_number: selectedProfile.bank_account_number || '',
-        bank_ifsc_swift: selectedProfile.bank_ifsc_swift || '',
-        payment_email: selectedProfile.payment_email || '',
-        tax_identifier: selectedProfile.tax_identifier || '',
-        payroll_eligible: selectedProfile.payroll_eligible,
-        reimbursements_eligible: selectedProfile.reimbursements_eligible,
-        is_active: selectedProfile.is_active,
-        bonus_amount: selectedProfile.bonus_amount || 0,
-        tax_amount: selectedProfile.tax_amount || 0,
-        template_effective_from: new Date().toISOString().slice(0, 10),
-      });
-      return;
-    }
+  const selectedWarnings = selectedProfile ? profileWarnings(selectedProfile) : [];
+  const readyProfilesCount = profiles.filter((profile) => profileWarnings(profile).length === 0).length;
+  const bankReadyCount = profiles.filter((profile) => Boolean(profile.bank_account_number || profile.payment_email)).length;
+  const currentCycleReadyCount = profiles.filter((profile) => profile.payroll_eligible && profile.is_active && profileWarnings(profile).length === 0).length;
 
-    if (!selectedProfileId) {
-      setForm(emptyForm);
-    }
-  }, [selectedProfile, selectedProfileId]);
+  const openCreateForm = (userId?: number) => {
+    setSelectedProfileId(null);
+    setDraftUserId(userId);
+  };
 
-  const saveProfile = async () => {
+  const openEditForm = (profileId: number) => {
+    setDraftUserId(undefined);
+    setSelectedProfileId(profileId);
+  };
+
+  const saveProfile = async (form: PayrollProfileFormValue) => {
     setFeedback(null);
     setIsSaving(true);
     try {
@@ -99,6 +106,8 @@ export default function PayrollProfilesView() {
       }
 
       setFeedback({ tone: 'success', message: selectedProfile ? 'Payroll profile updated.' : 'Payroll profile created.' });
+      setSelectedProfileId(null);
+      setDraftUserId(undefined);
       await profilesQuery.refetch();
     } catch (error: any) {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Failed to save payroll profile.' });
@@ -108,146 +117,311 @@ export default function PayrollProfilesView() {
   };
 
   if (profilesQuery.isLoading) {
-    return <PageLoadingState label="Loading payroll profiles..." />;
+    return <PageLoadingState label="Loading payroll employee profiles..." />;
   }
 
   if (profilesQuery.isError) {
-    return <PageErrorState message={(profilesQuery.error as any)?.response?.data?.message || 'Failed to load payroll profiles.'} onRetry={() => void profilesQuery.refetch()} />;
+    return <PageErrorState message={(profilesQuery.error as any)?.response?.data?.message || 'Failed to load payroll employee profiles.'} onRetry={() => void profilesQuery.refetch()} />;
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
-        eyebrow="Payroll workspace"
+        eyebrow="Payroll records"
         title="Employee Payroll Profiles"
-        description="Extend existing employee records with payroll-only settings such as template assignment, payout details, bonus/tax defaults, and payroll eligibility."
+        description="Review payroll readiness, payout setup, template assignment, revision signals, and current-cycle completeness before moving people into pay runs."
+        actions={(
+          <div className="min-w-[11rem]">
+            <FieldLabel>Current Cycle</FieldLabel>
+            <TextInput type="month" value={payrollMonth} onChange={(event) => setPayrollMonth(event.target.value)} />
+          </div>
+        )}
       />
 
       {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Profiles" value={profiles.length} hint="Payroll-specific employee records" icon={UserRound} accent="sky" />
-        <MetricCard label="Eligible" value={profiles.filter((item) => item.payroll_eligible).length} hint="Marked payroll eligible" icon={Wallet} accent="emerald" />
-        <MetricCard label="Reimbursement Eligible" value={profiles.filter((item) => item.reimbursements_eligible).length} hint="Can receive reimbursements" icon={Landmark} accent="violet" />
-        <MetricCard label="Default Bonus" value={formatPayrollCurrency(profiles.reduce((sum, item) => sum + Number(item.bonus_amount || 0), 0))} hint="Configured bonus across profiles" icon={Wallet} accent="amber" />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <MetricCard label="Configured Profiles" value={profiles.length} hint="Employee payroll records already created." icon={UserRound} accent="sky" />
+        <MetricCard label="Payroll Ready" value={readyProfilesCount} hint="Profiles with template, payout method, destination, and active eligibility." icon={Wallet} accent="emerald" />
+        <MetricCard label="Current Cycle Ready" value={currentCycleReadyCount} hint={`Ready for ${formatPayrollMonth(payrollMonth)}.`} icon={Wallet} accent="violet" />
+        <MetricCard label="Missing Profiles" value={missingEmployees.length} hint="Employees not yet configured for payroll." icon={Receipt} accent="amber" />
+        <MetricCard label="Payout Ready" value={bankReadyCount} hint="Profiles with a payout destination already captured." icon={Landmark} accent="sky" />
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <SurfaceCard className="p-5">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Employee Profiles</h3>
-            <Button variant="secondary" size="sm" onClick={() => setSelectedProfileId(null)}>New Profile</Button>
-          </div>
-          <div className="mt-4 space-y-3">
-            {profiles.length === 0 ? (
-              <p className="text-sm text-slate-500">No payroll profiles created yet.</p>
-            ) : profiles.map((profile: PayrollProfile) => (
-              <button
-                key={profile.id}
-                type="button"
-                onClick={() => setSelectedProfileId(profile.id)}
-                className={`w-full rounded-[22px] border px-4 py-4 text-left transition ${selectedProfileId === profile.id ? 'border-sky-300 bg-sky-50/70' : 'border-slate-200/80 bg-slate-50/70 hover:bg-white'}`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-slate-950">{profile.user?.name || `User #${profile.user_id}`}</p>
-                    <p className="text-sm text-slate-500">{profile.user?.email}</p>
+      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_0.6fr_auto]">
+        <div>
+          <FieldLabel>Search employee</FieldLabel>
+          <TextInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by employee name or email" />
+        </div>
+        <div>
+          <FieldLabel>View</FieldLabel>
+          <SelectInput value={filterType} onChange={(event) => setFilterType(event.target.value as 'all' | 'configured' | 'missing')}>
+            <option value="all">Configured + missing</option>
+            <option value="configured">Configured only</option>
+            <option value="missing">Missing only</option>
+          </SelectInput>
+        </div>
+        <div className="flex items-end">
+          <Button variant="secondary" className="w-full" onClick={() => { setSearch(''); setFilterType('all'); }}>
+            Reset Filters
+          </Button>
+        </div>
+      </FilterPanel>
+
+      {(filterType === 'all' || filterType === 'configured') ? (
+        <DataTable
+          title="Configured Payroll Records"
+          description={`Operational payroll record index for ${formatPayrollMonth(payrollMonth)} with readiness, payout setup, compliance visibility, and compensation-change signals.`}
+          rows={filteredProfiles}
+          emptyMessage="No configured payroll profiles match the current filters."
+          stickyHeader
+          headerAction={<Button variant="secondary" size="sm" onClick={() => openCreateForm()}>New Payroll Profile</Button>}
+          columns={[
+            {
+              key: 'employee',
+              header: 'Employee',
+              className: 'min-w-[16rem]',
+              render: (profile: PayrollProfile) => (
+                <div>
+                  <p className="font-medium text-slate-950">{profile.user?.name || `User #${profile.user_id}`}</p>
+                  <p className="mt-1 text-sm text-slate-500">{profile.user?.email}</p>
+                </div>
+              ),
+            },
+            {
+              key: 'record',
+              header: 'Payroll Record',
+              className: 'min-w-[15rem]',
+              render: (profile: PayrollProfile) => {
+                const cycleReady = profile.is_active && profile.payroll_eligible && profileWarnings(profile).length === 0;
+                return (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      <PayrollStatusBadge status={profile.is_active ? 'active' : 'inactive'} />
+                      <PayrollStatusBadge status={profile.payroll_eligible ? 'eligible' : 'ineligible'} />
+                      <PayrollStatusBadge status={cycleReady ? 'healthy' : 'pending'} />
+                    </div>
+                    <p className="text-sm text-slate-500">{cycleReady ? 'Ready for current cycle' : 'Needs setup before clean processing'}</p>
                   </div>
-                  <StatusBadge tone={payrollStatusTone(profile.is_active ? 'approved' : 'rejected')}>{profile.is_active ? 'active' : 'inactive'}</StatusBadge>
+                );
+              },
+            },
+            {
+              key: 'salary_setup',
+              header: 'Salary Template',
+              render: (profile: PayrollProfile) => (
+                <div>
+                  <p className="font-medium text-slate-950">{templateAssignmentLabel(profile.salary_template)}</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Bonus {formatPayrollCurrency(Number(profile.bonus_amount || 0), profile.currency)} | Tax {formatPayrollCurrency(Number(profile.tax_amount || 0), profile.currency)}
+                  </p>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                  <span>Template: {profile.salary_template?.name || 'Not assigned'}</span>
-                  <span>Payout: {profile.payout_method || 'n/a'}</span>
+              ),
+            },
+            {
+              key: 'payout',
+              header: 'Payout And Bank',
+              render: (profile: PayrollProfile) => {
+                const payoutReady = Boolean(profile.bank_account_number || profile.payment_email);
+                return (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      <PayrollStatusBadge status={profile.payout_method || 'incomplete'} />
+                      <PayrollStatusBadge status={payoutReady ? 'verified' : 'incomplete'} />
+                    </div>
+                    <p className="text-sm text-slate-500">
+                      {profile.bank_account_number ? maskBankAccount(profile.bank_account_number) : profile.payment_email || 'No payout destination'}
+                    </p>
+                  </div>
+                );
+              },
+            },
+            {
+              key: 'compliance',
+              header: 'Compliance',
+              render: (profile: PayrollProfile) => (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    <PayrollStatusBadge status={profile.tax_identifier ? 'verified' : 'incomplete'} />
+                    <PayrollStatusBadge status={profile.reimbursements_eligible ? 'active' : 'inactive'} />
+                  </div>
+                  <p className="text-sm text-slate-500">{profile.tax_identifier ? 'Tax ID captured' : 'Tax details still incomplete'}</p>
                 </div>
-              </button>
-            ))}
-          </div>
-        </SurfaceCard>
+              ),
+            },
+            {
+              key: 'revisions',
+              header: 'Revisions And Adjustments',
+              className: 'min-w-[15rem]',
+              render: (profile: PayrollProfile) => (
+                <div>
+                  <p className="font-medium text-slate-950">Revised {formatRevisionDate(profile.last_revision_date)}</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {Number(profile.current_cycle_adjustments_count || 0)} current-cycle adjustments | {formatPayrollCurrency(Number(profile.current_cycle_adjustments_total || 0), profile.currency)}
+                  </p>
+                </div>
+              ),
+            },
+            {
+              key: 'issues',
+              header: 'Setup Alerts',
+              className: 'min-w-[14rem]',
+              render: (profile: PayrollProfile) => {
+                const warnings = profileWarnings(profile);
+                return warnings.length === 0 ? (
+                  <div className="flex items-center gap-2">
+                    <PayrollStatusBadge status="healthy" />
+                    <span className="text-sm text-slate-500">No missing setup</span>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="font-medium text-slate-950">{warnings.length} alerts</p>
+                    <p className="mt-1 text-sm text-slate-500">{warnings.slice(0, 2).join(' | ')}</p>
+                  </div>
+                );
+              },
+            },
+            {
+              key: 'actions',
+              header: 'Actions',
+              className: 'min-w-[13rem]',
+              render: (profile: PayrollProfile) => (
+                <div className="flex flex-wrap gap-2">
+                  <Link to={`/payroll/employees/${profile.user_id}`}>
+                    <Button size="sm">Open Record</Button>
+                  </Link>
+                  <Button size="sm" variant="secondary" onClick={() => openEditForm(profile.id)}>
+                    Quick Edit
+                  </Button>
+                </div>
+              ),
+            },
+          ]}
+        />
+      ) : null}
 
-        <SurfaceCard className="p-5">
-          <h3 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">{selectedProfile ? 'Update Payroll Profile' : 'Create Payroll Profile'}</h3>
-          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+      {(filterType === 'all' || filterType === 'missing') ? (
+        <DataTable
+          title="Employees Missing Payroll Setup"
+          description="Employees who need a payroll record before they can move cleanly through payroll validation and pay runs."
+          rows={filteredMissing}
+          emptyMessage="No missing payroll profiles match the current filters."
+          columns={[
+            {
+              key: 'employee',
+              header: 'Employee',
+              className: 'min-w-[16rem]',
+              render: (employee: { id: number; name: string; email: string }) => (
+                <div>
+                  <p className="font-medium text-slate-950">{employee.name}</p>
+                  <p className="mt-1 text-sm text-slate-500">{employee.email}</p>
+                </div>
+              ),
+            },
+            {
+              key: 'readiness',
+              header: 'Record State',
+              render: () => <PayrollStatusBadge status="missing profile" />,
+            },
+            {
+              key: 'actions',
+              header: 'Actions',
+              className: 'min-w-[13rem]',
+              render: (employee: { id: number; name: string; email: string }) => (
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => openCreateForm(employee.id)}>
+                    Create Profile
+                  </Button>
+                  <Link to={`/payroll/employees/${employee.id}`}>
+                    <Button size="sm" variant="secondary">Open Record</Button>
+                  </Link>
+                </div>
+              ),
+            },
+          ]}
+        />
+      ) : null}
+
+      <PayrollSectionCard
+        title={selectedProfile ? 'Quick Edit Payroll Record' : draftUserId ? 'Create Missing Payroll Record' : 'Create Payroll Record'}
+        description="Use the quick editor for profile-level setup, then open the employee payroll record for compensation history, readiness checks, and deeper payroll context."
+      >
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.72fr_1.28fr]">
+          <div className="space-y-4 rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
             <div>
-              <FieldLabel>Employee</FieldLabel>
-              <SelectInput value={form.user_id} onChange={(event) => setForm((current: any) => ({ ...current, user_id: event.target.value }))}>
-                <option value="">Select employee</option>
-                {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-              </SelectInput>
+              <p className="text-sm font-semibold text-slate-950">{selectedProfile ? 'Selected payroll record' : 'Quick-create guidance'}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                {selectedProfile
+                  ? 'This quick editor is best for payout defaults, template assignment, and eligibility changes. Use the employee payroll record for revision history and richer payroll context.'
+                  : 'Create payroll records here for missing employees or lightweight setup updates without leaving the payroll workspace.'}
+              </p>
             </div>
-            <div>
-              <FieldLabel>Salary Template</FieldLabel>
-              <SelectInput value={form.salary_template_id} onChange={(event) => setForm((current: any) => ({ ...current, salary_template_id: event.target.value }))}>
-                <option value="">No template</option>
-                {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-              </SelectInput>
-            </div>
-            <div>
-              <FieldLabel>Template Effective From</FieldLabel>
-              <TextInput type="date" value={form.template_effective_from} onChange={(event) => setForm((current: any) => ({ ...current, template_effective_from: event.target.value }))} />
-            </div>
-            <div>
-              <FieldLabel>Payout Method</FieldLabel>
-              <SelectInput value={form.payout_method} onChange={(event) => setForm((current: any) => ({ ...current, payout_method: event.target.value }))}>
-                <option value="mock">Mock</option>
-                <option value="stripe">Stripe</option>
-                <option value="bank_transfer">Bank transfer</option>
-              </SelectInput>
-            </div>
-            <div>
-              <FieldLabel>Bank Name</FieldLabel>
-              <TextInput value={form.bank_name} onChange={(event) => setForm((current: any) => ({ ...current, bank_name: event.target.value }))} />
-            </div>
-            <div>
-              <FieldLabel>Account Number</FieldLabel>
-              <TextInput value={form.bank_account_number} onChange={(event) => setForm((current: any) => ({ ...current, bank_account_number: event.target.value }))} />
-            </div>
-            <div>
-              <FieldLabel>IFSC / SWIFT</FieldLabel>
-              <TextInput value={form.bank_ifsc_swift} onChange={(event) => setForm((current: any) => ({ ...current, bank_ifsc_swift: event.target.value }))} />
-            </div>
-            <div>
-              <FieldLabel>Payment Email</FieldLabel>
-              <TextInput type="email" value={form.payment_email} onChange={(event) => setForm((current: any) => ({ ...current, payment_email: event.target.value }))} />
-            </div>
-            <div>
-              <FieldLabel>Default Bonus</FieldLabel>
-              <TextInput type="number" value={Number(form.bonus_amount || 0)} onChange={(event) => setForm((current: any) => ({ ...current, bonus_amount: Number(event.target.value || 0) }))} />
-            </div>
-            <div>
-              <FieldLabel>Default Tax</FieldLabel>
-              <TextInput type="number" value={Number(form.tax_amount || 0)} onChange={(event) => setForm((current: any) => ({ ...current, tax_amount: Number(event.target.value || 0) }))} />
-            </div>
-            <div className="md:col-span-2">
-              <FieldLabel>Tax Identifier</FieldLabel>
-              <TextInput value={form.tax_identifier} onChange={(event) => setForm((current: any) => ({ ...current, tax_identifier: event.target.value }))} />
-            </div>
+
+            {selectedProfile ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <PayrollStatusBadge status={selectedProfile.is_active ? 'active' : 'inactive'} />
+                  <PayrollStatusBadge status={selectedProfile.payroll_eligible ? 'eligible' : 'ineligible'} />
+                  <PayrollStatusBadge status={selectedProfile.bank_account_number || selectedProfile.payment_email ? 'verified' : 'incomplete'} />
+                </div>
+                <div className="grid grid-cols-1 gap-3 text-sm">
+                  <div>
+                    <p className="text-slate-500">Current cycle</p>
+                    <p className="font-semibold text-slate-950">{selectedProfile.is_active && selectedProfile.payroll_eligible && selectedWarnings.length === 0 ? `Ready for ${formatPayrollMonth(payrollMonth)}` : `Blocked for ${formatPayrollMonth(payrollMonth)}`}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Salary template</p>
+                    <p className="font-semibold text-slate-950">{templateAssignmentLabel(selectedProfile.salary_template)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Payout method</p>
+                    <p className="font-semibold text-slate-950">{selectedProfile.payout_method || 'Not configured'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Tax readiness</p>
+                    <p className="font-semibold text-slate-950">{selectedProfile.tax_identifier ? 'Tax details captured' : 'Tax details pending'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Last revision</p>
+                    <p className="font-semibold text-slate-950">{formatRevisionDate(selectedProfile.last_revision_date)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Adjustment summary</p>
+                    <p className="font-semibold text-slate-950">
+                      {Number(selectedProfile.current_cycle_adjustments_count || 0)} items | {formatPayrollCurrency(Number(selectedProfile.current_cycle_adjustments_total || 0), selectedProfile.currency)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Missing setup</p>
+                    <p className="font-semibold text-slate-950">{selectedWarnings.length === 0 ? 'No outstanding issues' : selectedWarnings.join(' | ')}</p>
+                  </div>
+                </div>
+                <Link to={`/payroll/employees/${selectedProfile.user_id}`}>
+                  <Button size="sm" variant="secondary">Open Full Payroll Record</Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-3 text-sm text-slate-600">
+                <p>Minimum good setup is a salary template, payout method, and destination details.</p>
+                <p>Employees with missing payroll records stay visible in the table above until their profile is created.</p>
+              </div>
+            )}
           </div>
-          <div className="mt-4 flex flex-wrap gap-4">
-            {[
-              { key: 'payroll_eligible', label: 'Payroll eligible' },
-              { key: 'reimbursements_eligible', label: 'Reimbursement eligible' },
-              { key: 'is_active', label: 'Active in payroll' },
-            ].map((item) => (
-              <label key={item.key} className="flex items-center gap-2 rounded-full border border-slate-200/90 bg-slate-50/70 px-3.5 py-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={Boolean(form[item.key])}
-                  onChange={(event) => setForm((current: any) => ({ ...current, [item.key]: event.target.checked }))}
-                />
-                {item.label}
-              </label>
-            ))}
-          </div>
-          <div className="mt-6 flex gap-3">
-            <Button onClick={saveProfile} disabled={isSaving || !form.user_id}>
-              {selectedProfile ? 'Update Profile' : 'Create Profile'}
-            </Button>
-            <Button variant="secondary" onClick={() => { setSelectedProfileId(null); setForm(emptyForm); }}>
-              Reset
-            </Button>
-          </div>
-        </SurfaceCard>
-      </div>
+
+          <PayrollProfileForm
+            employees={employees}
+            templates={templates}
+            profile={selectedProfile}
+            defaultUserId={draftUserId}
+            onSave={saveProfile}
+            isSaving={isSaving}
+            onReset={() => {
+              setSelectedProfileId(null);
+              setDraftUserId(undefined);
+            }}
+          />
+        </div>
+      </PayrollSectionCard>
     </div>
   );
 }

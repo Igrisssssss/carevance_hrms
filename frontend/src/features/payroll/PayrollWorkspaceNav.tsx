@@ -18,7 +18,9 @@ export default function PayrollWorkspaceNav({
     <SurfaceCard className="p-3">
       <div className="flex flex-wrap gap-2">
         {tabs.map((tab) => {
-          const isActive = location.pathname === tab.to;
+          const isActive = tab.to === '/payroll'
+            ? location.pathname === tab.to
+            : location.pathname === tab.to || location.pathname.startsWith(`${tab.to}/`);
           return (
             <Link
               key={tab.to}

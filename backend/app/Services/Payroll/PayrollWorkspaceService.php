@@ -296,6 +296,17 @@ class PayrollWorkspaceService
             ->all();
     }
 
+    public function employeeWarningsForUser(int $organizationId, User $employee, string $payrollMonth): array
+    {
+        $profile = PayrollProfile::query()
+            ->where('organization_id', $organizationId)
+            ->where('user_id', $employee->id)
+            ->first();
+        $attendance = $this->attendanceSummary($organizationId, (int) $employee->id, $payrollMonth);
+
+        return $this->employeeWarnings($employee, $profile, $attendance);
+    }
+
     public function reports(User $user, string $payrollMonth): array
     {
         $run = $this->syncPayRunForMonth((int) $user->organization_id, $payrollMonth, $user->id);
@@ -618,6 +629,7 @@ class PayrollWorkspaceService
           }
           $deductionRows[] = $row;
         }
+
 
         return [
             'basic_salary' => round($basicSalary, 2),

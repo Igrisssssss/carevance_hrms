@@ -110,6 +110,37 @@ class PayrollWorkspaceController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        $payrollMonth = (string) $request->get('payroll_month', now()->format('Y-m'));
+        $revisionDates = DB::table('employee_salary_assignments')
+            ->where('organization_id', $user->organization_id)
+            ->select('user_id', DB::raw('MAX(effective_from) as last_revision_date'))
+            ->groupBy('user_id')
+            ->pluck('last_revision_date', 'user_id');
+
+        $profiles = PayrollProfile::query()
+            ->where('organization_id', $user->organization_id)
+            ->with(['user', 'salaryTemplate.components.component'])
+            ->withCount([
+                'adjustments as current_cycle_adjustments_count' => fn ($query) => $query->where('effective_month', $payrollMonth),
+                'adjustments as pending_adjustments_count' => fn ($query) => $query
+                    ->where('effective_month', $payrollMonth)
+                    ->whereIn('status', ['draft', 'pending_approval', 'approved']),
+            ])
+            ->withSum([
+                'adjustments as current_cycle_adjustments_total' => fn ($query) => $query->where('effective_month', $payrollMonth),
+            ], 'amount')
+            ->orderByDesc('id')
+            ->get()
+            ->map(function (PayrollProfile $profile) use ($revisionDates) {
+                $profile->setAttribute(
+                    'last_revision_date',
+                    $revisionDates[$profile->user_id] ?? optional($profile->updated_at)->toDateString()
+                );
+
+                return $profile;
+            })
+            ->values();
+
         return response()->json([
             'employees' => User::query()
                 ->where('organization_id', $user->organization_id)
@@ -121,11 +152,7 @@ class PayrollWorkspaceController extends Controller
                 ->with('components.component')
                 ->orderBy('name')
                 ->get(),
-            'profiles' => PayrollProfile::query()
-                ->where('organization_id', $user->organization_id)
-                ->with(['user', 'salaryTemplate.components.component'])
-                ->orderByDesc('id')
-                ->get(),
+            'profiles' => $profiles,
         ]);
     }
 
@@ -149,6 +176,7 @@ class PayrollWorkspaceController extends Controller
         return response()->json([
             'data' => SalaryComponent::query()
                 ->where('organization_id', $user->organization_id)
+                ->withCount('templateComponents')
                 ->orderBy('category')
                 ->orderBy('name')
                 ->get(),
@@ -194,12 +222,15 @@ class PayrollWorkspaceController extends Controller
         return response()->json([
             'components' => SalaryComponent::query()
                 ->where('organization_id', $user->organization_id)
+                ->withCount('templateComponents')
                 ->orderBy('category')
                 ->orderBy('name')
                 ->get(),
             'data' => SalaryTemplate::query()
                 ->where('organization_id', $user->organization_id)
                 ->with('components.component')
+                ->withCount('assignments')
+                ->withMax('assignments', 'effective_from')
                 ->orderBy('name')
                 ->get(),
         ]);

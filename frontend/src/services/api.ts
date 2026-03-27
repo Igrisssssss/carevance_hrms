@@ -38,6 +38,12 @@ import type {
   PayrollSettingsPayload,
   AppNotificationItem,
   UserProfile360,
+  EmployeeWorkspacePayload,
+  EmployeeProfileDetails,
+  EmployeeWorkInfo,
+  EmployeeGovernmentIdRecord,
+  EmployeeBankAccountRecord,
+  EmployeeDocumentRecord,
   PaginatedResponse,
   InvitationSummary,
   InvitationListResponse,
@@ -179,6 +185,68 @@ export const userApi = {
 
   getProfile360: (id: number, params?: { start_date?: string; end_date?: string }) =>
     api.get<UserProfile360>(`/users/${id}/profile-360`, { params }),
+};
+
+export const employeeWorkspaceApi = {
+  getWorkspace: (id: number, params?: { payroll_month?: string }) =>
+    api.get<EmployeeWorkspacePayload>(`/employees/${id}/workspace`, { params }),
+
+  updateProfile: (id: number, data: Partial<EmployeeProfileDetails>) =>
+    api.put<EmployeeProfileDetails>(`/employees/${id}/profile`, data),
+
+  updateWorkInfo: (id: number, data: Partial<EmployeeWorkInfo>) =>
+    api.put<EmployeeWorkInfo>(`/employees/${id}/work-info`, data),
+
+  saveGovernmentId: (id: number, data: Record<string, any> & { proof_file?: File | null }) => {
+    const formData = new FormData();
+    Object.entries(data).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      if (key === 'proof_file' && value instanceof File) {
+        formData.append('proof_file', value);
+        return;
+      }
+      formData.append(key, String(value));
+    });
+    return api.post<EmployeeGovernmentIdRecord>(`/employees/${id}/government-ids`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  saveBankAccount: (id: number, data: Record<string, any> & { proof_file?: File | null }) => {
+    const formData = new FormData();
+    Object.entries(data).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      if (key === 'proof_file' && value instanceof File) {
+        formData.append('proof_file', value);
+        return;
+      }
+      if (typeof value === 'boolean') {
+        formData.append(key, value ? '1' : '0');
+        return;
+      }
+      formData.append(key, String(value));
+    });
+    return api.post<EmployeeBankAccountRecord>(`/employees/${id}/bank-accounts`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  uploadDocument: (id: number, data: { title: string; category: string; review_status?: string; notes?: string; file: File }) => {
+    const formData = new FormData();
+    formData.append('title', data.title);
+    formData.append('category', data.category);
+    if (data.review_status) formData.append('review_status', data.review_status);
+    if (data.notes) formData.append('notes', data.notes);
+    formData.append('file', data.file);
+    return api.post<EmployeeDocumentRecord>(`/employees/${id}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  downloadDocument: (employeeId: number, documentId: number) =>
+    api.get<Blob>(`/employees/${employeeId}/documents/${documentId}/download`, {
+      responseType: 'blob' as AxiosRequestConfig['responseType'],
+    }),
 };
 
 // Project API
@@ -746,8 +814,8 @@ export const payrollWorkspaceApi = {
   updateRunStatus: (id: number, status: string) =>
     api.post<PayrollRun>(`/payroll/workspace/runs/${id}/status`, { status }),
 
-  getProfiles: () =>
-    api.get<{ employees: Array<{ id: number; name: string; email: string; role: string }>; templates: SalaryTemplate[]; profiles: PayrollProfile[] }>('/payroll/workspace/profiles'),
+  getProfiles: (params?: { payroll_month?: string }) =>
+    api.get<{ employees: Array<{ id: number; name: string; email: string; role: string }>; templates: SalaryTemplate[]; profiles: PayrollProfile[] }>('/payroll/workspace/profiles', { params }),
 
   createProfile: (data: Partial<PayrollProfile> & { user_id: number; template_effective_from?: string }) =>
     api.post<PayrollProfile>('/payroll/workspace/profiles', data),

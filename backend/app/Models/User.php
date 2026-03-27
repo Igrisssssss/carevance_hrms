@@ -66,6 +66,36 @@ class User extends Authenticatable
         return $this->hasOne(PayrollProfile::class);
     }
 
+    public function employeeProfile(): HasOne
+    {
+        return $this->hasOne(EmployeeProfile::class);
+    }
+
+    public function employeeWorkInfo(): HasOne
+    {
+        return $this->hasOne(EmployeeWorkInfo::class);
+    }
+
+    public function employeeDocuments(): HasMany
+    {
+        return $this->hasMany(EmployeeDocument::class);
+    }
+
+    public function employeeGovernmentIds(): HasMany
+    {
+        return $this->hasMany(EmployeeGovernmentId::class);
+    }
+
+    public function employeeBankAccounts(): HasMany
+    {
+        return $this->hasMany(EmployeeBankAccount::class);
+    }
+
+    public function employeeActivityLogs(): HasMany
+    {
+        return $this->hasMany(EmployeeActivityLog::class);
+    }
+
     public function salaryAssignments(): HasMany
     {
         return $this->hasMany(EmployeeSalaryAssignment::class);

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invitationApi, organizationApi, reportGroupApi, userApi } from '@/services/api';
 import PageHeader from '@/components/dashboard/PageHeader';
@@ -49,6 +50,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const { organization, user } = useAuth();
   const queryClient = useQueryClient();
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [employeeSearch, setEmployeeSearch] = useState('');
   const [groupName, setGroupName] = useState('');
   const [groupMembers, setGroupMembers] = useState<number[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -185,6 +187,15 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const isError = usersQuery.isError || groupsQuery.isError || membersQuery.isError || profileQuery.isError || invitationsQuery.isError;
   const pageTitle = modeCopy[mode];
   const users = usersQuery.data || [];
+  const filteredUsers = useMemo(() => {
+    const query = employeeSearch.trim().toLowerCase();
+    if (!query) return users;
+    return users.filter((item: any) =>
+      [item.name, item.email, item.role]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    );
+  }, [employeeSearch, users]);
   const groups = groupsQuery.data || [];
   const members = membersQuery.data || [];
   const invitations = invitationsQuery.data || [];
@@ -231,16 +242,29 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             <MetricCard label="Tracked Time" value={formatDuration(users.reduce((sum: number, user: any) => sum + Number(user.total_elapsed_duration || user.total_duration || 0), 0))} hint="Visible across users" icon={Users} accent="amber" />
           </div>
 
-          <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
               <FieldLabel>Selected Employee</FieldLabel>
               <SelectInput value={selectedUserId || ''} onChange={(event) => setSelectedUserId(event.target.value ? Number(event.target.value) : null)}>
-                {users.map((user: any) => (
+                {filteredUsers.map((user: any) => (
                   <option key={user.id} value={user.id}>
                     {user.name}
                   </option>
                 ))}
               </SelectInput>
+            </div>
+            <div>
+              <FieldLabel>Search Employee</FieldLabel>
+              <TextInput value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Search by name, email, or role" />
+            </div>
+            <div className="flex items-end">
+              {selectedUser ? (
+                <Link to={`/employees/${selectedUser.id}`} className="w-full">
+                  <Button className="w-full">Open Profile</Button>
+                </Link>
+              ) : (
+                <Button className="w-full" disabled>Open Profile</Button>
+              )}
             </div>
             {isStrictAdmin && selectedUser ? (
               <div>
@@ -268,14 +292,24 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           <DataTable
             title="Employee Directory"
             description={isStrictAdmin ? 'Role, work state, tracked hours, and admin-only promotion controls from the existing users endpoint.' : 'Role, work state, and tracked hours from the existing users endpoint.'}
-            rows={users}
+            rows={filteredUsers}
             emptyMessage="No employees found."
+            bodyClassName="max-h-[34rem] overflow-auto"
             columns={[
-              { key: 'employee', header: 'Employee', render: (row: any) => <div><p className="font-medium text-slate-950">{row.name}</p><p className="text-xs text-slate-500">{row.email}</p></div> },
+              { key: 'employee', header: 'Employee', render: (row: any) => <div><Link to={`/employees/${row.id}`} className="font-medium text-slate-950 hover:text-sky-700">{row.name}</Link><p className="text-xs text-slate-500">{row.email}</p></div> },
               { key: 'role', header: 'Role', render: (row: any) => row.role },
               { key: 'working', header: 'Working', render: (row: any) => (row.is_working ? 'Yes' : 'No') },
               { key: 'project', header: 'Current Project', render: (row: any) => row.current_project || 'No active timer' },
               { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.total_elapsed_duration || row.total_duration || 0) },
+              {
+                key: 'profile',
+                header: 'Profile',
+                render: (row: any) => (
+                  <Link to={`/employees/${row.id}`}>
+                    <Button variant="secondary" size="sm">Open Profile</Button>
+                  </Link>
+                ),
+              },
               ...(isStrictAdmin
                 ? [{
                     key: 'promote',

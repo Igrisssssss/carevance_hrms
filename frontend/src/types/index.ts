@@ -564,6 +564,12 @@ export interface PayrollProfile {
   bonus_amount: number;
   tax_amount: number;
   meta?: Record<string, any> | null;
+  current_cycle_adjustments_count?: number;
+  current_cycle_adjustments_total?: number;
+  pending_adjustments_count?: number;
+  last_revision_date?: string | null;
+  created_at?: string;
+  updated_at?: string;
   user?: User;
   salary_template?: SalaryTemplate | null;
 }
@@ -578,7 +584,10 @@ export interface SalaryComponentMaster {
   default_value: number;
   is_taxable: boolean;
   is_active: boolean;
+  template_components_count?: number;
   meta?: Record<string, any> | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface SalaryTemplateComponentItem {
@@ -599,6 +608,8 @@ export interface SalaryTemplate {
   description?: string | null;
   currency: string;
   is_active: boolean;
+  assignments_count?: number;
+  assignments_max_effective_from?: string | null;
   components: SalaryTemplateComponentItem[];
 }
 
@@ -644,6 +655,10 @@ export interface PayrollReportsPayload {
   payout_status_report: Array<Record<string, any>>;
   attendance_vs_payable_days: Array<Record<string, any>>;
   overtime_summary: Array<Record<string, any>>;
+  component_totals: Array<Record<string, any>>;
+  payout_history: Array<Record<string, any>>;
+  failed_payout_report: Array<Record<string, any>>;
+  monthly_trend: Array<Record<string, any>>;
 }
 
 export interface PayrollSettingsPayload {
@@ -744,4 +759,154 @@ export interface UserProfile360 {
     generated_at?: string | null;
     paid_at?: string | null;
   }>;
+}
+
+export interface EmployeeProfileDetails {
+  id: number;
+  organization_id: number;
+  user_id: number;
+  first_name?: string | null;
+  last_name?: string | null;
+  display_name?: string | null;
+  gender?: string | null;
+  date_of_birth?: string | null;
+  phone?: string | null;
+  personal_email?: string | null;
+  address_line?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_number?: string | null;
+  emergency_contact_relationship?: string | null;
+}
+
+export interface EmployeeWorkInfo {
+  id: number;
+  organization_id: number;
+  user_id: number;
+  employee_code?: string | null;
+  report_group_id?: number | null;
+  designation?: string | null;
+  reporting_manager_id?: number | null;
+  work_location?: string | null;
+  shift_name?: string | null;
+  attendance_policy?: string | null;
+  employment_type?: string | null;
+  joining_date?: string | null;
+  probation_status?: string | null;
+  employment_status?: 'active' | 'inactive' | 'notice' | 'exited' | null;
+  exit_date?: string | null;
+  work_mode?: 'office' | 'remote' | 'hybrid' | null;
+  department?: { id: number; name: string } | null;
+  reporting_manager?: { id: number; name: string; email: string } | null;
+}
+
+export interface EmployeeDocumentRecord {
+  id: number;
+  organization_id: number;
+  user_id: number;
+  title: string;
+  category: string;
+  file_name: string;
+  file_path: string;
+  file_disk: string;
+  mime_type?: string | null;
+  file_size?: number | null;
+  uploaded_at?: string | null;
+  review_status: 'pending' | 'verified' | 'rejected' | string;
+  notes?: string | null;
+  uploader?: { id: number; name: string; email: string } | null;
+}
+
+export interface EmployeeGovernmentIdRecord {
+  id: number;
+  organization_id: number;
+  user_id: number;
+  id_type: string;
+  id_number: string;
+  status: 'verified' | 'pending' | 'rejected' | string;
+  issue_date?: string | null;
+  expiry_date?: string | null;
+  notes?: string | null;
+  employee_document_id?: number | null;
+  document?: EmployeeDocumentRecord | null;
+}
+
+export interface EmployeeBankAccountRecord {
+  id: number;
+  organization_id: number;
+  user_id: number;
+  account_holder_name?: string | null;
+  bank_name?: string | null;
+  account_number?: string | null;
+  ifsc_swift?: string | null;
+  branch?: string | null;
+  account_type?: string | null;
+  upi_id?: string | null;
+  payment_email?: string | null;
+  payout_method?: string | null;
+  is_default: boolean;
+  verification_status: 'verified' | 'unverified' | 'pending' | 'rejected' | string;
+  employee_document_id?: number | null;
+  notes?: string | null;
+  document?: EmployeeDocumentRecord | null;
+}
+
+export interface EmployeeWorkspacePayload {
+  employee: User;
+  payroll_month: string;
+  about?: EmployeeProfileDetails | null;
+  work_info?: EmployeeWorkInfo | null;
+  payroll: {
+    profile?: PayrollProfile | null;
+    salary_assignments: Array<{
+      id: number;
+      effective_from: string;
+      effective_to?: string | null;
+      is_active: boolean;
+      salary_template?: { id: number; name: string; currency?: string } | null;
+    }>;
+    current_compensation?: Record<string, any> | null;
+    warnings: string[];
+    pending_reimbursements: number;
+    recent_reimbursements: ReimbursementClaim[];
+    recent_adjustments: PayrollAdjustment[];
+  };
+  government_ids: EmployeeGovernmentIdRecord[];
+  bank_accounts: EmployeeBankAccountRecord[];
+  documents: EmployeeDocumentRecord[];
+  attendance: Record<string, any>;
+  leave: Record<string, any>;
+  activity: Array<{
+    id: string;
+    source: string;
+    action: string;
+    description: string;
+    created_at: string;
+    actor?: { id: number; name: string; email: string } | null;
+    meta?: Record<string, any> | null;
+  }>;
+  overview: {
+    reporting_manager?: { id: number; name: string; email: string } | null;
+    department?: string | null;
+    designation?: string | null;
+    documents_uploaded: number;
+    salary_template?: string | null;
+    pending_reimbursements: number;
+    payslips_count: number;
+  };
+  readiness: {
+    overall_percentage: number;
+    sections: Record<string, boolean>;
+    missing_sections: string[];
+    payroll_readiness: { is_ready: boolean; warnings: string[] };
+    payout_readiness: { is_ready: boolean; warnings: string[] };
+    attendance: Record<string, any>;
+    leave: Record<string, any>;
+  };
+  options: {
+    departments: Array<{ id: number; name: string }>;
+    managers: Array<{ id: number; name: string; email: string }>;
+  };
 }

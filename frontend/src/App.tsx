@@ -30,6 +30,7 @@ const NotificationsCenter = lazy(() => import('@/pages/NotificationsCenter'));
 const ReportsWorkspace = lazy(() => import('@/pages/ReportsWorkspace'));
 const MonitoringWorkspace = lazy(() => import('@/pages/MonitoringWorkspace'));
 const EmployeeManagementWorkspace = lazy(() => import('@/pages/EmployeeManagementWorkspace'));
+const EmployeeDetailWorkspace = lazy(() => import('@/pages/EmployeeDetailWorkspace'));
 const AddUserPage = lazy(() => import('@/pages/AddUserPage'));
 const BillingSettingsPage = lazy(() => import('@/pages/BillingSettingsPage'));
 
@@ -300,13 +301,17 @@ function App() {
             <Route path="payroll" element={<PayrollWorkspace mode="overview" />} />
             <Route path="payroll/runs" element={<PayrollWorkspace mode="runs" />} />
             <Route path="payroll/employees" element={<PayrollWorkspace mode="employees" />} />
+            <Route path="payroll/employees/:employeeId" element={<PayrollWorkspace mode="employee-detail" />} />
             <Route path="payroll/components" element={<PayrollWorkspace mode="components" />} />
-            <Route path="payroll/reimbursements" element={<PayrollWorkspace mode="reimbursements" />} />
+            <Route path="payroll/structures" element={<PayrollWorkspace mode="structures" />} />
+            <Route path="payroll/adjustments" element={<PayrollWorkspace mode="adjustments" />} />
+            <Route path="payroll/reimbursements" element={<Navigate to="/payroll/adjustments" replace />} />
             <Route path="payroll/payslips" element={<PayrollWorkspace mode="payslips" />} />
             <Route path="payroll/reports" element={<PayrollWorkspace mode="reports" />} />
             <Route path="payroll/settings" element={<PayrollWorkspace mode="settings" />} />
             <Route path="user-management" element={<Navigate to="/employees" replace />} />
             <Route path="employees" element={<AdminRoute><EmployeeManagementWorkspace mode="employees" /></AdminRoute>} />
+            <Route path="employees/:employeeId" element={<AdminRoute><EmployeeDetailWorkspace /></AdminRoute>} />
             <Route path="employees/teams" element={<AdminRoute><EmployeeManagementWorkspace mode="teams" /></AdminRoute>} />
             <Route path="employees/invitations" element={<AdminRoute><EmployeeManagementWorkspace mode="invitations" /></AdminRoute>} />
             <Route path="employees/roles" element={<AdminRoute><EmployeeManagementWorkspace mode="roles" /></AdminRoute>} />

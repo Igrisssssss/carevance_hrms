@@ -1,22 +1,25 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import PageHeader from '@/components/dashboard/PageHeader';
-import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
+import FilterPanel from '@/components/dashboard/FilterPanel';
+import EmptyStateCard from '@/components/dashboard/EmptyStateCard';
 import Button from '@/components/ui/Button';
-import StatusBadge from '@/components/ui/StatusBadge';
-import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
+import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { payrollWorkspaceApi } from '@/services/api';
 import type { PayrollAdjustment } from '@/types';
 import { Receipt, ShieldCheck, Wallet } from 'lucide-react';
-import { adjustmentKindLabel, defaultPayrollMonth, formatPayrollCurrency, payrollStatusTone } from '@/features/payroll/utils';
+import PayrollSectionCard from '@/features/payroll/components/PayrollSectionCard';
+import PayrollStatusBadge from '@/features/payroll/components/PayrollStatusBadge';
+import { adjustmentKindLabel, defaultPayrollMonth, formatPayrollCurrency, formatPayrollMonth } from '@/features/payroll/utils';
 
 const emptyAdjustment = {
   user_id: '',
   title: '',
   description: '',
-  kind: 'reimbursement',
+  kind: 'bonus',
   effective_month: defaultPayrollMonth(),
   amount: 0,
   currency: 'INR',
@@ -32,18 +35,20 @@ const emptyAdjustment = {
 export default function PayrollAdjustmentsView() {
   const [form, setForm] = useState<any>(emptyAdjustment);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [kindFilter, setKindFilter] = useState('');
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
 
   const adjustmentsQuery = useQuery({
-    queryKey: ['payroll-workspace-adjustments', form.effective_month],
-    queryFn: async () => {
-      const response = await payrollWorkspaceApi.getAdjustments({ effective_month: form.effective_month });
-      return response.data;
-    },
+    queryKey: ['payroll-adjustments', form.effective_month],
+    queryFn: async () => (await payrollWorkspaceApi.getAdjustments({ effective_month: form.effective_month })).data,
   });
 
   const adjustments = adjustmentsQuery.data?.adjustments || [];
   const employees = adjustmentsQuery.data?.employees || [];
+  const filteredAdjustments = useMemo(
+    () => adjustments.filter((adjustment) => !kindFilter || adjustment.kind === kindFilter),
+    [adjustments, kindFilter]
+  );
 
   const saveAdjustment = async () => {
     setFeedback(null);
@@ -107,34 +112,54 @@ export default function PayrollAdjustmentsView() {
   };
 
   if (adjustmentsQuery.isLoading) {
-    return <PageLoadingState label="Loading reimbursements and adjustments..." />;
+    return <PageLoadingState label="Loading payroll adjustments..." />;
   }
 
   if (adjustmentsQuery.isError) {
-    return <PageErrorState message={(adjustmentsQuery.error as any)?.response?.data?.message || 'Failed to load adjustments.'} onRetry={() => void adjustmentsQuery.refetch()} />;
+    return <PageErrorState message={(adjustmentsQuery.error as any)?.response?.data?.message || 'Failed to load payroll adjustments.'} onRetry={() => void adjustmentsQuery.refetch()} />;
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Payroll workspace"
-        title="Reimbursements / Adjustments"
-        description="Manage reimbursements, bonuses, penalties, manual deductions, and other one-time payroll adjustments using the existing manager/admin approval pattern."
+        eyebrow="Payroll operations"
+        title="Adjustments & Variable Pay"
+        description="Manage bonuses, one-time additions, manual deductions, penalties, and reimbursements in a dedicated workspace instead of burying them inside pay run detail."
       />
 
       {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Adjustments" value={adjustments.length} hint="Current month records" icon={Wallet} accent="sky" />
-        <MetricCard label="Pending Approval" value={adjustments.filter((item) => item.status === 'pending_approval').length} hint="Needs reviewer action" icon={ShieldCheck} accent="amber" />
-        <MetricCard label="Approved" value={adjustments.filter((item) => item.status === 'approved').length} hint="Ready to apply into payroll" icon={ShieldCheck} accent="emerald" />
-        <MetricCard label="Total Amount" value={formatPayrollCurrency(adjustments.reduce((sum, item) => sum + Number(item.amount || 0), 0))} hint="Current filtered amount" icon={Receipt} accent="violet" />
+        <MetricCard label="Current Month Items" value={adjustments.length} hint="Adjustments in the selected month." icon={Wallet} accent="sky" />
+        <MetricCard label="Pending Approval" value={adjustments.filter((item) => item.status === 'pending_approval').length} hint="Needs reviewer action." icon={ShieldCheck} accent="amber" />
+        <MetricCard label="Approved / Applied" value={adjustments.filter((item) => ['approved', 'applied'].includes(item.status)).length} hint="Ready or already used in payroll." icon={ShieldCheck} accent="emerald" />
+        <MetricCard label="Adjustment Value" value={formatPayrollCurrency(adjustments.reduce((sum, item) => sum + Number(item.amount || 0), 0))} hint="Combined value in current filter." icon={Receipt} accent="violet" />
       </div>
 
+      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div>
+          <FieldLabel>Effective Month</FieldLabel>
+          <TextInput type="month" value={form.effective_month} onChange={(event) => setForm((current: any) => ({ ...current, effective_month: event.target.value }))} />
+        </div>
+        <div>
+          <FieldLabel>Kind</FieldLabel>
+          <SelectInput value={kindFilter} onChange={(event) => setKindFilter(event.target.value)}>
+            <option value="">All kinds</option>
+            <option value="reimbursement">Reimbursement</option>
+            <option value="bonus">Bonus</option>
+            <option value="manual_deduction">Manual deduction</option>
+            <option value="penalty">Penalty</option>
+            <option value="one_time_adjustment">One-time adjustment</option>
+          </SelectInput>
+        </div>
+        <div className="flex items-end">
+          <Button variant="secondary" className="w-full" onClick={() => setKindFilter('')}>Clear Filter</Button>
+        </div>
+      </FilterPanel>
+
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-        <SurfaceCard className="p-5">
-          <h3 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">{selectedId ? 'Update Adjustment' : 'Create Adjustment'}</h3>
-          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <PayrollSectionCard title={selectedId ? 'Update Adjustment' : 'Create Adjustment'} description="Capture variable pay and payroll-impacting changes outside live payroll runs.">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <FieldLabel>Employee</FieldLabel>
               <SelectInput value={form.user_id} onChange={(event) => setForm((current: any) => ({ ...current, user_id: event.target.value }))}>
@@ -145,11 +170,11 @@ export default function PayrollAdjustmentsView() {
             <div>
               <FieldLabel>Kind</FieldLabel>
               <SelectInput value={form.kind} onChange={(event) => setForm((current: any) => ({ ...current, kind: event.target.value }))}>
-                <option value="reimbursement">Reimbursement</option>
                 <option value="bonus">Bonus</option>
+                <option value="one_time_adjustment">One-time adjustment</option>
                 <option value="manual_deduction">Manual deduction</option>
                 <option value="penalty">Penalty</option>
-                <option value="one_time_adjustment">One-time adjustment</option>
+                <option value="reimbursement">Reimbursement</option>
               </SelectInput>
             </div>
             <div>
@@ -158,7 +183,7 @@ export default function PayrollAdjustmentsView() {
             </div>
             <div>
               <FieldLabel>Amount</FieldLabel>
-              <TextInput type="number" value={Number(form.amount || 0)} onChange={(event) => setForm((current: any) => ({ ...current, amount: Number(event.target.value || 0) }))} />
+              <TextInput type="number" min={0} value={Number(form.amount || 0)} onChange={(event) => setForm((current: any) => ({ ...current, amount: Number(event.target.value || 0) }))} />
             </div>
             <div className="md:col-span-2">
               <FieldLabel>Title</FieldLabel>
@@ -180,7 +205,7 @@ export default function PayrollAdjustmentsView() {
                 </div>
                 <div>
                   <FieldLabel>Claim Amount</FieldLabel>
-                  <TextInput type="number" value={Number(form.reimbursement.amount || 0)} onChange={(event) => setForm((current: any) => ({ ...current, reimbursement: { ...current.reimbursement, amount: Number(event.target.value || 0) } }))} />
+                  <TextInput type="number" min={0} value={Number(form.reimbursement.amount || 0)} onChange={(event) => setForm((current: any) => ({ ...current, reimbursement: { ...current.reimbursement, amount: Number(event.target.value || 0) } }))} />
                 </div>
               </div>
             </div>
@@ -190,34 +215,41 @@ export default function PayrollAdjustmentsView() {
             <Button onClick={saveAdjustment} disabled={!form.user_id || !form.title.trim()}>Save Adjustment</Button>
             <Button variant="secondary" onClick={() => { setSelectedId(null); setForm(emptyAdjustment); }}>Reset</Button>
           </div>
-        </SurfaceCard>
+        </PayrollSectionCard>
 
-        <SurfaceCard className="p-5">
-          <h3 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Adjustment Queue</h3>
-          <div className="mt-4 space-y-3">
-            {adjustments.length === 0 ? (
-              <p className="text-sm text-slate-500">No adjustments found for the selected month.</p>
-            ) : adjustments.map((adjustment) => (
-              <div key={adjustment.id} className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-slate-950">{adjustment.title}</p>
-                    <p className="text-sm text-slate-500">{adjustment.user?.name} • {adjustmentKindLabel(adjustment.kind)}</p>
+        <PayrollSectionCard title="Adjustment Queue" description="Review approval state, payroll impact, and employee-level context before a run is processed.">
+          {filteredAdjustments.length === 0 ? (
+            <EmptyStateCard title="No adjustments found" description="Try another month or create a new variable pay item." icon={Receipt} />
+          ) : (
+            <div className="space-y-3">
+              {filteredAdjustments.map((adjustment) => (
+                <div key={adjustment.id} className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-slate-950">{adjustment.title}</p>
+                      <p className="mt-1 text-sm text-slate-500">{adjustment.user?.name} • {adjustmentKindLabel(adjustment.kind)} • {formatPayrollMonth(adjustment.effective_month)}</p>
+                    </div>
+                    <PayrollStatusBadge status={adjustment.status} />
                   </div>
-                  <StatusBadge tone={payrollStatusTone(adjustment.status)}>{adjustment.status}</StatusBadge>
+                  <p className="mt-3 text-lg font-semibold text-slate-950">{formatPayrollCurrency(adjustment.amount, adjustment.currency)}</p>
+                  <p className="mt-1 text-sm text-slate-500">{adjustment.description || 'No description provided.'}</p>
+                  <div className="mt-3 rounded-[18px] border border-dashed border-slate-300 bg-white/70 px-3 py-2 text-xs text-slate-500">
+                    Applied-to-pay-run linkage is currently inferred by effective month and status. Direct run linkage can be surfaced when the backend adds an explicit relation.
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => loadAdjustment(adjustment)}>Edit</Button>
+                    <Button size="sm" variant="secondary" onClick={() => updateStatus(adjustment.id, 'approve')}>Approve</Button>
+                    <Button size="sm" variant="secondary" onClick={() => updateStatus(adjustment.id, 'apply')}>Apply</Button>
+                    <Button size="sm" variant="danger" onClick={() => updateStatus(adjustment.id, 'reject')}>Reject</Button>
+                    <Link to={`/payroll/employees/${adjustment.user_id}`}>
+                      <Button size="sm" variant="secondary">Open Employee</Button>
+                    </Link>
+                  </div>
                 </div>
-                <p className="mt-3 text-lg font-semibold text-slate-950">{formatPayrollCurrency(adjustment.amount, adjustment.currency)}</p>
-                <p className="text-sm text-slate-500">{adjustment.description || 'No description provided.'}</p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => loadAdjustment(adjustment)}>Edit</Button>
-                  <Button size="sm" variant="secondary" onClick={() => updateStatus(adjustment.id, 'approve')}>Approve</Button>
-                  <Button size="sm" variant="secondary" onClick={() => updateStatus(adjustment.id, 'apply')}>Apply</Button>
-                  <Button size="sm" variant="danger" onClick={() => updateStatus(adjustment.id, 'reject')}>Reject</Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </SurfaceCard>
+              ))}
+            </div>
+          )}
+        </PayrollSectionCard>
       </div>
     </div>
   );
