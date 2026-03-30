@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   activityApi,
@@ -26,6 +26,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState } from '@/components/ui/PageState';
+import { useAuth } from '@/contexts/AuthContext';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
   Activity,
@@ -290,6 +291,7 @@ function CompactList({
 }
 
 export default function AdminDashboard() {
+  const { user } = useAuth();
   const [filters, setFilters] = useState<PersistedFilterState>(() => {
     const fallback = defaultFilters();
     const raw = sessionStorage.getItem(FILTER_STORAGE_KEY);
@@ -344,12 +346,36 @@ export default function AdminDashboard() {
 
   const organizationUsers = usersQuery.data || [];
   const employees = organizationUsers.filter((item: any) => item.role === 'employee');
+  const selectableUsers = useMemo(
+    () =>
+      organizationUsers.filter((item: any) => {
+        if (user?.role === 'manager') {
+          return item.role === 'employee';
+        }
+
+        return item.role === 'employee' || item.role === 'manager';
+      }),
+    [organizationUsers, user?.role]
+  );
 
   useEffect(() => {
-    if (filters.scope === 'employee' && filters.selectedEmployeeId === '' && employees.length > 0) {
-      setFilters((current) => ({ ...current, selectedEmployeeId: employees[0].id }));
+    if (filters.scope === 'employee' && filters.selectedEmployeeId === '' && selectableUsers.length > 0) {
+      setFilters((current) => ({ ...current, selectedEmployeeId: selectableUsers[0].id }));
     }
-  }, [employees, filters.scope, filters.selectedEmployeeId]);
+  }, [filters.scope, filters.selectedEmployeeId, selectableUsers]);
+
+  useEffect(() => {
+    if (
+      filters.scope === 'employee' &&
+      filters.selectedEmployeeId !== '' &&
+      !selectableUsers.some((item: any) => item.id === filters.selectedEmployeeId)
+    ) {
+      setFilters((current) => ({
+        ...current,
+        selectedEmployeeId: selectableUsers[0]?.id || '',
+      }));
+    }
+  }, [filters.scope, filters.selectedEmployeeId, selectableUsers]);
 
   const organizationQuery = useQuery({
     queryKey: ['admin-dashboard-organization', filters.startDate, filters.endDate, organizationUsers.map((user: any) => user.id).join(',')],
@@ -469,7 +495,7 @@ export default function AdminDashboard() {
       scope,
       selectedEmployeeId:
         scope === 'employee'
-          ? current.selectedEmployeeId || employees[0]?.id || ''
+          ? current.selectedEmployeeId || selectableUsers[0]?.id || ''
           : current.selectedEmployeeId,
     }));
   };
@@ -567,7 +593,7 @@ export default function AdminDashboard() {
             onScopeChange={handleScopeChange}
             selectedEmployeeId={filters.selectedEmployeeId}
             onEmployeeChange={(value) => setFilters((current) => ({ ...current, selectedEmployeeId: value }))}
-            employees={employees}
+            employees={selectableUsers}
             datePreset={filters.datePreset}
             onDatePresetChange={handleDatePresetChange}
             startDate={filters.startDate}
@@ -585,7 +611,7 @@ export default function AdminDashboard() {
     );
   }
 
-  const selectedEmployee = employees.find((employee: any) => employee.id === filters.selectedEmployeeId) || null;
+  const selectedEmployee = selectableUsers.find((employee: any) => employee.id === filters.selectedEmployeeId) || null;
   const organizationData: any = organizationQuery.data;
   const employeeData: any = employeeQuery.data;
 
@@ -880,7 +906,7 @@ export default function AdminDashboard() {
             setExportFeedback(null);
             setFilters((current) => ({ ...current, selectedEmployeeId: value }));
           }}
-          employees={employees}
+          employees={selectableUsers}
           datePreset={filters.datePreset}
           onDatePresetChange={handleDatePresetChange}
           startDate={filters.startDate}
