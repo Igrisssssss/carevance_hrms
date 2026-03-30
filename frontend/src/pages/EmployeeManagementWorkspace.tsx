@@ -183,6 +183,25 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     },
   });
 
+  const deleteUserMutation = useMutation({
+    mutationFn: async ({ userId }: { userId: number }) => {
+      await userApi.delete(userId);
+    },
+    onSuccess: async (_data, variables) => {
+      const remainingUsers = users.filter((item: any) => item.id !== variables.userId);
+      setSelectedUserId(remainingUsers[0]?.id || null);
+      setFeedback({ tone: 'success', message: 'Employee removed successfully.' });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organization?.id] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-profile'] }),
+      ]);
+    },
+    onError: (error: any) => {
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Failed to remove employee.' });
+    },
+  });
+
   const isLoading = usersQuery.isLoading || groupsQuery.isLoading || membersQuery.isLoading || profileQuery.isLoading || invitationsQuery.isLoading;
   const isError = usersQuery.isError || groupsQuery.isError || membersQuery.isError || profileQuery.isError || invitationsQuery.isError;
   const pageTitle = modeCopy[mode];
@@ -199,6 +218,19 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const groups = groupsQuery.data || [];
   const members = membersQuery.data || [];
   const invitations = invitationsQuery.data || [];
+
+  const handleDeleteUser = (targetUser: any) => {
+    if (!targetUser?.id) {
+      return;
+    }
+
+    const targetName = targetUser.name || 'this employee';
+    if (!confirm(`Remove ${targetName} from this workspace? This will delete the employee account.`)) {
+      return;
+    }
+
+    deleteUserMutation.mutate({ userId: targetUser.id });
+  };
 
   if (isLoading) {
     return <PageLoadingState label={`Loading ${pageTitle.title.toLowerCase()}...`} />;
@@ -258,13 +290,25 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               <TextInput value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Search by name, email, or role" />
             </div>
             <div className="flex items-end">
-              {selectedUser ? (
-                <Link to={`/employees/${selectedUser.id}`} className="w-full">
-                  <Button className="w-full">Open Profile</Button>
-                </Link>
-              ) : (
-                <Button className="w-full" disabled>Open Profile</Button>
-              )}
+              <div className="flex w-full gap-3">
+                {selectedUser ? (
+                  <Link to={`/employees/${selectedUser.id}`} className="flex-1">
+                    <Button className="w-full">Open Profile</Button>
+                  </Link>
+                ) : (
+                  <Button className="flex-1 w-full" disabled>Open Profile</Button>
+                )}
+                {selectedUser ? (
+                  <Button
+                    variant="danger"
+                    onClick={() => handleDeleteUser(selectedUser)}
+                    disabled={deleteUserMutation.isPending}
+                    className="shrink-0"
+                  >
+                    {deleteUserMutation.isPending ? 'Removing...' : 'Remove Employee'}
+                  </Button>
+                ) : null}
+              </div>
             </div>
             {isStrictAdmin && selectedUser ? (
               <div>
@@ -308,6 +352,20 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                   <Link to={`/employees/${row.id}`}>
                     <Button variant="secondary" size="sm">Open Profile</Button>
                   </Link>
+                ),
+              },
+              {
+                key: 'remove',
+                header: 'Remove',
+                render: (row: any) => (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => handleDeleteUser(row)}
+                    disabled={deleteUserMutation.isPending}
+                  >
+                    Remove
+                  </Button>
                 ),
               },
               ...(isStrictAdmin
