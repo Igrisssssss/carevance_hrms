@@ -234,6 +234,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [isEmployeePanelLoading, setIsEmployeePanelLoading] = useState(false);
 
   const isAdmin = hasAdminAccess(user);
+  const canSeeAttendanceMonitoring = isAdmin;
   const setPunchFeedback = (nextMessage = '', nextError = '') => {
     if (nextMessage) {
       setPunchFeedbackState({ tone: 'success', message: nextMessage });
@@ -747,8 +748,14 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   useEffect(() => {
     if (mode !== 'full') return;
+    if (!canSeeAttendanceMonitoring) {
+      setEmployeeMonitoring(null);
+      setEmployeeMonitoringScreenshots([]);
+      setEmployeeWebsiteUsage([]);
+      return;
+    }
 
-    const monitoringUserId = isAdmin ? selectedUserId : user?.id;
+    const monitoringUserId = selectedUserId;
     if (!monitoringUserId) return;
 
     let active = true;
@@ -806,12 +813,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     return () => {
       active = false;
     };
-  }, [endDate, isAdmin, mode, selectedUserId, startDate, user?.id]);
+  }, [canSeeAttendanceMonitoring, endDate, mode, selectedUserId, startDate]);
 
   const selectedRow = rows.find((row) => row.user.id === selectedUserId) || rows[0];
   const employeePanelUser = employeeProfile?.user || user;
   const attendancePanelUser = isAdmin ? selectedRow?.user : employeePanelUser;
-  const monitoringUserId = isAdmin ? selectedUserId : user?.id;
+  const monitoringUserId = canSeeAttendanceMonitoring ? selectedUserId : null;
   const pendingLeaveRequests = useMemo(
     () => leaveRequests.filter((item) => item.status === 'pending'),
     [leaveRequests]
@@ -1102,6 +1109,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           </SurfaceCard>
         ) : null}
 
+        {canSeeAttendanceMonitoring ? (
         <SurfaceCard className="lg:col-span-3 p-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -1203,6 +1211,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             </div>
           </div>
         </SurfaceCard>
+        ) : null}
 
         <SurfaceCard className="lg:col-span-3 p-4">
           {punchFeedback ? (
