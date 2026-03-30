@@ -1,0 +1,1620 @@
+{
+    "generated_at": "2026-03-20T12:27:53+00:00",
+    "summary": {
+        "total_routes": 156,
+        "api_routes": 153,
+        "covered_api_routes": 51,
+        "uncovered_api_routes": 102,
+        "api_coverage_percent": 33.33
+    },
+    "controllers": {
+        "AuditLogController": {
+            "covered": 0,
+            "total": 1
+        },
+        "DesktopDownloadController": {
+            "covered": 0,
+            "total": 1
+        },
+        "CompanyController": {
+            "covered": 0,
+            "total": 1
+        },
+        "InviteController": {
+            "covered": 0,
+            "total": 3
+        },
+        "ReportGroupController": {
+            "covered": 0,
+            "total": 4
+        },
+        "ActivityController": {
+            "covered": 0,
+            "total": 5
+        },
+        "InvoiceController": {
+            "covered": 0,
+            "total": 7
+        },
+        "TaskController": {
+            "covered": 0,
+            "total": 7
+        },
+        "ProjectController": {
+            "covered": 0,
+            "total": 8
+        },
+        "OrganizationController": {
+            "covered": 1,
+            "total": 7
+        },
+        "UserController": {
+            "covered": 1,
+            "total": 7
+        },
+        "PayrollController": {
+            "covered": 4,
+            "total": 19
+        },
+        "ScreenshotController": {
+            "covered": 2,
+            "total": 8
+        },
+        "LeaveRequestController": {
+            "covered": 2,
+            "total": 7
+        },
+        "TimeEntryController": {
+            "covered": 3,
+            "total": 9
+        },
+        "ReportController": {
+            "covered": 4,
+            "total": 11
+        },
+        "AttendanceController": {
+            "covered": 2,
+            "total": 5
+        },
+        "AttendanceTimeEditRequestController": {
+            "covered": 2,
+            "total": 4
+        },
+        "ChatController": {
+            "covered": 11,
+            "total": 18
+        },
+        "InvitationController": {
+            "covered": 3,
+            "total": 4
+        },
+        "AuthController": {
+            "covered": 5,
+            "total": 6
+        },
+        "BillingController": {
+            "covered": 1,
+            "total": 1
+        },
+        "NotificationController": {
+            "covered": 4,
+            "total": 4
+        },
+        "SettingsController": {
+            "covered": 6,
+            "total": 6
+        }
+    },
+    "routes": [
+        {
+            "is_api": false,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/",
+            "name": null,
+            "action": "Closure",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/activities",
+            "name": "activities.index",
+            "action": "App\\Http\\Controllers\\Api\\ActivityController@index",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/activities",
+            "name": "activities.store",
+            "action": "App\\Http\\Controllers\\Api\\ActivityController@store",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/activities/{activity}",
+            "name": "activities.show",
+            "action": "App\\Http\\Controllers\\Api\\ActivityController@show",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PUT|PATCH",
+            "uri": "/api/activities/{activity}",
+            "name": "activities.update",
+            "action": "App\\Http\\Controllers\\Api\\ActivityController@update",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "DELETE",
+            "uri": "/api/activities/{activity}",
+            "name": "activities.destroy",
+            "action": "App\\Http\\Controllers\\Api\\ActivityController@destroy",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/attendance-time-edit-requests",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AttendanceTimeEditRequestController@index",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/attendance-time-edit-requests",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AttendanceTimeEditRequestController@store",
+            "matched_tests": [
+                "tests\\Feature\\TimeEditNotificationFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PATCH",
+            "uri": "/api/attendance-time-edit-requests/{id}/approve",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AttendanceTimeEditRequestController@approve",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "PATCH",
+            "uri": "/api/attendance-time-edit-requests/{id}/reject",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AttendanceTimeEditRequestController@reject",
+            "matched_tests": [
+                "tests\\Feature\\TimeEditNotificationFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/attendance/calendar",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AttendanceController@calendar",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/attendance/check-in",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AttendanceController@checkIn",
+            "matched_tests": [
+                "tests\\Feature\\AttendanceAndTimerFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/attendance/check-out",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AttendanceController@checkOut",
+            "matched_tests": [
+                "tests\\Feature\\AttendanceAndTimerFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/attendance/summary",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AttendanceController@summary",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/attendance/today",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AttendanceController@today",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/audit-logs",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AuditLogController@index",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/auth/handoff",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AuthController@handoff",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/auth/login",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AuthController@login",
+            "matched_tests": [
+                "tests\\Feature\\AuthApiTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/auth/logout",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AuthController@logout",
+            "matched_tests": [
+                "tests\\Feature\\AuthApiTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/auth/me",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AuthController@user",
+            "matched_tests": [
+                "tests\\Feature\\AuthApiTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/auth/register",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AuthController@register",
+            "matched_tests": [
+                "tests\\Feature\\OwnerSignupApiTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/auth/signup-owner",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\AuthController@signupOwner",
+            "matched_tests": [
+                "tests\\Feature\\OwnerSignupApiTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/billing/current",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\BillingController@current",
+            "matched_tests": [
+                "tests\\Feature\\OwnerSignupApiTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/chat/available-users",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@availableUsers",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/chat/conversations",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@conversations",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/chat/conversations",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@startConversation",
+            "matched_tests": [
+                "tests\\Feature\\ChatApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/chat/conversations/{conversationId}/messages",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@messages",
+            "matched_tests": [
+                "tests\\Feature\\ChatApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/chat/conversations/{conversationId}/messages",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@sendMessage",
+            "matched_tests": [
+                "tests\\Feature\\ChatApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/chat/conversations/{conversationId}/read",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@markRead",
+            "matched_tests": [
+                "tests\\Feature\\ChatApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/chat/conversations/{conversationId}/typing",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@setTyping",
+            "matched_tests": [
+                "tests\\Feature\\ChatApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/chat/conversations/{conversationId}/typing",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@typingStatus",
+            "matched_tests": [
+                "tests\\Feature\\ChatApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/chat/groups",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@groups",
+            "matched_tests": [
+                "tests\\Feature\\ChatApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/chat/groups",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@createGroup",
+            "matched_tests": [
+                "tests\\Feature\\ChatApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/chat/groups/messages/{messageId}/attachment",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@groupAttachment",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/chat/groups/{groupId}/messages",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@groupMessages",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/chat/groups/{groupId}/messages",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@sendGroupMessage",
+            "matched_tests": [
+                "tests\\Feature\\ChatApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/chat/groups/{groupId}/read",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@markGroupRead",
+            "matched_tests": [
+                "tests\\Feature\\ChatApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/chat/groups/{groupId}/typing",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@setGroupTyping",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/chat/groups/{groupId}/typing",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@groupTypingStatus",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/chat/messages/{messageId}/attachment",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@attachment",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/chat/unread-summary",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ChatController@unreadSummary",
+            "matched_tests": [
+                "tests\\Feature\\ChatApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/dashboard",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportController@dashboard",
+            "matched_tests": [
+                "tests\\Feature\\AuthApiTest.php",
+                "tests\\Feature\\ReportWorkingTimeTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/downloads/desktop/windows",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\DesktopDownloadController@windows",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/invitations",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\InvitationController@index",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/invitations",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\InvitationController@store",
+            "matched_tests": [
+                "tests\\Feature\\InvitationFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/invitations/{token}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\InvitationController@show",
+            "matched_tests": [
+                "tests\\Feature\\InvitationFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/invitations/{token}/accept",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\InvitationController@accept",
+            "matched_tests": [
+                "tests\\Feature\\InvitationFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/invites/accept",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\InviteController@acceptInvite",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/invites/send",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\InviteController@sendInvite",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/invites/validate",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\InviteController@validateInvite",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/invoices",
+            "name": "invoices.index",
+            "action": "App\\Http\\Controllers\\Api\\InvoiceController@index",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/invoices",
+            "name": "invoices.store",
+            "action": "App\\Http\\Controllers\\Api\\InvoiceController@store",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/invoices/{id}/mark-paid",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\InvoiceController@markPaid",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/invoices/{id}/send",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\InvoiceController@send",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/invoices/{invoice}",
+            "name": "invoices.show",
+            "action": "App\\Http\\Controllers\\Api\\InvoiceController@show",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PUT|PATCH",
+            "uri": "/api/invoices/{invoice}",
+            "name": "invoices.update",
+            "action": "App\\Http\\Controllers\\Api\\InvoiceController@update",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "DELETE",
+            "uri": "/api/invoices/{invoice}",
+            "name": "invoices.destroy",
+            "action": "App\\Http\\Controllers\\Api\\InvoiceController@destroy",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/leave-requests",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\LeaveRequestController@index",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/leave-requests",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\LeaveRequestController@store",
+            "matched_tests": [
+                "tests\\Feature\\AdminAccessAndLeaveApprovalTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "PATCH",
+            "uri": "/api/leave-requests/{id}/approve",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\LeaveRequestController@approve",
+            "matched_tests": [
+                "tests\\Feature\\AdminAccessAndLeaveApprovalTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PATCH",
+            "uri": "/api/leave-requests/{id}/reject",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\LeaveRequestController@reject",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PATCH",
+            "uri": "/api/leave-requests/{id}/revoke-approve",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\LeaveRequestController@approveRevoke",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PATCH",
+            "uri": "/api/leave-requests/{id}/revoke-reject",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\LeaveRequestController@rejectRevoke",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/leave-requests/{id}/revoke-request",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\LeaveRequestController@requestRevoke",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/me/company",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\CompanyController@current",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/notifications",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\NotificationController@index",
+            "matched_tests": [
+                "tests\\Feature\\NotificationApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/notifications/publish",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\NotificationController@publish",
+            "matched_tests": [
+                "tests\\Feature\\NotificationApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/notifications/read-all",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\NotificationController@markAllRead",
+            "matched_tests": [
+                "tests\\Feature\\NotificationApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/notifications/{id}/read",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\NotificationController@markRead",
+            "matched_tests": [
+                "tests\\Feature\\NotificationApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/organizations",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\OrganizationController@index",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/organizations",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\OrganizationController@store",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/organizations/{id}/invite",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\OrganizationController@invite",
+            "matched_tests": [
+                "tests\\Feature\\OrganizationInviteProtectionTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/organizations/{id}/members",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\OrganizationController@members",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/organizations/{organization}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\OrganizationController@show",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PUT|PATCH",
+            "uri": "/api/organizations/{organization}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\OrganizationController@update",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "DELETE",
+            "uri": "/api/organizations/{organization}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\OrganizationController@destroy",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/payroll/employees",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@employees",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/payroll/payslips",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@payslips",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/payroll/payslips/generate",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@generatePayslip",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/payroll/payslips/pay-now",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@payNow",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/payroll/payslips/{id}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@showPayslip",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/payroll/payslips/{id}/pdf",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@downloadPayslipPdf",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/payroll/records",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@records",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/payroll/records/generate",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@generateRecords",
+            "matched_tests": [
+                "tests\\Feature\\PayrollWorkflowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/payroll/records/{id}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@showRecord",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "PATCH",
+            "uri": "/api/payroll/records/{id}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@updateRecord",
+            "matched_tests": [
+                "tests\\Feature\\PayrollWorkflowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/payroll/records/{id}/payout",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@payoutRecord",
+            "matched_tests": [
+                "tests\\Feature\\PayrollWorkflowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/payroll/records/{id}/status",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@updateRecordStatus",
+            "matched_tests": [
+                "tests\\Feature\\PayrollWorkflowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/payroll/records/{id}/sync-stripe-checkout",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@syncStripeCheckout",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/payroll/records/{id}/transactions",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@recordTransactions",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/payroll/structures",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@structures",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/payroll/structures",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@upsertStructure",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PUT",
+            "uri": "/api/payroll/structures/{id}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@updateStructure",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "DELETE",
+            "uri": "/api/payroll/structures/{id}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@deleteStructure",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/payroll/webhooks/stripe",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\PayrollController@stripeWebhook",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/projects",
+            "name": "projects.index",
+            "action": "App\\Http\\Controllers\\Api\\ProjectController@index",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/projects",
+            "name": "projects.store",
+            "action": "App\\Http\\Controllers\\Api\\ProjectController@store",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/projects/{id}/stats",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ProjectController@stats",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/projects/{id}/tasks",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ProjectController@tasks",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/projects/{id}/time-entries",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ProjectController@timeEntries",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/projects/{project}",
+            "name": "projects.show",
+            "action": "App\\Http\\Controllers\\Api\\ProjectController@show",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PUT|PATCH",
+            "uri": "/api/projects/{project}",
+            "name": "projects.update",
+            "action": "App\\Http\\Controllers\\Api\\ProjectController@update",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "DELETE",
+            "uri": "/api/projects/{project}",
+            "name": "projects.destroy",
+            "action": "App\\Http\\Controllers\\Api\\ProjectController@destroy",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/report-groups",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportGroupController@index",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/report-groups",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportGroupController@store",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PUT",
+            "uri": "/api/report-groups/{id}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportGroupController@update",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "DELETE",
+            "uri": "/api/report-groups/{id}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportGroupController@destroy",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/reports/attendance",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportController@attendance",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/reports/daily",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportController@daily",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/reports/employee-insights",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportController@employeeInsights",
+            "matched_tests": [
+                "tests\\Feature\\ReportWorkingTimeTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/reports/export",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportController@export",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/reports/monthly",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportController@monthly",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/reports/overall",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportController@overall",
+            "matched_tests": [
+                "tests\\Feature\\AdminAccessAndLeaveApprovalTest.php",
+                "tests\\Feature\\ReportWorkingTimeTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/reports/productivity",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportController@productivity",
+            "matched_tests": [
+                "tests\\Feature\\ReportWorkingTimeTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/reports/project/{projectId}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportController@project",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/reports/team",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportController@team",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/reports/weekly",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ReportController@weekly",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/screenshots",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ScreenshotController@index",
+            "matched_tests": [
+                "tests\\Feature\\ScreenshotSecurityTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/screenshots",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ScreenshotController@store",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/screenshots/bulk-delete",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ScreenshotController@bulkDestroy",
+            "matched_tests": [
+                "tests\\Feature\\ScreenshotSecurityTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/screenshots/{screenshot}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ScreenshotController@show",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PUT",
+            "uri": "/api/screenshots/{screenshot}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ScreenshotController@update",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PATCH",
+            "uri": "/api/screenshots/{screenshot}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ScreenshotController@update",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "DELETE",
+            "uri": "/api/screenshots/{screenshot}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\ScreenshotController@destroy",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/screenshots/{screenshot}/file",
+            "name": "screenshots.file",
+            "action": "App\\Http\\Controllers\\Api\\ScreenshotController@file",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/settings/billing",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\SettingsController@billing",
+            "matched_tests": [
+                "tests\\Feature\\SettingsApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/settings/me",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\SettingsController@me",
+            "matched_tests": [
+                "tests\\Feature\\AuthApiTest.php",
+                "tests\\Feature\\SettingsApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "PUT",
+            "uri": "/api/settings/organization",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\SettingsController@updateOrganization",
+            "matched_tests": [
+                "tests\\Feature\\AdminAccessAndLeaveApprovalTest.php",
+                "tests\\Feature\\SettingsApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "PUT",
+            "uri": "/api/settings/password",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\SettingsController@updatePassword",
+            "matched_tests": [
+                "tests\\Feature\\SettingsApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "PUT",
+            "uri": "/api/settings/preferences",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\SettingsController@updatePreferences",
+            "matched_tests": [
+                "tests\\Feature\\SettingsApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "PUT",
+            "uri": "/api/settings/profile",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\SettingsController@updateProfile",
+            "matched_tests": [
+                "tests\\Feature\\SettingsApiFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/tasks",
+            "name": "tasks.index",
+            "action": "App\\Http\\Controllers\\Api\\TaskController@index",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/tasks",
+            "name": "tasks.store",
+            "action": "App\\Http\\Controllers\\Api\\TaskController@store",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/tasks/{id}/time-entries",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\TaskController@timeEntries",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/tasks/{task}",
+            "name": "tasks.show",
+            "action": "App\\Http\\Controllers\\Api\\TaskController@show",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PUT|PATCH",
+            "uri": "/api/tasks/{task}",
+            "name": "tasks.update",
+            "action": "App\\Http\\Controllers\\Api\\TaskController@update",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "DELETE",
+            "uri": "/api/tasks/{task}",
+            "name": "tasks.destroy",
+            "action": "App\\Http\\Controllers\\Api\\TaskController@destroy",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PATCH",
+            "uri": "/api/tasks/{task}/status",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\TaskController@updateStatus",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/time-entries",
+            "name": "time-entries.index",
+            "action": "App\\Http\\Controllers\\Api\\TimeEntryController@index",
+            "matched_tests": [
+                "tests\\Feature\\ReportWorkingTimeTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/time-entries",
+            "name": "time-entries.store",
+            "action": "App\\Http\\Controllers\\Api\\TimeEntryController@store",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/time-entries/active",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\TimeEntryController@active",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/time-entries/start",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\TimeEntryController@start",
+            "matched_tests": [
+                "tests\\Feature\\AttendanceAndTimerFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "POST",
+            "uri": "/api/time-entries/stop",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\TimeEntryController@stop",
+            "matched_tests": [
+                "tests\\Feature\\AttendanceAndTimerFlowTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/time-entries/today",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\TimeEntryController@today",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/time-entries/{time_entry}",
+            "name": "time-entries.show",
+            "action": "App\\Http\\Controllers\\Api\\TimeEntryController@show",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PUT|PATCH",
+            "uri": "/api/time-entries/{time_entry}",
+            "name": "time-entries.update",
+            "action": "App\\Http\\Controllers\\Api\\TimeEntryController@update",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "DELETE",
+            "uri": "/api/time-entries/{time_entry}",
+            "name": "time-entries.destroy",
+            "action": "App\\Http\\Controllers\\Api\\TimeEntryController@destroy",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/users",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\UserController@index",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "POST",
+            "uri": "/api/users",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\UserController@store",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": true,
+            "methods": "GET",
+            "uri": "/api/users/{id}/profile-360",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\UserController@profile360",
+            "matched_tests": [
+                "tests\\Feature\\ReportWorkingTimeTest.php"
+            ]
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/users/{id}/stats",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\UserController@stats",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/api/users/{user}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\UserController@show",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "PUT|PATCH",
+            "uri": "/api/users/{user}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\UserController@update",
+            "matched_tests": []
+        },
+        {
+            "is_api": true,
+            "covered": false,
+            "methods": "DELETE",
+            "uri": "/api/users/{user}",
+            "name": null,
+            "action": "App\\Http\\Controllers\\Api\\UserController@destroy",
+            "matched_tests": []
+        },
+        {
+            "is_api": false,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/test-mail",
+            "name": null,
+            "action": "Closure",
+            "matched_tests": []
+        },
+        {
+            "is_api": false,
+            "covered": false,
+            "methods": "GET",
+            "uri": "/up",
+            "name": null,
+            "action": "Closure",
+            "matched_tests": []
+        }
+    ]
+}

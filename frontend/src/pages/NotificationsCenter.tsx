@@ -33,7 +33,7 @@ export default function NotificationsCenter() {
           limit: 100,
           type: typeFilter || undefined,
           q: query || undefined,
-          unread_only: statusFilter === 'unread',
+          unread_only: statusFilter === 'unread' ? true : undefined,
         }),
         isAdmin ? userApi.getAll({ period: 'all' }) : Promise.resolve({ data: [] }),
       ]);

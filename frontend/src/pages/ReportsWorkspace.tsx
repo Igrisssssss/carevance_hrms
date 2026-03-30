@@ -76,8 +76,9 @@ const fetchTimeEntriesForUsers = async (userIds: number[], startDate: string, en
     uniqueUserIds.map(async (userId) => {
       const collectedEntries: any[] = [];
       let currentPage = 1;
+      let hasMorePages = true;
 
-      while (true) {
+      while (hasMorePages) {
         const response = await timeEntryApi.getAll({
           user_id: userId,
           start_date: startDate,
@@ -89,10 +90,10 @@ const fetchTimeEntriesForUsers = async (userIds: number[], startDate: string, en
 
         collectedEntries.push(...(payload.data || []));
         if (!payload.last_page || payload.current_page >= payload.last_page) {
-          break;
+          hasMorePages = false;
+        } else {
+          currentPage += 1;
         }
-
-        currentPage += 1;
       }
 
       return collectedEntries;

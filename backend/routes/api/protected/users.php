@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\EmployeeWorkspaceController;
 use App\Http\Controllers\Api\ReportGroupController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
@@ -13,6 +14,13 @@ Route::get('/users/{id}/stats', [UserController::class, 'stats']);
 Route::get('/users/{id}/profile-360', [UserController::class, 'profile360']);
 
 Route::middleware('role:admin,manager')->group(function () {
+    Route::get('/employees/{id}/workspace', [EmployeeWorkspaceController::class, 'show']);
+    Route::put('/employees/{id}/profile', [EmployeeWorkspaceController::class, 'updateProfile']);
+    Route::put('/employees/{id}/work-info', [EmployeeWorkspaceController::class, 'updateWorkInfo']);
+    Route::post('/employees/{id}/government-ids', [EmployeeWorkspaceController::class, 'storeGovernmentId']);
+    Route::post('/employees/{id}/bank-accounts', [EmployeeWorkspaceController::class, 'storeBankAccount']);
+    Route::post('/employees/{id}/documents', [EmployeeWorkspaceController::class, 'storeDocument']);
+    Route::get('/employees/{id}/documents/{documentId}/download', [EmployeeWorkspaceController::class, 'downloadDocument']);
     Route::get('/report-groups', [ReportGroupController::class, 'index']);
     Route::post('/report-groups', [ReportGroupController::class, 'store']);
     Route::put('/report-groups/{id}', [ReportGroupController::class, 'update']);

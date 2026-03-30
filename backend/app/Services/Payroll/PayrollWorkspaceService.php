@@ -616,6 +616,15 @@ class PayrollWorkspaceService
               $allowances += $computed;
               $earnings[] = $row;
               continue;
+
+          }
+
+          
+          if ($category === 'earning'){
+                $allowances += $computed;
+                $earnings[] = $row;
+                continue;
+
           }
           if ($category === 'bonus') {
               $bonus += $computed;
@@ -629,7 +638,6 @@ class PayrollWorkspaceService
           }
           $deductionRows[] = $row;
         }
-
 
         return [
             'basic_salary' => round($basicSalary, 2),

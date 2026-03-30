@@ -47,6 +47,8 @@ export const clearAuthStorage = () => {
   });
 };
 
+
+
 export const migrateStoredAuth = () => {
   const preferredStorage = getPreferredAuthStorage();
   const secondaryStorage = getSecondaryAuthStorage();

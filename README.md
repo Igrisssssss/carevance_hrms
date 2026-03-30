@@ -190,6 +190,7 @@ PAYROLL_STRIPE_SUCCESS_URL=https://your-frontend-domain.com/payroll?payment=succ
 PAYROLL_STRIPE_CANCEL_URL=https://your-frontend-domain.com/payroll?payment=cancelled
 ```
 
+
 Frontend example:
 
 ```env
@@ -204,43 +205,6 @@ try_files $uri $uri/ /index.html;
 ```
 
 It also injects frontend env vars at runtime through [`env-config.js`](/d:/demo_laravel_2/frontend/public/env-config.js), so the same image can be promoted across environments without rebuilding.
-
-## Render Deploy
-
-This repo now includes a Render Blueprint at [`render.yaml`](/d:/demo_laravel_2/render.yaml).
-
-It now uses Docker for both services so the frontend is served by Nginx with SPA fallback instead of depending on static-host rewrite behavior.
-
-Use it like this:
-
-1. In Render, create a new Blueprint and point it at this repo.
-2. Let Render create:
-   - `carevance-frontend` as a Docker Web Service
-   - `carevance-backend` as a Docker Web Service
-3. Enter the prompted values:
-
-Frontend:
-
-```env
-VITE_API_URL=https://YOUR-BACKEND.onrender.com/api
-VITE_WEB_APP_URL=https://YOUR-FRONTEND.onrender.com
-VITE_DESKTOP_DOWNLOAD_URL=https://YOUR-BACKEND.onrender.com/api/downloads/desktop/windows
-```
-
-Backend:
-
-```env
-APP_URL=https://YOUR-BACKEND.onrender.com
-CORS_ALLOWED_ORIGINS=https://YOUR-FRONTEND.onrender.com
-DB_HOST=YOUR_RENDER_POSTGRES_HOST
-DB_DATABASE=YOUR_RENDER_POSTGRES_DB
-DB_USERNAME=YOUR_RENDER_POSTGRES_USER
-DB_PASSWORD=YOUR_RENDER_POSTGRES_PASSWORD
-DESKTOP_WINDOWS_DOWNLOAD_URL=https://github.com/<owner>/<repo>/releases/latest/download/CareVance-Setup-1.0.0-x64.exe
-PAYROLL_STRIPE_RETURN_URL=https://YOUR-FRONTEND.onrender.com/payroll
-PAYROLL_STRIPE_SUCCESS_URL=https://YOUR-FRONTEND.onrender.com/payroll?payment=success
-PAYROLL_STRIPE_CANCEL_URL=https://YOUR-FRONTEND.onrender.com/payroll?payment=cancelled
-```
 
 If you deploy the frontend manually on AWS, ECS, EC2, or another container platform, use the same [`frontend/Dockerfile`](/d:/demo_laravel_2/frontend/Dockerfile) and pass the same `VITE_*` env vars at container runtime. The included Nginx config handles `/dashboard`, `/payroll`, and the rest of the app on hard refresh without hash routes or host-specific rewrite hacks.
 
@@ -298,11 +262,20 @@ Installer download behavior:
 ```bash
 cd backend
 php artisan test
+composer test:coverage
+composer route:test-matrix
 ```
+
+Notes:
+- `composer test:coverage` generates backend coverage only when `Xdebug` or `PCOV` is installed. Without a coverage driver, it runs the full backend test suite and prints a clear warning.
+- `composer route:test-matrix` writes:
+  - [`backend/docs/route-test-matrix.md`](/d:/demo_laravel_2/backend/docs/route-test-matrix.md)
+  - [`backend/docs/route-test-matrix.json`](/d:/demo_laravel_2/backend/docs/route-test-matrix.json)
 
 ```bash
 cd frontend
 npm run build
+npm run test:coverage
 ```
 
 ```bash
