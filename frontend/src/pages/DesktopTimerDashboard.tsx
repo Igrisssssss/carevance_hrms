@@ -460,6 +460,7 @@ export default function DesktopTimerDashboard() {
     0,
     workedBaseSeconds + (activeTimer ? Math.max(0, liveDuration - timerBaseSeconds) : 0)
   );
+  const todayDisplaySeconds = Math.max(todayTotal, currentWorkedSeconds);
   const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - currentWorkedSeconds);
   const overtimeSeconds = Math.max(0, currentWorkedSeconds - shiftTargetSeconds);
   const availableTasks = projectTasks.filter((task) => task.status !== 'done');
@@ -651,7 +652,13 @@ export default function DesktopTimerDashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Today's Time" value={formatDuration(todayTotal)} hint={todayDeltaLabel} icon={Clock} accent="sky" />
+        <MetricCard
+          label="Today's Time"
+          value={formatDuration(todayDisplaySeconds)}
+          hint={todayDisplaySeconds > todayTotal ? 'Includes approved attendance edits' : todayDeltaLabel}
+          icon={Clock}
+          accent="sky"
+        />
         <MetricCard label="Active Projects" value={activeProjectsCount} hint={`${totalProjectsCount} total projects`} icon={FolderKanban} accent="violet" />
         <MetricCard label="Team Members" value={teamMembersCount} hint={`${newMembersThisWeek} new this week`} icon={Users} accent="emerald" />
         <MetricCard label="Productivity" value={`${productivityScore}%`} hint="Based on working ratio this week" icon={TrendingUp} accent="amber" />

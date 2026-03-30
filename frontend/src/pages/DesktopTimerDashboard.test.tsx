@@ -221,6 +221,42 @@ describe('DesktopTimerDashboard', () => {
     });
   });
 
+  it('shows attendance-worked time in the today card when approved edits make it higher than tracked timer time', async () => {
+    mocks.summaryMock.mockReset();
+    mocks.summaryMock.mockResolvedValue({
+      data: {
+        active_timer: null,
+        today_entries: [],
+        today_total_elapsed_duration: 4560,
+        all_time_total_elapsed_duration: 4560,
+        team_members_count: 4,
+        new_members_this_week: 1,
+        productivity_score: 82,
+        active_projects_count: 1,
+        total_projects_count: 1,
+      },
+    });
+
+    mocks.attendanceTodayMock.mockResolvedValue({
+      data: {
+        shift_target_seconds: 28800,
+        record: {
+          worked_seconds: 34020,
+          is_checked_in: false,
+          attendance_date: '2026-03-16',
+        },
+      },
+    });
+
+    sessionStorage.clear();
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    expect(await screen.findByText("Today's Time")).toBeInTheDocument();
+    expect(screen.getByText('9h 27m')).toBeInTheDocument();
+    expect(screen.getByText(/includes approved attendance edits/i)).toBeInTheDocument();
+  });
+
   it('does not auto-start just from remounting when login did not arm it', async () => {
     sessionStorage.clear();
     mocks.summaryMock.mockReset();
