@@ -62,9 +62,22 @@ export const useDesktopTracker = () => {
   const lastInputRef = useRef<number>(Date.now());
   const lastTickAtRef = useRef<number | null>(null);
   const activeSegmentRef = useRef<ActiveSegment | null>(null);
-  const lastScreenshotAtRef = useRef<number>(0);
+  const activityIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const screenshotIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingIdleRewindRef = useRef<Map<number, number>>(new Map());
   const lastAutoStoppedEntryIdRef = useRef<number | null>(null);
+
+  const clearTrackerIntervals = () => {
+    if (activityIntervalRef.current !== null) {
+      clearInterval(activityIntervalRef.current);
+      activityIntervalRef.current = null;
+    }
+
+    if (screenshotIntervalRef.current !== null) {
+      clearInterval(screenshotIntervalRef.current);
+      screenshotIntervalRef.current = null;
+    }
+  };
 
   useEffect(() => {
     const markInput = () => {
@@ -95,6 +108,7 @@ export const useDesktopTracker = () => {
     const isTrackedUser = isTrackedTimerUser(user);
     const desktopApi = window.desktopTracker;
     if (!isAuthenticated || !isTrackedUser || !desktopApi) {
+      clearTrackerIntervals();
       activeSegmentRef.current = null;
       pendingIdleRewindRef.current.clear();
       lastAutoStoppedEntryIdRef.current = null;
@@ -103,12 +117,20 @@ export const useDesktopTracker = () => {
     const runId = ++desktopTrackerRunSequence;
     const isCurrentRun = () => desktopTrackerRunSequence === runId;
     let inFlight = false;
+    let screenshotInFlight = false;
+    clearTrackerIntervals();
     lastTickAtRef.current = Date.now();
     lastInputRef.current = Date.now();
     activeSegmentRef.current = null;
-    lastScreenshotAtRef.current = Date.now();
     pendingIdleRewindRef.current.clear();
     lastAutoStoppedEntryIdRef.current = null;
+
+    const getIdleSeconds = async (now: number) => {
+      const idleSecondsFromInput = Math.max(0, Math.floor((now - lastInputRef.current) / 1000));
+      const idleSecondsSystem = Math.max(0, await desktopApi.getSystemIdleSeconds());
+
+      return Math.min(idleSecondsFromInput, idleSecondsSystem);
+    };
 
     const rewindTrackedIdleWindow = async (recordedAt: string) => {
       const rewindPoints = Array.from(pendingIdleRewindRef.current.entries());
@@ -146,9 +168,7 @@ export const useDesktopTracker = () => {
           return;
         }
 
-        const idleSecondsFromInput = Math.max(0, Math.floor((now - lastInputRef.current) / 1000));
-        const idleSecondsSystem = Math.max(0, await desktopApi.getSystemIdleSeconds());
-        const idleSeconds = Math.min(idleSecondsFromInput, idleSecondsSystem);
+        const idleSeconds = await getIdleSeconds(now);
         const trackedWindowEnd = Math.min(now, Math.max(lastInputRef.current, previousTickAt));
         const trackedSecondsThisTick = Math.max(
           0,
@@ -312,17 +332,6 @@ export const useDesktopTracker = () => {
             pendingIdleRewindRef.current.set(response.data.id, 0);
           }
         }
-
-        if (now - lastScreenshotAtRef.current >= SCREENSHOT_INTERVAL_MS) {
-          const screenshotDataUrl = await desktopApi.captureScreenshot();
-          if (screenshotDataUrl) {
-            const file = dataUrlToFile(screenshotDataUrl, `capture-${now}.png`);
-            if (file) {
-              await screenshotApi.upload(activeEntry.id, file);
-            }
-          }
-          lastScreenshotAtRef.current = now;
-        }
       } catch (error) {
         console.error('Desktop tracker tick failed:', error);
       } finally {
@@ -330,11 +339,50 @@ export const useDesktopTracker = () => {
       }
     };
 
-    const interval = setInterval(() => {
+    const captureScreenshotOnInterval = async () => {
+      if (screenshotInFlight || !isCurrentRun()) return;
+
+      screenshotInFlight = true;
+      try {
+        const active = await timeEntryApi.active({ timer_slot: 'primary' });
+        const activeEntry = active.data;
+        if (!activeEntry?.id) {
+          return;
+        }
+
+        const now = Date.now();
+        const idleSeconds = await getIdleSeconds(now);
+        if (idleSeconds >= IDLE_THRESHOLD_SECONDS) {
+          return;
+        }
+
+        const screenshotDataUrl = await desktopApi.captureScreenshot();
+        if (!screenshotDataUrl) {
+          return;
+        }
+
+        const file = dataUrlToFile(screenshotDataUrl, `capture-${now}.png`);
+        if (!file) {
+          return;
+        }
+
+        await screenshotApi.upload(activeEntry.id, file);
+      } catch (error) {
+        console.error('Desktop tracker screenshot capture failed:', error);
+      } finally {
+        screenshotInFlight = false;
+      }
+    };
+
+    activityIntervalRef.current = setInterval(() => {
       void tick();
     }, ACTIVITY_TRACK_INTERVAL_MS);
+    screenshotIntervalRef.current = setInterval(() => {
+      void captureScreenshotOnInterval();
+    }, SCREENSHOT_INTERVAL_MS);
+
     return () => {
-      clearInterval(interval);
+      clearTrackerIntervals();
       if (desktopTrackerRunSequence === runId) {
         desktopTrackerRunSequence += 1;
       }

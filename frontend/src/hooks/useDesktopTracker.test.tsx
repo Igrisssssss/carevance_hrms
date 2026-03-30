@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
   updateActivityMock: vi.fn(),
   deleteActivityMock: vi.fn(),
   uploadScreenshotMock: vi.fn(),
+  captureScreenshotMock: vi.fn(),
+  getSystemIdleSecondsMock: vi.fn(),
+  getActiveWindowContextMock: vi.fn(),
+  revealWindowMock: vi.fn(),
   authUser: {
     id: 1,
     name: 'Employee User',
@@ -90,18 +94,20 @@ describe('useDesktopTracker', () => {
     mocks.updateActivityMock.mockResolvedValue({ data: { id: 501 } });
     mocks.deleteActivityMock.mockResolvedValue({ data: { message: 'Activity deleted successfully' } });
     mocks.uploadScreenshotMock.mockResolvedValue({ data: { id: 1 } });
-
-    const idleSince = Date.now();
+    mocks.captureScreenshotMock.mockResolvedValue(null);
+    mocks.getSystemIdleSecondsMock.mockResolvedValue(0);
+    mocks.getActiveWindowContextMock.mockResolvedValue({
+      app: 'Visual Studio Code',
+      title: 'Tracking Work',
+      url: null,
+    });
+    mocks.revealWindowMock.mockResolvedValue(true);
 
     window.desktopTracker = {
-      captureScreenshot: vi.fn().mockResolvedValue(null),
-      getSystemIdleSeconds: vi.fn().mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000)),
-      getActiveWindowContext: vi.fn().mockResolvedValue({
-        app: 'Visual Studio Code',
-        title: 'Tracking Work',
-        url: null,
-      }),
-      revealWindow: vi.fn().mockResolvedValue(true),
+      captureScreenshot: mocks.captureScreenshotMock,
+      getSystemIdleSeconds: mocks.getSystemIdleSecondsMock,
+      getActiveWindowContext: mocks.getActiveWindowContextMock,
+      revealWindow: mocks.revealWindowMock,
     };
   });
 
@@ -111,6 +117,8 @@ describe('useDesktopTracker', () => {
   });
 
   it('stops the running timer after 5 minutes of idle time and raises the dashboard event', async () => {
+    const idleSince = Date.now();
+    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
     const idleStopListener = vi.fn();
     window.addEventListener(DESKTOP_TIMER_IDLE_STOP_EVENT, idleStopListener as EventListener);
 
@@ -139,12 +147,14 @@ describe('useDesktopTracker', () => {
       'You were idle for 5 minutes, so your timer was stopped.'
     );
     expect(idleStopListener).toHaveBeenCalledTimes(1);
-    expect(window.desktopTracker?.revealWindow).toHaveBeenCalledTimes(1);
+    expect(mocks.revealWindowMock).toHaveBeenCalledTimes(1);
 
     window.removeEventListener(DESKTOP_TIMER_IDLE_STOP_EVENT, idleStopListener as EventListener);
   });
 
   it('does not stop the timer when recent real activity resets the continuous idle countdown', async () => {
+    const idleSince = Date.now();
+    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
     render(<TrackerHarness />);
 
     await act(async () => {
@@ -157,5 +167,50 @@ describe('useDesktopTracker', () => {
     });
 
     expect(mocks.stopMock).not.toHaveBeenCalled();
+  });
+
+  it('captures screenshots on the single 3 minute interval only while the user is active', async () => {
+    mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+    });
+
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledWith(55, expect.any(File));
+  });
+
+  it('skips screenshot capture when the user is idle at the screenshot interval', async () => {
+    const idleSince = Date.now();
+    mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
+    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+    });
+
+    expect(mocks.captureScreenshotMock).not.toHaveBeenCalled();
+    expect(mocks.uploadScreenshotMock).not.toHaveBeenCalled();
+  });
+
+  it('clears and recreates the screenshot interval cleanly on remount without duplicating captures', async () => {
+    mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
+
+    const firstRender = render(<TrackerHarness />);
+    firstRender.unmount();
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+    });
+
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
   });
 });
