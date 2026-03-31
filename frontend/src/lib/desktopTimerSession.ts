@@ -4,10 +4,17 @@ const AUTO_START_ARMED_KEY = 'desktop_timer_auto_start_armed';
 const DESKTOP_LAUNCH_AUTO_START_KEY = 'desktop_timer_launch_auto_start_seeded';
 const IDLE_AUTO_STOP_NOTICE_KEY = 'desktop_timer_idle_auto_stop_notice';
 export const DESKTOP_TIMER_IDLE_STOP_EVENT = 'desktop-timer:idle-auto-stop';
+export const DESKTOP_TIMER_STARTED_EVENT = 'desktop-timer:started';
+export const DESKTOP_TIMER_STOPPED_EVENT = 'desktop-timer:stopped';
 
 export type DesktopTimerIdleStopDetail = {
   userId: number;
   message: string;
+};
+
+export type DesktopTimerSessionDetail = {
+  userId: number;
+  entryId?: number | null;
 };
 
 const getStorageScopedKey = (baseKey: string, userId?: number | null) => `${baseKey}:${userId ?? 'guest'}`;
@@ -88,6 +95,14 @@ export const clearIdleAutoStopNotice = (userId?: number | null) => {
 
 export const emitDesktopTimerIdleStop = (detail: DesktopTimerIdleStopDetail) => {
   window.dispatchEvent(new CustomEvent<DesktopTimerIdleStopDetail>(DESKTOP_TIMER_IDLE_STOP_EVENT, { detail }));
+};
+
+export const emitDesktopTimerStarted = (detail: DesktopTimerSessionDetail) => {
+  window.dispatchEvent(new CustomEvent<DesktopTimerSessionDetail>(DESKTOP_TIMER_STARTED_EVENT, { detail }));
+};
+
+export const emitDesktopTimerStopped = (detail: DesktopTimerSessionDetail) => {
+  window.dispatchEvent(new CustomEvent<DesktopTimerSessionDetail>(DESKTOP_TIMER_STOPPED_EVENT, { detail }));
 };
 
 export const clearDesktopTimerSession = () => {

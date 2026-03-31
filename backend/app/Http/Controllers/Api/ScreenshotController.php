@@ -10,6 +10,7 @@ use App\Services\Audit\AuditLogService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -177,6 +178,18 @@ class ScreenshotController extends Controller
         ]);
 
         $screenshot->loadMissing('timeEntry.user');
+
+        Log::info('Screenshot uploaded successfully.', [
+            'screenshot_id' => (int) $screenshot->id,
+            'time_entry_id' => (int) $screenshot->time_entry_id,
+            'user_id' => (int) $timeEntry->user_id,
+            'organization_id' => (int) $timeEntry->user->organization_id,
+            'filename' => $filename,
+            'mime_type' => $request->file('image')?->getMimeType(),
+            'file_size_bytes' => $request->file('image')?->getSize(),
+            'blurred' => (bool) ($validated['blurred'] ?? false),
+            'recorded_at' => $screenshot->created_at?->toIso8601String(),
+        ]);
 
         return response()->json($screenshot, 201);
     }

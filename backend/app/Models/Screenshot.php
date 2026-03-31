@@ -14,7 +14,7 @@ class Screenshot extends Model
         'blurred' => 'boolean',
     ];
 
-    protected $appends = ['path', 'recorded_at', 'user_id', 'user'];
+    protected $appends = ['path', 'recorded_at', 'user_id', 'user', 'session_id', 'activity_state'];
 
     public function timeEntry(): BelongsTo
     {
@@ -54,5 +54,15 @@ class Screenshot extends Model
             'email' => $user->email,
             'role' => $user->role,
         ];
+    }
+
+    public function getSessionIdAttribute(): ?int
+    {
+        return $this->time_entry_id ? (int) $this->time_entry_id : null;
+    }
+
+    public function getActivityStateAttribute(): string
+    {
+        return 'active';
     }
 }

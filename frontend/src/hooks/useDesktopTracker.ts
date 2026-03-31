@@ -2,6 +2,9 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { isTrackedTimerUser } from '@/lib/permissions';
 import {
+  DESKTOP_TIMER_STARTED_EVENT,
+  DESKTOP_TIMER_STOPPED_EVENT,
+  type DesktopTimerSessionDetail,
   emitDesktopTimerIdleStop,
   setIdleAutoStopNotice,
   suppressAutoStart,
@@ -70,6 +73,7 @@ export const useDesktopTracker = () => {
   const screenshotIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingIdleRewindRef = useRef<Map<number, number>>(new Map());
   const lastAutoStoppedEntryIdRef = useRef<number | null>(null);
+  const activeScreenshotEntryIdRef = useRef<number | null>(null);
   const idleStopInFlightRef = useRef(false);
 
   const clearTrackerIntervals = () => {
@@ -122,7 +126,7 @@ export const useDesktopTracker = () => {
       activeSegmentRef.current = null;
       activeEntryRef.current = null;
       pendingIdleRewindRef.current.clear();
-      lastAutoStoppedEntryIdRef.current = null;
+      activeScreenshotEntryIdRef.current = null;
       idleStopInFlightRef.current = false;
       return;
     }
@@ -137,7 +141,29 @@ export const useDesktopTracker = () => {
     activeEntryRef.current = null;
     pendingIdleRewindRef.current.clear();
     lastAutoStoppedEntryIdRef.current = null;
+    activeScreenshotEntryIdRef.current = null;
     idleStopInFlightRef.current = false;
+
+    const syncScreenshotInterval = (timeEntryId: number | null) => {
+      if (activeScreenshotEntryIdRef.current === timeEntryId) {
+        return;
+      }
+
+      if (screenshotIntervalRef.current !== null) {
+        clearInterval(screenshotIntervalRef.current);
+        screenshotIntervalRef.current = null;
+      }
+
+      activeScreenshotEntryIdRef.current = timeEntryId;
+
+      if (timeEntryId === null) {
+        return;
+      }
+
+      screenshotIntervalRef.current = setInterval(() => {
+        void captureScreenshotOnInterval();
+      }, SCREENSHOT_INTERVAL_MS);
+    };
 
     const getIdleState = async (now: number) => {
       try {
@@ -286,9 +312,11 @@ export const useDesktopTracker = () => {
           activeSegmentRef.current = null;
           activeEntryRef.current = null;
           lastAutoStoppedEntryIdRef.current = null;
+          syncScreenshotInterval(null);
           return;
         }
         activeEntryRef.current = activeEntry;
+        syncScreenshotInterval(activeEntry.id);
 
         const { idleSeconds, lastActivityAtMs } = await getIdleState(now);
         const trackedWindowEnd = Math.min(now, Math.max(lastInputRef.current, previousTickAt));
@@ -413,20 +441,26 @@ export const useDesktopTracker = () => {
 
       screenshotInFlight = true;
       try {
+        const scheduledEntryId = activeScreenshotEntryIdRef.current;
+        if (!scheduledEntryId) {
+          return;
+        }
+
         const active = await timeEntryApi.active({ timer_slot: 'primary' });
         const activeEntry = active.data;
         if (!activeEntry?.id) {
           activeEntryRef.current = null;
+          syncScreenshotInterval(null);
           return;
         }
         activeEntryRef.current = activeEntry;
 
-        const now = Date.now();
-        const { idleSeconds } = await getIdleState(now);
-        if (idleSeconds >= IDLE_THRESHOLD_SECONDS) {
+        if (activeEntry.id !== scheduledEntryId) {
+          syncScreenshotInterval(activeEntry.id);
           return;
         }
 
+        const now = Date.now();
         const screenshotDataUrl = await desktopApi.captureScreenshot();
         if (!screenshotDataUrl) {
           return;
@@ -445,19 +479,41 @@ export const useDesktopTracker = () => {
       }
     };
 
+    const handleTimerStarted = (event: Event) => {
+      const detail = (event as CustomEvent<DesktopTimerSessionDetail>).detail;
+      if (!detail || detail.userId !== userId || !detail.entryId || !isCurrentRun()) {
+        return;
+      }
+
+      syncScreenshotInterval(detail.entryId);
+    };
+
+    const handleTimerStopped = (event: Event) => {
+      const detail = (event as CustomEvent<DesktopTimerSessionDetail>).detail;
+      if (!detail || detail.userId !== userId || !isCurrentRun()) {
+        return;
+      }
+
+      syncScreenshotInterval(null);
+    };
+
     activityIntervalRef.current = setInterval(() => {
       void tick();
     }, ACTIVITY_TRACK_INTERVAL_MS);
     idleGuardIntervalRef.current = setInterval(() => {
       void runIdleGuard();
     }, IDLE_GUARD_INTERVAL_MS);
-    screenshotIntervalRef.current = setInterval(() => {
-      void captureScreenshotOnInterval();
-    }, SCREENSHOT_INTERVAL_MS);
+    window.addEventListener(DESKTOP_TIMER_STARTED_EVENT, handleTimerStarted as EventListener);
+    window.addEventListener(DESKTOP_TIMER_STOPPED_EVENT, handleTimerStopped as EventListener);
     void tick();
 
     return () => {
       clearTrackerIntervals();
+      activeEntryRef.current = null;
+      activeScreenshotEntryIdRef.current = null;
+      idleStopInFlightRef.current = false;
+      window.removeEventListener(DESKTOP_TIMER_STARTED_EVENT, handleTimerStarted as EventListener);
+      window.removeEventListener(DESKTOP_TIMER_STOPPED_EVENT, handleTimerStopped as EventListener);
       if (desktopTrackerRunSequence === runId) {
         desktopTrackerRunSequence += 1;
       }

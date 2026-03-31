@@ -217,7 +217,7 @@ describe('useDesktopTracker', () => {
     });
   });
 
-  it('captures screenshots on the single 3 minute interval only while the user is active', async () => {
+  it('captures screenshots on the single 3 minute interval while the timer is running', async () => {
     mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
 
     render(<TrackerHarness />);
@@ -231,7 +231,7 @@ describe('useDesktopTracker', () => {
     expect(mocks.uploadScreenshotMock).toHaveBeenCalledWith(55, expect.any(File));
   });
 
-  it('skips screenshot capture when the user is idle at the screenshot interval', async () => {
+  it('continues screenshot capture when the user is idle at the screenshot interval', async () => {
     const idleSince = Date.now();
     mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
     mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
@@ -242,8 +242,9 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).not.toHaveBeenCalled();
-    expect(mocks.uploadScreenshotMock).not.toHaveBeenCalled();
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledWith(55, expect.any(File));
   });
 
   it('clears and recreates the screenshot interval cleanly on remount without duplicating captures', async () => {

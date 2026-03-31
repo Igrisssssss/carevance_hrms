@@ -10,6 +10,7 @@ import {
 } from '@/lib/authStorage';
 import { ACTIVE_TIMER_KEY, armAutoStart, clearDesktopTimerSession } from '@/lib/desktopTimerSession';
 import { apiUrl } from '@/lib/runtimeConfig';
+import { isTrackedTimerUser } from '@/lib/permissions';
 
 interface AuthContextType {
   user: User | null;
@@ -62,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const storeAuthState = (nextToken: string, nextUser: User, nextOrganization?: Organization | null) => {
     clearDesktopTimerSession();
-    if (nextUser.role === 'employee') {
+    if (isTrackedTimerUser(nextUser)) {
       armAutoStart(nextUser.id);
     }
     setToken(nextToken);
@@ -220,7 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     window.desktopTracker.onPrepareForClose(async () => {
       try {
-        if (!DEMO_MODE && user?.role === 'employee' && token) {
+        if (!DEMO_MODE && isTrackedTimerUser(user) && token) {
           try {
             await timeEntryApi.stop({ timer_slot: 'primary' });
           } catch (error) {
@@ -371,7 +372,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    if (!DEMO_MODE && user?.role === 'employee') {
+    if (!DEMO_MODE && isTrackedTimerUser(user)) {
       try {
         await timeEntryApi.stop({ timer_slot: 'primary' });
       } catch (error) {

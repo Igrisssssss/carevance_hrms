@@ -98,11 +98,13 @@ export interface TimeEntry {
 export interface Screenshot {
   id: number;
   time_entry_id: number;
+  session_id?: number;
   user_id: number;
   filename: string;
   thumbnail?: string;
   path: string;
   recorded_at: string;
+  activity_state?: 'active';
   user?: User;
   time_entry?: TimeEntry;
 }

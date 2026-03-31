@@ -8,6 +8,8 @@ import {
   clearIdleAutoStopNotice,
   consumeIdleAutoStopNotice,
   DESKTOP_TIMER_IDLE_STOP_EVENT,
+  emitDesktopTimerStarted,
+  emitDesktopTimerStopped,
   type DesktopTimerIdleStopDetail,
   isAutoStartArmed,
   isAutoStartSuppressed,
@@ -241,6 +243,7 @@ export default function DesktopTimerDashboard() {
       setNotice('');
       setActiveTimer(null);
       localStorage.removeItem(ACTIVE_TIMER_KEY);
+      emitDesktopTimerStopped({ userId });
       void fetchData();
     }
 
@@ -254,6 +257,7 @@ export default function DesktopTimerDashboard() {
       setNotice('');
       setActiveTimer(null);
       localStorage.removeItem(ACTIVE_TIMER_KEY);
+      emitDesktopTimerStopped({ userId });
       void fetchData();
     };
 
@@ -344,6 +348,12 @@ export default function DesktopTimerDashboard() {
           description: response.data.description ?? '',
         })
       );
+      if (userId) {
+        emitDesktopTimerStarted({
+          userId,
+          entryId: response.data.id,
+        });
+      }
       setNotice(isAutoStart ? 'Timer started. Choose a project, then a task for the running session.' : '');
       await fetchData();
     } catch (error: any) {
@@ -362,6 +372,12 @@ export default function DesktopTimerDashboard() {
       suppressAutoStart(userId);
       setActiveTimer(null);
       localStorage.removeItem(ACTIVE_TIMER_KEY);
+      if (userId) {
+        emitDesktopTimerStopped({
+          userId,
+          entryId: stoppedEntry?.id ?? activeTimer?.id ?? null,
+        });
+      }
 
       if (stoppedEntry) {
         setTodayEntries((prev) => {
@@ -386,6 +402,12 @@ export default function DesktopTimerDashboard() {
         suppressAutoStart(userId);
         setActiveTimer(null);
         localStorage.removeItem(ACTIVE_TIMER_KEY);
+        if (userId) {
+          emitDesktopTimerStopped({
+            userId,
+            entryId: activeTimer?.id ?? null,
+          });
+        }
         await fetchData();
         return;
       }
