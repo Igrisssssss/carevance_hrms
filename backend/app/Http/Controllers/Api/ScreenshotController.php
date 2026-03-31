@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use Closure;
 use App\Http\Controllers\Controller;
 use App\Models\Screenshot;
 use App\Models\TimeEntry;
@@ -10,6 +11,7 @@ use App\Services\Audit\AuditLogService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -140,7 +142,29 @@ class ScreenshotController extends Controller
     {
         $validated = $request->validate([
             'time_entry_id' => 'required|exists:time_entries,id',
-            'image' => 'nullable|image|max:10240',
+            'image' => [
+                'nullable',
+                'file',
+                'max:10240',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if (! $value instanceof UploadedFile) {
+                        return;
+                    }
+
+                    $clientMime = strtolower((string) $value->getClientMimeType());
+                    $serverMime = strtolower((string) $value->getMimeType());
+                    $clientExtension = strtolower((string) $value->getClientOriginalExtension());
+                    $allowedExtensions = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'];
+
+                    $looksLikeImage = Str::startsWith($clientMime, 'image/')
+                        || Str::startsWith($serverMime, 'image/')
+                        || in_array($clientExtension, $allowedExtensions, true);
+
+                    if (! $looksLikeImage) {
+                        $fail('The image field must be an image.');
+                    }
+                },
+            ],
             'filename' => 'nullable|string|max:255',
             'thumbnail' => 'nullable|string|max:65535',
             'blurred' => 'nullable|boolean',
@@ -160,7 +184,18 @@ class ScreenshotController extends Controller
 
         $filename = $validated['filename'] ?? null;
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('', 'screenshots');
+            $uploadedImage = $request->file('image');
+
+            Log::info('Screenshot upload received.', [
+                'time_entry_id' => (int) $validated['time_entry_id'],
+                'user_id' => (int) $user->id,
+                'client_mime_type' => $uploadedImage?->getClientMimeType(),
+                'server_mime_type' => $uploadedImage?->getMimeType(),
+                'client_extension' => $uploadedImage?->getClientOriginalExtension(),
+                'file_size_bytes' => $uploadedImage?->getSize(),
+            ]);
+
+            $path = $uploadedImage->store('', 'screenshots');
             $filename = basename($path);
         }
 
