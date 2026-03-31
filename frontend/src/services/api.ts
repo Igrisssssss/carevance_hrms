@@ -354,9 +354,7 @@ export const screenshotApi = {
     const formData = new FormData();
     formData.append('image', file);
     formData.append('time_entry_id', timeEntryId.toString());
-    return api.post<Screenshot>('/screenshots', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    return api.post<Screenshot>('/screenshots', formData);
   },
   
   bulkDelete: (data: { screenshot_ids?: number[]; user_id?: number; time_entry_id?: number; start_date?: string; end_date?: string; delete_all_in_range?: boolean }) =>
