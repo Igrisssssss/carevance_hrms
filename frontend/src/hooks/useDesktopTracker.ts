@@ -7,8 +7,10 @@ import {
   suppressAutoStart,
 } from '@/lib/desktopTimerSession';
 import { activityApi, screenshotApi, timeEntryApi } from '@/services/api';
+import type { TimeEntry } from '@/types';
 
 const ACTIVITY_TRACK_INTERVAL_MS = 5000;
+const IDLE_GUARD_INTERVAL_MS = 1000;
 const SCREENSHOT_INTERVAL_MS = 3 * 60 * 1000;
 const IDLE_THRESHOLD_SECONDS = 3 * 60;
 const IDLE_AUTO_STOP_THRESHOLD_SECONDS = 5 * 60;
@@ -62,15 +64,23 @@ export const useDesktopTracker = () => {
   const lastInputRef = useRef<number>(Date.now());
   const lastTickAtRef = useRef<number | null>(null);
   const activeSegmentRef = useRef<ActiveSegment | null>(null);
+  const activeEntryRef = useRef<TimeEntry | null>(null);
   const activityIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const idleGuardIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const screenshotIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingIdleRewindRef = useRef<Map<number, number>>(new Map());
   const lastAutoStoppedEntryIdRef = useRef<number | null>(null);
+  const idleStopInFlightRef = useRef(false);
 
   const clearTrackerIntervals = () => {
     if (activityIntervalRef.current !== null) {
       clearInterval(activityIntervalRef.current);
       activityIntervalRef.current = null;
+    }
+
+    if (idleGuardIntervalRef.current !== null) {
+      clearInterval(idleGuardIntervalRef.current);
+      idleGuardIntervalRef.current = null;
     }
 
     if (screenshotIntervalRef.current !== null) {
@@ -110,8 +120,10 @@ export const useDesktopTracker = () => {
     if (!isAuthenticated || !isTrackedUser || !desktopApi) {
       clearTrackerIntervals();
       activeSegmentRef.current = null;
+      activeEntryRef.current = null;
       pendingIdleRewindRef.current.clear();
       lastAutoStoppedEntryIdRef.current = null;
+      idleStopInFlightRef.current = false;
       return;
     }
     const runId = ++desktopTrackerRunSequence;
@@ -122,14 +134,33 @@ export const useDesktopTracker = () => {
     lastTickAtRef.current = Date.now();
     lastInputRef.current = Date.now();
     activeSegmentRef.current = null;
+    activeEntryRef.current = null;
     pendingIdleRewindRef.current.clear();
     lastAutoStoppedEntryIdRef.current = null;
+    idleStopInFlightRef.current = false;
 
-    const getIdleSeconds = async (now: number) => {
+    const getIdleState = async (now: number) => {
+      try {
+        const idleSecondsSystem = Number(await desktopApi.getSystemIdleSeconds());
+
+        if (Number.isFinite(idleSecondsSystem)) {
+          const safeIdleSecondsSystem = Math.max(0, Math.floor(idleSecondsSystem));
+
+          return {
+            idleSeconds: safeIdleSecondsSystem,
+            lastActivityAtMs: Math.max(0, now - (safeIdleSecondsSystem * 1000)),
+          };
+        }
+      } catch (error) {
+        console.warn('Desktop tracker system idle lookup failed, falling back to page input activity.', error);
+      }
+
       const idleSecondsFromInput = Math.max(0, Math.floor((now - lastInputRef.current) / 1000));
-      const idleSecondsSystem = Math.max(0, await desktopApi.getSystemIdleSeconds());
 
-      return Math.min(idleSecondsFromInput, idleSecondsSystem);
+      return {
+        idleSeconds: idleSecondsFromInput,
+        lastActivityAtMs: lastInputRef.current,
+      };
     };
 
     const rewindTrackedIdleWindow = async (recordedAt: string) => {
@@ -149,6 +180,95 @@ export const useDesktopTracker = () => {
       }));
     };
 
+    const attemptIdleAutoStop = async (
+      activeEntry: TimeEntry,
+      idleSeconds: number,
+      lastActivityAtMs: number,
+      recordedAt: string,
+    ) => {
+      if (
+        idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS
+        || lastAutoStoppedEntryIdRef.current === activeEntry.id
+        || idleStopInFlightRef.current
+      ) {
+        return false;
+      }
+
+      idleStopInFlightRef.current = true;
+
+      try {
+        console.info('[desktop-tracker] idle auto-stop requested', {
+          session_id: activeEntry.id,
+          employee_id: userId,
+          timer_start_time: activeEntry.start_time,
+          last_activity_time: new Date(lastActivityAtMs).toISOString(),
+          idle_end_time: recordedAt,
+          continuous_idle_duration: idleSeconds,
+          timer_stop_reason: 'continuous_idle_threshold',
+        });
+        await timeEntryApi.stop({
+          timer_slot: 'primary',
+          auto_stopped_for_idle: true,
+          idle_seconds: idleSeconds,
+          last_activity_at: new Date(lastActivityAtMs).toISOString(),
+        });
+        lastAutoStoppedEntryIdRef.current = activeEntry.id;
+      } catch (error: any) {
+        const status = error?.response?.status;
+        if (status === 404) {
+          activeSegmentRef.current = null;
+          activeEntryRef.current = null;
+          pendingIdleRewindRef.current.clear();
+          return true;
+        }
+
+        if (status === 409) {
+          if (activeSegmentRef.current?.kind === 'idle') {
+            try {
+              await activityApi.delete(activeSegmentRef.current.activityId);
+            } catch (deleteError) {
+              console.warn('Desktop tracker idle validation rewind failed:', deleteError);
+            }
+          }
+          activeSegmentRef.current = null;
+          pendingIdleRewindRef.current.clear();
+          lastInputRef.current = Date.now();
+          console.info('[desktop-tracker] idle auto-stop rejected by backend validation', {
+            session_id: activeEntry.id,
+            employee_id: userId,
+            timer_start_time: activeEntry.start_time,
+            last_activity_time: new Date(lastInputRef.current).toISOString(),
+          });
+          return true;
+        }
+
+        if (status !== 404) {
+          throw error;
+        }
+      } finally {
+        idleStopInFlightRef.current = false;
+      }
+
+      activeSegmentRef.current = null;
+      activeEntryRef.current = null;
+      pendingIdleRewindRef.current.clear();
+
+      if (userId) {
+        suppressAutoStart(userId);
+        setIdleAutoStopNotice(userId, IDLE_AUTO_STOP_MESSAGE);
+        emitDesktopTimerIdleStop({
+          userId,
+          message: IDLE_AUTO_STOP_MESSAGE,
+        });
+      }
+
+      if (typeof desktopApi.revealWindow === 'function') {
+        await desktopApi.revealWindow();
+      }
+
+      return true;
+    };
+
     const tick = async () => {
       if (inFlight || !isCurrentRun()) return;
       const now = Date.now();
@@ -164,11 +284,13 @@ export const useDesktopTracker = () => {
         const activeEntry = active.data;
         if (!activeEntry?.id) {
           activeSegmentRef.current = null;
+          activeEntryRef.current = null;
           lastAutoStoppedEntryIdRef.current = null;
           return;
         }
+        activeEntryRef.current = activeEntry;
 
-        const idleSeconds = await getIdleSeconds(now);
+        const { idleSeconds, lastActivityAtMs } = await getIdleState(now);
         const trackedWindowEnd = Math.min(now, Math.max(lastInputRef.current, previousTickAt));
         const trackedSecondsThisTick = Math.max(
           0,
@@ -189,7 +311,7 @@ export const useDesktopTracker = () => {
 
         if (idleSeconds >= IDLE_THRESHOLD_SECONDS) {
           const idleName = (`System Idle - ${contextName}`).slice(0, 255);
-          const idleSignature = `${activeEntry.id}:idle:${lastInputRef.current}`;
+          const idleSignature = `${activeEntry.id}:idle:${lastActivityAtMs}`;
           const currentSegment = activeSegmentRef.current;
 
           if (currentSegment?.kind !== 'idle') {
@@ -222,77 +344,7 @@ export const useDesktopTracker = () => {
             };
           }
 
-          if (idleSeconds >= IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
-            if (lastAutoStoppedEntryIdRef.current === activeEntry.id) {
-              return;
-            }
-
-            try {
-              console.info('[desktop-tracker] idle auto-stop requested', {
-                session_id: activeEntry.id,
-                employee_id: userId,
-                timer_start_time: activeEntry.start_time,
-                last_activity_time: new Date(lastInputRef.current).toISOString(),
-                idle_end_time: recordedAt,
-                continuous_idle_duration: idleSeconds,
-                timer_stop_reason: 'continuous_idle_threshold',
-              });
-              await timeEntryApi.stop({
-                timer_slot: 'primary',
-                auto_stopped_for_idle: true,
-                idle_seconds: idleSeconds,
-                last_activity_at: new Date(lastInputRef.current).toISOString(),
-              });
-              lastAutoStoppedEntryIdRef.current = activeEntry.id;
-            } catch (error: any) {
-              const status = error?.response?.status;
-              if (status === 404) {
-                activeSegmentRef.current = null;
-                pendingIdleRewindRef.current.clear();
-                return;
-              }
-
-              if (status === 409) {
-                if (activeSegmentRef.current?.kind === 'idle') {
-                  try {
-                    await activityApi.delete(activeSegmentRef.current.activityId);
-                  } catch (deleteError) {
-                    console.warn('Desktop tracker idle validation rewind failed:', deleteError);
-                  }
-                }
-                activeSegmentRef.current = null;
-                pendingIdleRewindRef.current.clear();
-                lastInputRef.current = Date.now();
-                console.info('[desktop-tracker] idle auto-stop rejected by backend validation', {
-                  session_id: activeEntry.id,
-                  employee_id: userId,
-                  timer_start_time: activeEntry.start_time,
-                  last_activity_time: new Date(lastInputRef.current).toISOString(),
-                });
-                return;
-              }
-
-              if (status !== 404) {
-                throw error;
-              }
-            }
-
-            activeSegmentRef.current = null;
-            pendingIdleRewindRef.current.clear();
-
-            if (userId) {
-              suppressAutoStart(userId);
-              setIdleAutoStopNotice(userId, IDLE_AUTO_STOP_MESSAGE);
-              emitDesktopTimerIdleStop({
-                userId,
-                message: IDLE_AUTO_STOP_MESSAGE,
-              });
-            }
-
-            if (typeof desktopApi.revealWindow === 'function') {
-              await desktopApi.revealWindow();
-            }
-
+          if (await attemptIdleAutoStop(activeEntry, idleSeconds, lastActivityAtMs, recordedAt)) {
             return;
           }
         } else {
@@ -339,6 +391,23 @@ export const useDesktopTracker = () => {
       }
     };
 
+    const runIdleGuard = async () => {
+      if (!isCurrentRun()) return;
+
+      const activeEntry = activeEntryRef.current;
+      if (!activeEntry?.id) {
+        return;
+      }
+
+      const now = Date.now();
+      const { idleSeconds, lastActivityAtMs } = await getIdleState(now);
+      if (idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
+        return;
+      }
+
+      await attemptIdleAutoStop(activeEntry, idleSeconds, lastActivityAtMs, new Date(now).toISOString());
+    };
+
     const captureScreenshotOnInterval = async () => {
       if (screenshotInFlight || !isCurrentRun()) return;
 
@@ -347,11 +416,13 @@ export const useDesktopTracker = () => {
         const active = await timeEntryApi.active({ timer_slot: 'primary' });
         const activeEntry = active.data;
         if (!activeEntry?.id) {
+          activeEntryRef.current = null;
           return;
         }
+        activeEntryRef.current = activeEntry;
 
         const now = Date.now();
-        const idleSeconds = await getIdleSeconds(now);
+        const { idleSeconds } = await getIdleState(now);
         if (idleSeconds >= IDLE_THRESHOLD_SECONDS) {
           return;
         }
@@ -377,9 +448,13 @@ export const useDesktopTracker = () => {
     activityIntervalRef.current = setInterval(() => {
       void tick();
     }, ACTIVITY_TRACK_INTERVAL_MS);
+    idleGuardIntervalRef.current = setInterval(() => {
+      void runIdleGuard();
+    }, IDLE_GUARD_INTERVAL_MS);
     screenshotIntervalRef.current = setInterval(() => {
       void captureScreenshotOnInterval();
     }, SCREENSHOT_INTERVAL_MS);
+    void tick();
 
     return () => {
       clearTrackerIntervals();

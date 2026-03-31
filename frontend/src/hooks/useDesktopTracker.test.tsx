@@ -153,8 +153,8 @@ describe('useDesktopTracker', () => {
   });
 
   it('does not stop the timer when recent real activity resets the continuous idle countdown', async () => {
-    const idleSince = Date.now();
-    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
+    let lastSystemActivityAt = Date.now();
+    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - lastSystemActivityAt) / 1000));
     render(<TrackerHarness />);
 
     await act(async () => {
@@ -162,11 +162,59 @@ describe('useDesktopTracker', () => {
     });
 
     await act(async () => {
+      lastSystemActivityAt = Date.now();
       window.dispatchEvent(new Event('scroll'));
       await vi.advanceTimersByTimeAsync(10 * 1000);
     });
 
     expect(mocks.stopMock).not.toHaveBeenCalled();
+  });
+
+  it('still auto-stops after 5 minutes when page events fire during true system idle', async () => {
+    const idleSince = Date.now();
+    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4 * 60 * 1000 + 55 * 1000);
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await vi.advanceTimersByTimeAsync(10 * 1000);
+    });
+
+    expect(mocks.stopMock).toHaveBeenCalledWith({
+      timer_slot: 'primary',
+      auto_stopped_for_idle: true,
+      idle_seconds: 300,
+      last_activity_at: '2026-03-18T09:00:00.000Z',
+    });
+  });
+
+  it('uses the 1 second idle guard so auto-stop does not wait for the next 5 second activity tick', async () => {
+    const idleSince = Date.now() - 2000;
+    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4 * 60 * 1000 + 57 * 1000);
+    });
+
+    expect(mocks.stopMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(mocks.stopMock).toHaveBeenCalledWith({
+      timer_slot: 'primary',
+      auto_stopped_for_idle: true,
+      idle_seconds: 300,
+      last_activity_at: '2026-03-18T08:59:58.000Z',
+    });
   });
 
   it('captures screenshots on the single 3 minute interval only while the user is active', async () => {
