@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { reportGroupApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { hasAdminAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import Button from '@/components/ui/Button';
@@ -32,6 +32,7 @@ export default function UserManagement() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isAdmin = hasAdminAccess(user);
+  const isStrictAdmin = hasStrictAdminAccess(user);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [period, setPeriod] = useState<'today' | 'week' | 'all'>('all');
   const [country, setCountry] = useState('India');
@@ -224,6 +225,7 @@ export default function UserManagement() {
   };
 
   const removeUser = async (id: number) => {
+    if (!isStrictAdmin) return;
     if (!confirm('Delete this user?')) return;
     setFeedback(null);
     await deleteUserMutation.mutateAsync(id);
@@ -606,7 +608,7 @@ export default function UserManagement() {
               <div className="text-sm">{u.name} ({u.email}) <span className="text-gray-500">[{u.role}]</span></div>
               <div className="flex gap-2">
                 <button onClick={() => editUser(u)} className="px-2 py-1 text-xs border border-gray-300 rounded">Edit</button>
-                <button onClick={() => removeUser(u.id)} className="px-2 py-1 text-xs border border-red-300 text-red-700 rounded">Delete</button>
+                {isStrictAdmin ? <button onClick={() => removeUser(u.id)} className="px-2 py-1 text-xs border border-red-300 text-red-700 rounded">Delete</button> : null}
               </div>
             </div>
           ))}

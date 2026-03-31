@@ -286,13 +286,30 @@ class ScreenshotController extends Controller
         if (!$screenshot->timeEntry || !$screenshot->timeEntry->user) {
             return false;
         }
-        if ($screenshot->timeEntry->user->organization_id !== $user->organization_id) {
+        if (!$this->canMonitorUser($user, $screenshot->timeEntry->user)) {
             return false;
         }
         if ($this->canViewAll($user)) {
             return true;
         }
         return $screenshot->timeEntry->user_id === $user->id;
+    }
+
+    private function canMonitorUser(User $viewer, User $subject): bool
+    {
+        if ((int) $viewer->organization_id !== (int) $subject->organization_id) {
+            return false;
+        }
+
+        if ($viewer->role === 'admin') {
+            return true;
+        }
+
+        if ($viewer->role === 'manager') {
+            return $subject->role === 'employee';
+        }
+
+        return (int) $viewer->id === (int) $subject->id;
     }
 
     private function scopedScreenshotsQuery(Request $request, User $user): Builder

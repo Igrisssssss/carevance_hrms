@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AppNotification;
 use App\Models\AttendanceTimeEditRequest;
+use App\Models\EmployeeWorkInfo;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -13,6 +14,109 @@ use Tests\TestCase;
 class TimeEditNotificationFlowTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_employee_time_edit_request_notifies_reporting_manager_and_blocks_admin_review_when_manager_is_assigned(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $admin = User::create([
+            'name' => 'Admin',
+            'email' => 'admin-routing@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+        $manager = User::create([
+            'name' => 'Manager',
+            'email' => 'manager-routing@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+        $employee = User::create([
+            'name' => 'Employee',
+            'email' => 'employee-routing@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        EmployeeWorkInfo::create([
+            'organization_id' => $organization->id,
+            'user_id' => $employee->id,
+            'reporting_manager_id' => $manager->id,
+        ]);
+
+        $createResponse = $this->postJson('/api/attendance-time-edit-requests', [
+            'attendance_date' => now()->toDateString(),
+            'extra_minutes' => 30,
+            'message' => 'Stayed late for release handoff',
+        ], $this->apiHeadersFor($employee))->assertCreated();
+
+        $requestId = (int) $createResponse->json('data.id');
+
+        $this->assertDatabaseHas('app_notifications', [
+            'organization_id' => $organization->id,
+            'user_id' => $manager->id,
+            'title' => 'Time Edit Request Submitted',
+        ]);
+        $this->assertDatabaseMissing('app_notifications', [
+            'organization_id' => $organization->id,
+            'user_id' => $admin->id,
+            'title' => 'Time Edit Request Submitted',
+        ]);
+
+        $this->patchJson("/api/attendance-time-edit-requests/{$requestId}/approve", [], $this->apiHeadersFor($admin))
+            ->assertForbidden();
+
+        $this->patchJson("/api/attendance-time-edit-requests/{$requestId}/approve", [], $this->apiHeadersFor($manager))
+            ->assertOk()
+            ->assertJsonPath('data.status', 'approved');
+    }
+
+    public function test_manager_time_edit_request_notifies_admin_and_manager_cannot_self_approve(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $admin = User::create([
+            'name' => 'Admin',
+            'email' => 'admin-manager-flow@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+        $manager = User::create([
+            'name' => 'Manager',
+            'email' => 'manager-self-review@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+
+        $createResponse = $this->postJson('/api/attendance-time-edit-requests', [
+            'attendance_date' => now()->toDateString(),
+            'extra_minutes' => 45,
+            'message' => 'Late incident resolution',
+        ], $this->apiHeadersFor($manager))->assertCreated();
+
+        $requestId = (int) $createResponse->json('data.id');
+
+        $this->assertDatabaseHas('app_notifications', [
+            'organization_id' => $organization->id,
+            'user_id' => $admin->id,
+            'title' => 'Time Edit Request Submitted',
+        ]);
+        $this->assertDatabaseMissing('app_notifications', [
+            'organization_id' => $organization->id,
+            'user_id' => $manager->id,
+            'title' => 'Time Edit Request Submitted',
+        ]);
+
+        $this->patchJson("/api/attendance-time-edit-requests/{$requestId}/approve", [], $this->apiHeadersFor($manager))
+            ->assertForbidden();
+
+        $this->patchJson("/api/attendance-time-edit-requests/{$requestId}/approve", [], $this->apiHeadersFor($admin))
+            ->assertOk()
+            ->assertJsonPath('data.status', 'approved');
+    }
 
     public function test_rejecting_employee_time_edit_notifies_employee_with_rejected_status(): void
     {

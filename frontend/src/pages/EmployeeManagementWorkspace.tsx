@@ -220,7 +220,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const invitations = invitationsQuery.data || [];
 
   const handleDeleteUser = (targetUser: any) => {
-    if (!targetUser?.id) {
+    if (!isStrictAdmin || !targetUser?.id) {
       return;
     }
 
@@ -298,7 +298,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                 ) : (
                   <Button className="flex-1 w-full" disabled>Open Profile</Button>
                 )}
-                {selectedUser ? (
+                {isStrictAdmin && selectedUser ? (
                   <Button
                     variant="danger"
                     onClick={() => handleDeleteUser(selectedUser)}
@@ -354,22 +354,21 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                   </Link>
                 ),
               },
-              {
-                key: 'remove',
-                header: 'Remove',
-                render: (row: any) => (
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => handleDeleteUser(row)}
-                    disabled={deleteUserMutation.isPending}
-                  >
-                    Remove
-                  </Button>
-                ),
-              },
               ...(isStrictAdmin
                 ? [{
+                    key: 'remove',
+                    header: 'Remove',
+                    render: (row: any) => (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleDeleteUser(row)}
+                        disabled={deleteUserMutation.isPending}
+                      >
+                        Remove
+                      </Button>
+                    ),
+                  }, {
                     key: 'promote',
                     header: 'Promote',
                     render: (row: any) => (

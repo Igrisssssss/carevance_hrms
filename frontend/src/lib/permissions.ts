@@ -3,8 +3,35 @@ import type { Organization, User } from '@/types';
 export const hasAdminAccess = (user: User | null | undefined): boolean =>
   Boolean(user && (user.role === 'admin' || user.role === 'manager'));
 
+type ApprovalActor = Pick<User, 'id'> & {
+  role?: string | null;
+};
+
 export const hasStrictAdminAccess = (user: User | null | undefined): boolean =>
   user?.role === 'admin';
+
+export const canReviewApprovalRequest = (
+  reviewer: ApprovalActor | null | undefined,
+  requester: ApprovalActor | null | undefined
+): boolean => {
+  if (!reviewer || !requester) {
+    return false;
+  }
+
+  if (reviewer.role !== 'admin' && reviewer.role !== 'manager') {
+    return false;
+  }
+
+  if (reviewer.role === 'manager') {
+    return reviewer.id !== requester.id && requester.role === 'employee';
+  }
+
+  if (reviewer.id === requester.id) {
+    return true;
+  }
+
+  return requester.role === 'employee' || requester.role === 'manager';
+};
 
 export const isEmployeeUser = (user: User | null | undefined): boolean =>
   user?.role === 'employee';

@@ -377,4 +377,57 @@ class ScreenshotSecurityTest extends TestCase
             Carbon::setTestNow();
         }
     }
+
+    public function test_manager_cannot_open_manager_screenshot_directly_but_admin_can(): void
+    {
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $admin = User::create([
+            'name' => 'Admin User',
+            'email' => 'admin-direct@example.com',
+            'password' => 'password123',
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+
+        $managerViewer = User::create([
+            'name' => 'Manager Viewer',
+            'email' => 'manager-viewer@example.com',
+            'password' => 'password123',
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+
+        $managerOwner = User::create([
+            'name' => 'Manager Owner',
+            'email' => 'manager-owner@example.com',
+            'password' => 'password123',
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+
+        $timeEntry = TimeEntry::create([
+            'user_id' => $managerOwner->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'duration' => 3600,
+            'billable' => true,
+        ]);
+
+        $screenshot = Screenshot::create([
+            'time_entry_id' => $timeEntry->id,
+            'filename' => 'manager-direct.png',
+        ]);
+
+        $this->getJson("/api/screenshots/{$screenshot->id}", $this->apiHeadersFor($managerViewer))
+            ->assertForbidden();
+
+        $this->getJson("/api/screenshots/{$screenshot->id}", $this->apiHeadersFor($admin))
+            ->assertOk()
+            ->assertJsonPath('id', $screenshot->id)
+            ->assertJsonPath('user.role', 'manager');
+    }
 }

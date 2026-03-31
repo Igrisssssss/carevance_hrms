@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\AttendanceRecord;
 use App\Models\LeaveRequest;
 use App\Models\User;
+use App\Services\AppNotificationService;
+use App\Services\Approvals\ApprovalRoutingService;
 use App\Services\Audit\AuditLogService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
@@ -13,8 +15,11 @@ use Illuminate\Http\Request;
 
 class LeaveRequestController extends Controller
 {
-    public function __construct(private readonly AuditLogService $auditLogService)
-    {
+    public function __construct(
+        private readonly AppNotificationService $notificationService,
+        private readonly ApprovalRoutingService $approvalRoutingService,
+        private readonly AuditLogService $auditLogService,
+    ) {
     }
 
     public function index(Request $request)
@@ -35,8 +40,17 @@ class LeaveRequestController extends Controller
 
         if (!$this->canManage($currentUser)) {
             $query->where('user_id', $currentUser->id);
-        } elseif ($request->filled('user_id')) {
-            $query->where('user_id', (int) $request->user_id);
+        } else {
+            $visibleUserIds = $this->approvalRoutingService->reviewableRequesterIds($currentUser)
+                ->push((int) $currentUser->id)
+                ->unique()
+                ->values();
+
+            $query->whereIn('user_id', $visibleUserIds);
+
+            if ($request->filled('user_id')) {
+                $query->where('user_id', (int) $request->user_id);
+            }
         }
 
         if ($request->filled('status')) {
@@ -95,6 +109,8 @@ class LeaveRequestController extends Controller
             request: $request
         );
 
+        $this->sendSubmissionNotification($leave, $currentUser);
+
         return response()->json([
             'message' => 'Leave request submitted.',
             'data' => $leave->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
@@ -115,6 +131,10 @@ class LeaveRequestController extends Controller
         $leave = LeaveRequest::where('organization_id', $currentUser->organization_id)->find($id);
         if (!$leave) {
             return response()->json(['message' => 'Leave request not found'], 404);
+        }
+        $leave->loadMissing('user.employeeWorkInfo');
+        if (!$leave->user || !$this->approvalRoutingService->canReview($currentUser, $leave->user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($leave->status !== 'pending') {
             return response()->json(['message' => 'Only pending requests can be approved.'], 422);
@@ -141,6 +161,8 @@ class LeaveRequestController extends Controller
             request: $request
         );
 
+        $this->sendReviewNotification($leave->fresh()->load(['user:id,name,email,role']), $currentUser, 'approved');
+
         return response()->json([
             'message' => 'Leave request approved.',
             'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
@@ -161,6 +183,10 @@ class LeaveRequestController extends Controller
         $leave = LeaveRequest::where('organization_id', $currentUser->organization_id)->find($id);
         if (!$leave) {
             return response()->json(['message' => 'Leave request not found'], 404);
+        }
+        $leave->loadMissing('user.employeeWorkInfo');
+        if (!$leave->user || !$this->approvalRoutingService->canReview($currentUser, $leave->user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($leave->status !== 'pending') {
             return response()->json(['message' => 'Only pending requests can be rejected.'], 422);
@@ -184,6 +210,8 @@ class LeaveRequestController extends Controller
             ],
             request: $request
         );
+
+        $this->sendReviewNotification($leave->fresh()->load(['user:id,name,email,role']), $currentUser, 'rejected');
 
         return response()->json([
             'message' => 'Leave request rejected.',
@@ -256,6 +284,10 @@ class LeaveRequestController extends Controller
         if (!$leave) {
             return response()->json(['message' => 'Leave request not found'], 404);
         }
+        $leave->loadMissing('user.employeeWorkInfo');
+        if (!$leave->user || !$this->approvalRoutingService->canReview($currentUser, $leave->user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
         if ($leave->status !== 'approved' || $leave->revoke_status !== 'pending') {
             return response()->json(['message' => 'Only pending revoke requests can be approved.'], 422);
         }
@@ -302,6 +334,10 @@ class LeaveRequestController extends Controller
         $leave = LeaveRequest::where('organization_id', $currentUser->organization_id)->find($id);
         if (!$leave) {
             return response()->json(['message' => 'Leave request not found'], 404);
+        }
+        $leave->loadMissing('user.employeeWorkInfo');
+        if (!$leave->user || !$this->approvalRoutingService->canReview($currentUser, $leave->user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($leave->status !== 'approved' || $leave->revoke_status !== 'pending') {
             return response()->json(['message' => 'Only pending revoke requests can be rejected.'], 422);
@@ -383,5 +419,73 @@ class LeaveRequestController extends Controller
     private function canManage(User $user): bool
     {
         return in_array($user->role, ['admin', 'manager'], true);
+    }
+
+    private function sendSubmissionNotification(LeaveRequest $leave, User $requester): void
+    {
+        $reviewerIds = $this->approvalRoutingService->reviewerUserIds($requester);
+        if ($reviewerIds->isEmpty()) {
+            return;
+        }
+
+        $this->notificationService->sendToUsers(
+            organizationId: (int) $leave->organization_id,
+            userIds: $reviewerIds,
+            senderId: (int) $requester->id,
+            type: 'announcement',
+            title: 'Leave Request Submitted',
+            message: sprintf(
+                '%s submitted a leave request from %s to %s.',
+                (string) $requester->name,
+                Carbon::parse($leave->start_date)->toDateString(),
+                Carbon::parse($leave->end_date)->toDateString()
+            ),
+            meta: [
+                'request_id' => (int) $leave->id,
+                'employee_id' => (int) $leave->user_id,
+                'employee_name' => (string) $requester->name,
+                'start_date' => Carbon::parse($leave->start_date)->toDateString(),
+                'end_date' => Carbon::parse($leave->end_date)->toDateString(),
+            ]
+        );
+    }
+
+    private function sendReviewNotification(LeaveRequest $leave, User $reviewer, string $status): void
+    {
+        $leave->loadMissing('user');
+        if (! $leave->user) {
+            return;
+        }
+
+        $reviewerName = trim((string) $reviewer->name);
+        $reviewerLabel = $reviewerName !== '' && $reviewer->id !== $leave->user_id
+            ? " by {$reviewerName}"
+            : '';
+        $note = filled($leave->review_note)
+            ? ' Note: '.$leave->review_note
+            : '';
+
+        $this->notificationService->sendToUsers(
+            organizationId: (int) $leave->organization_id,
+            userIds: collect([(int) $leave->user_id]),
+            senderId: (int) $reviewer->id,
+            type: 'announcement',
+            title: $status === 'approved' ? 'Leave Request Approved' : 'Leave Request Rejected',
+            message: sprintf(
+                'Your leave request from %s to %s was %s%s.%s',
+                Carbon::parse($leave->start_date)->toDateString(),
+                Carbon::parse($leave->end_date)->toDateString(),
+                $status,
+                $reviewerLabel,
+                $note
+            ),
+            meta: [
+                'request_id' => (int) $leave->id,
+                'status' => $status,
+                'start_date' => Carbon::parse($leave->start_date)->toDateString(),
+                'end_date' => Carbon::parse($leave->end_date)->toDateString(),
+                'review_note' => $leave->review_note,
+            ]
+        );
     }
 }

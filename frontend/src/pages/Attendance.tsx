@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, reportGroupApi, screenshotApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { hasAdminAccess } from '@/lib/permissions';
+import { canReviewApprovalRequest, hasAdminAccess } from '@/lib/permissions';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import FilterPanel from '@/components/dashboard/FilterPanel';
@@ -819,13 +819,15 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const employeePanelUser = employeeProfile?.user || user;
   const attendancePanelUser = isAdmin ? selectedRow?.user : employeePanelUser;
   const monitoringUserId = canSeeAttendanceMonitoring ? selectedUserId : null;
+  const canReviewLeaveRequest = (item: any) => canReviewApprovalRequest(user, item?.user);
+  const canReviewTimeEditRequest = (item: any) => canReviewApprovalRequest(user, item?.user);
   const pendingLeaveRequests = useMemo(
-    () => leaveRequests.filter((item) => item.status === 'pending'),
-    [leaveRequests]
+    () => leaveRequests.filter((item) => item.status === 'pending' && canReviewApprovalRequest(user, item?.user)),
+    [leaveRequests, user]
   );
   const pendingTimeEditRequests = useMemo(
-    () => timeEditRequests.filter((item) => item.status === 'pending'),
-    [timeEditRequests]
+    () => timeEditRequests.filter((item) => item.status === 'pending' && canReviewApprovalRequest(user, item?.user)),
+    [timeEditRequests, user]
   );
 
   const lateLabel = useMemo(() => {
@@ -987,7 +989,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                       <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : 'warning'}>{item.status}</StatusBadge>
                     </div>
                     {item.message ? <p className="text-xs text-gray-600 mt-1">{item.message}</p> : null}
-                    {isAdmin && item.status === 'pending' ? (
+                    {canReviewTimeEditRequest(item) && item.status === 'pending' ? (
                       <div className="mt-2 flex gap-2">
                         <Button onClick={() => approveTimeEdit(item.id)} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Approve</Button>
                         <Button onClick={() => rejectTimeEdit(item.id)} variant="danger" size="sm">Reject</Button>
@@ -997,7 +999,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 ))}
               </div>
             )}
-            {isAdmin && pendingTimeEditRequests.length > 0 ? (
+            {pendingTimeEditRequests.length > 0 ? (
               <p className="text-xs text-gray-500 mt-2">Pending approvals: {pendingTimeEditRequests.length}</p>
             ) : null}
           </SurfaceCard>
@@ -1668,7 +1670,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                       Revoke Request: <span className={`font-medium ${item.revoke_status === 'pending' ? 'text-amber-700' : item.revoke_status === 'approved' ? 'text-green-700' : 'text-red-700'}`}>{item.revoke_status}</span>
                     </p>
                   ) : null}
-                  {isAdmin && item.status === 'pending' ? (
+                  {canReviewLeaveRequest(item) && item.status === 'pending' ? (
                     <div className="mt-2 flex gap-2">
                       <Button onClick={() => approveLeave(item.id)} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Approve</Button>
                       <Button onClick={() => rejectLeave(item.id)} variant="danger" size="sm">Reject</Button>
@@ -1679,7 +1681,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                       <Button onClick={() => requestLeaveRevoke(item.id)} variant="danger" size="sm">Request Revoke</Button>
                     </div>
                   ) : null}
-                  {isAdmin && item.status === 'approved' && item.revoke_status === 'pending' ? (
+                  {canReviewLeaveRequest(item) && item.status === 'approved' && item.revoke_status === 'pending' ? (
                     <div className="mt-2 flex gap-2">
                       <Button onClick={() => approveLeaveRevoke(item.id)} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Approve Revoke</Button>
                       <Button onClick={() => rejectLeaveRevoke(item.id)} variant="danger" size="sm">Reject Revoke</Button>
@@ -1689,7 +1691,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               ))}
             </div>
           )}
-          {isAdmin && pendingLeaveRequests.length > 0 ? (
+          {pendingLeaveRequests.length > 0 ? (
             <p className="text-xs text-gray-500 mt-2">Pending approvals: {pendingLeaveRequests.length}</p>
           ) : null}
         </SurfaceCard>
@@ -1755,7 +1757,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                     <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : 'warning'}>{item.status}</StatusBadge>
                   </div>
                   {item.message ? <p className="text-xs text-gray-600 mt-1">{item.message}</p> : null}
-                  {isAdmin && item.status === 'pending' ? (
+                  {canReviewTimeEditRequest(item) && item.status === 'pending' ? (
                     <div className="mt-2 flex gap-2">
                       <Button onClick={() => approveTimeEdit(item.id)} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Approve</Button>
                       <Button onClick={() => rejectTimeEdit(item.id)} variant="danger" size="sm">Reject</Button>
@@ -1765,7 +1767,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               ))}
             </div>
           )}
-          {isAdmin && pendingTimeEditRequests.length > 0 ? (
+          {pendingTimeEditRequests.length > 0 ? (
             <p className="text-xs text-gray-500 mt-2">Pending approvals: {pendingTimeEditRequests.length}</p>
           ) : null}
         </SurfaceCard>

@@ -234,7 +234,7 @@ class UserController extends Controller
 
     public function destroy(Request $request, User $user)
     {
-        if (!$this->canAccessUser($request, $user)) {
+        if (!$this->canDeleteUsers($request->user()) || !$this->canAccessUser($request, $user)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($request->user()?->id === $user->id) {
@@ -439,6 +439,11 @@ class UserController extends Controller
     private function canManageUsers(User $user): bool
     {
         return in_array($user->role, ['admin', 'manager'], true);
+    }
+
+    private function canDeleteUsers(?User $user): bool
+    {
+        return $user?->role === 'admin';
     }
 
     private function resolvePeriodRange(string $period, string $timezone, ?string $startDate = null, ?string $endDate = null): ?array

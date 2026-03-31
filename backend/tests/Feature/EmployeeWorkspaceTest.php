@@ -164,4 +164,56 @@ class EmployeeWorkspaceTest extends TestCase
             ->assertJsonCount(1, 'bank_accounts')
             ->assertJsonCount(1, 'documents');
     }
+
+    public function test_only_admin_can_delete_users(): void
+    {
+        $this->withMiddleware();
+
+        $org = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance-delete',
+        ]);
+
+        $admin = User::create([
+            'name' => 'Admin User',
+            'email' => 'admin-delete@carevance.test',
+            'password' => bcrypt('password123'),
+            'role' => 'admin',
+            'organization_id' => $org->id,
+        ]);
+
+        $manager = User::create([
+            'name' => 'Manager User',
+            'email' => 'manager-delete@carevance.test',
+            'password' => bcrypt('password123'),
+            'role' => 'manager',
+            'organization_id' => $org->id,
+        ]);
+
+        $employee = User::create([
+            'name' => 'Delete Me',
+            'email' => 'employee-delete@carevance.test',
+            'password' => bcrypt('password123'),
+            'role' => 'employee',
+            'organization_id' => $org->id,
+        ]);
+
+        $this->withHeaders($this->apiHeadersFor($manager))
+            ->deleteJson("/api/users/{$employee->id}")
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $employee->id,
+            'email' => 'employee-delete@carevance.test',
+        ]);
+
+        $this->withHeaders($this->apiHeadersFor($admin))
+            ->deleteJson("/api/users/{$employee->id}")
+            ->assertOk()
+            ->assertJsonPath('message', 'User deleted');
+
+        $this->assertDatabaseMissing('users', [
+            'id' => $employee->id,
+        ]);
+    }
 }

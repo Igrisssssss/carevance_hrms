@@ -9,6 +9,7 @@ use App\Models\AttendanceTimeEditRequest;
 use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Services\AppNotificationService;
+use App\Services\Approvals\ApprovalRoutingService;
 use App\Services\Audit\AuditLogService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -17,6 +18,7 @@ class AttendanceTimeEditRequestController extends Controller
 {
     public function __construct(
         private readonly AppNotificationService $notificationService,
+        private readonly ApprovalRoutingService $approvalRoutingService,
         private readonly AuditLogService $auditLogService,
     ) {
     }
@@ -39,8 +41,17 @@ class AttendanceTimeEditRequestController extends Controller
 
         if (!$this->canManage($currentUser)) {
             $query->where('user_id', $currentUser->id);
-        } elseif ($request->filled('user_id')) {
-            $query->where('user_id', (int) $request->user_id);
+        } else {
+            $visibleUserIds = $this->approvalRoutingService->reviewableRequesterIds($currentUser)
+                ->push((int) $currentUser->id)
+                ->unique()
+                ->values();
+
+            $query->whereIn('user_id', $visibleUserIds);
+
+            if ($request->filled('user_id')) {
+                $query->where('user_id', (int) $request->user_id);
+            }
         }
 
         if ($request->filled('status')) {
@@ -122,15 +133,11 @@ class AttendanceTimeEditRequestController extends Controller
             max(0, $workedSeconds - $this->shiftTargetSeconds())
         );
 
-        $adminRecipientIds = User::query()
-            ->where('organization_id', $currentUser->organization_id)
-            ->whereIn('role', ['admin', 'manager'])
-            ->where('id', '!=', $currentUser->id)
-            ->pluck('id');
+        $reviewerIds = $this->approvalRoutingService->reviewerUserIds($currentUser);
 
         $this->notificationService->sendToUsers(
             organizationId: (int) $currentUser->organization_id,
-            userIds: $adminRecipientIds,
+            userIds: $reviewerIds,
             senderId: (int) $currentUser->id,
             type: 'announcement',
             title: 'Time Edit Request Submitted',
@@ -185,6 +192,10 @@ class AttendanceTimeEditRequestController extends Controller
         $item = AttendanceTimeEditRequest::where('organization_id', $currentUser->organization_id)->find($id);
         if (!$item) {
             return response()->json(['message' => 'Time edit request not found'], 404);
+        }
+        $item->loadMissing('user.employeeWorkInfo');
+        if (!$item->user || !$this->approvalRoutingService->canReview($currentUser, $item->user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($item->status !== 'pending') {
             return response()->json(['message' => 'Only pending requests can be approved.'], 422);
@@ -243,6 +254,10 @@ class AttendanceTimeEditRequestController extends Controller
         $item = AttendanceTimeEditRequest::where('organization_id', $currentUser->organization_id)->find($id);
         if (!$item) {
             return response()->json(['message' => 'Time edit request not found'], 404);
+        }
+        $item->loadMissing('user.employeeWorkInfo');
+        if (!$item->user || !$this->approvalRoutingService->canReview($currentUser, $item->user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($item->status !== 'pending') {
             return response()->json(['message' => 'Only pending requests can be rejected.'], 422);

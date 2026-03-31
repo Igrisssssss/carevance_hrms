@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { attendanceTimeEditApi, leaveApi } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { canReviewApprovalRequest } from '@/lib/permissions';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
@@ -41,6 +43,7 @@ type InboxItem =
     };
 
 export default function ApprovalInbox() {
+  const { user } = useAuth();
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [timeEditRequests, setTimeEditRequests] = useState<any[]>([]);
   const [activeFilter, setActiveFilter] = useState<'all' | 'leave' | 'time_edit'>('all');
@@ -80,7 +83,10 @@ export default function ApprovalInbox() {
   };
 
   const items = useMemo<InboxItem[]>(() => {
-    const leaveItems = leaveRequests.map((item) => ({
+    const reviewableLeaveRequests = leaveRequests.filter((item) => canReviewApprovalRequest(user, item.user));
+    const reviewableTimeEditRequests = timeEditRequests.filter((item) => canReviewApprovalRequest(user, item.user));
+
+    const leaveItems = reviewableLeaveRequests.map((item) => ({
       kind: 'leave' as const,
       id: item.id,
       submitted_at: item.created_at,
@@ -97,7 +103,7 @@ export default function ApprovalInbox() {
       },
     }));
 
-    const timeEditItems = timeEditRequests.map((item) => ({
+    const timeEditItems = reviewableTimeEditRequests.map((item) => ({
       kind: 'time_edit' as const,
       id: item.id,
       submitted_at: item.created_at,
@@ -115,7 +121,16 @@ export default function ApprovalInbox() {
     }));
 
     return [...leaveItems, ...timeEditItems].sort((a, b) => +new Date(b.submitted_at) - +new Date(a.submitted_at));
-  }, [leaveRequests, timeEditRequests]);
+  }, [leaveRequests, timeEditRequests, user]);
+
+  const reviewableLeaveCount = useMemo(
+    () => leaveRequests.filter((item) => canReviewApprovalRequest(user, item.user)).length,
+    [leaveRequests, user]
+  );
+  const reviewableTimeEditCount = useMemo(
+    () => timeEditRequests.filter((item) => canReviewApprovalRequest(user, item.user)).length,
+    [timeEditRequests, user]
+  );
 
   const filteredItems = items.filter((item) => activeFilter === 'all' || item.kind === activeFilter);
 
@@ -132,8 +147,8 @@ export default function ApprovalInbox() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <MetricCard label="Pending Total" value={items.length} icon={Inbox} accent="sky" />
-        <MetricCard label="Leave Requests" value={leaveRequests.length} icon={Clock3} accent="amber" />
-        <MetricCard label="Time Edits" value={timeEditRequests.length} icon={CheckCircle2} accent="emerald" />
+        <MetricCard label="Leave Requests" value={reviewableLeaveCount} icon={Clock3} accent="amber" />
+        <MetricCard label="Time Edits" value={reviewableTimeEditCount} icon={CheckCircle2} accent="emerald" />
       </div>
 
       <SurfaceCard className="p-4">
