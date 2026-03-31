@@ -165,6 +165,7 @@ class ScreenshotController extends Controller
                     }
                 },
             ],
+            'image_data_url' => 'nullable|string',
             'filename' => 'nullable|string|max:255',
             'thumbnail' => 'nullable|string|max:65535',
             'blurred' => 'nullable|boolean',
@@ -197,6 +198,30 @@ class ScreenshotController extends Controller
 
             $path = $uploadedImage->store('', 'screenshots');
             $filename = basename($path);
+        } elseif (! empty($validated['image_data_url'])) {
+            $decodedImage = $this->decodeImageDataUrl((string) $validated['image_data_url']);
+
+            if (! $decodedImage) {
+                return response()->json(['message' => 'Screenshot image data is invalid.'], 422);
+            }
+
+            $extension = $decodedImage['extension'];
+            $storedFilename = $filename
+                ? pathinfo($filename, PATHINFO_FILENAME).'.'.$extension
+                : (string) Str::uuid().'.'.$extension;
+
+            Log::info('Screenshot upload received.', [
+                'time_entry_id' => (int) $validated['time_entry_id'],
+                'user_id' => (int) $user->id,
+                'client_mime_type' => $decodedImage['mime_type'],
+                'server_mime_type' => $decodedImage['mime_type'],
+                'client_extension' => $extension,
+                'file_size_bytes' => strlen($decodedImage['binary']),
+                'source' => 'data_url',
+            ]);
+
+            Storage::disk('screenshots')->put($storedFilename, $decodedImage['binary']);
+            $filename = $storedFilename;
         }
 
         $filename = $filename ? basename($filename) : null;
@@ -227,6 +252,38 @@ class ScreenshotController extends Controller
         ]);
 
         return response()->json($screenshot, 201);
+    }
+
+    private function decodeImageDataUrl(string $dataUrl): ?array
+    {
+        if (! preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/', $dataUrl, $matches)) {
+            return null;
+        }
+
+        $mimeType = strtolower($matches[1]);
+        $binary = base64_decode($matches[2], true);
+        if ($binary === false || $binary === '') {
+            return null;
+        }
+
+        $extension = match ($mimeType) {
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/bmp' => 'bmp',
+            'image/webp' => 'webp',
+            default => null,
+        };
+
+        if (! $extension) {
+            return null;
+        }
+
+        return [
+            'mime_type' => $mimeType,
+            'extension' => $extension,
+            'binary' => $binary,
+        ];
     }
 
     public function file(Request $request, Screenshot $screenshot): BinaryFileResponse|\Illuminate\Http\JsonResponse

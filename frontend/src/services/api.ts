@@ -350,12 +350,12 @@ export const screenshotApi = {
   get: (id: number) => 
     api.get<Screenshot>(`/screenshots/${id}`),
   
-  upload: (timeEntryId: number, file: File) => {
-    const formData = new FormData();
-    formData.append('image', file);
-    formData.append('time_entry_id', timeEntryId.toString());
-    return api.post<Screenshot>('/screenshots', formData);
-  },
+  upload: (timeEntryId: number, imageDataUrl: string, filename?: string) =>
+    api.post<Screenshot>('/screenshots', {
+      time_entry_id: timeEntryId,
+      image_data_url: imageDataUrl,
+      ...(filename ? { filename } : {}),
+    }),
   
   bulkDelete: (data: { screenshot_ids?: number[]; user_id?: number; time_entry_id?: number; start_date?: string; end_date?: string; delete_all_in_range?: boolean }) =>
     api.post<{ message: string; deleted_count: number }>('/screenshots/bulk-delete', data),

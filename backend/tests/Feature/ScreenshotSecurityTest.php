@@ -96,6 +96,43 @@ class ScreenshotSecurityTest extends TestCase
         Storage::disk('screenshots')->assertExists($screenshot->filename);
     }
 
+    public function test_desktop_screenshot_data_url_upload_is_accepted(): void
+    {
+        Storage::fake('screenshots');
+
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $user = User::create([
+            'name' => 'Employee User',
+            'email' => 'employee-data-url@example.com',
+            'password' => 'password123',
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $timeEntry = TimeEntry::create([
+            'user_id' => $user->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'duration' => 3600,
+            'billable' => true,
+        ]);
+
+        $response = $this->postJson('/api/screenshots', [
+            'time_entry_id' => $timeEntry->id,
+            'filename' => 'capture.png',
+            'image_data_url' => 'data:image/png;base64,'.base64_encode('fake-image-content'),
+        ], $this->apiHeadersFor($user));
+
+        $response->assertCreated();
+
+        $screenshot = Screenshot::query()->latest('id')->firstOrFail();
+        Storage::disk('screenshots')->assertExists($screenshot->filename);
+    }
+
     public function test_admin_screenshot_index_filters_by_employee_and_date_range(): void
     {
         try {

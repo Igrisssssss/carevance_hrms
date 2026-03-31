@@ -6,19 +6,21 @@ describe('screenshotApi.upload', () => {
     vi.restoreAllMocks();
   });
 
-  it('lets axios set the multipart boundary automatically', async () => {
+  it('sends desktop screenshots as JSON data urls', async () => {
     const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { id: 1 } } as any);
-    const file = new File(['fake-image'], 'capture.png', { type: 'image/png' });
+    const imageDataUrl = 'data:image/png;base64,ZmFrZQ==';
 
-    await screenshotApi.upload(55, file);
+    await screenshotApi.upload(55, imageDataUrl, 'capture.png');
 
     expect(postSpy).toHaveBeenCalledTimes(1);
 
     const [url, body, config] = postSpy.mock.calls[0] ?? [];
     expect(url).toBe('/screenshots');
-    expect(body).toBeInstanceOf(FormData);
-    expect((body as FormData).get('image')).toBe(file);
-    expect((body as FormData).get('time_entry_id')).toBe('55');
+    expect(body).toEqual({
+      time_entry_id: 55,
+      image_data_url: imageDataUrl,
+      filename: 'capture.png',
+    });
     expect(config).toBeUndefined();
   });
 });

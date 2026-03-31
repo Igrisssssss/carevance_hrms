@@ -228,7 +228,11 @@ describe('useDesktopTracker', () => {
 
     expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
     expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledWith(55, expect.any(File));
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledWith(
+      55,
+      'data:image/png;base64,ZmFrZQ==',
+      expect.stringMatching(/^capture-\d+\.png$/)
+    );
   });
 
   it('continues screenshot capture when the user is idle at the screenshot interval', async () => {
@@ -244,7 +248,11 @@ describe('useDesktopTracker', () => {
 
     expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
     expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledWith(55, expect.any(File));
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledWith(
+      55,
+      'data:image/png;base64,ZmFrZQ==',
+      expect.stringMatching(/^capture-\d+\.png$/)
+    );
   });
 
   it('clears and recreates the screenshot interval cleanly on remount without duplicating captures', async () => {

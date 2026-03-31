@@ -45,22 +45,6 @@ type ActiveSegment = {
   kind: 'tracked' | 'idle';
 };
 
-const dataUrlToFile = (dataUrl: string, filename: string): File | null => {
-  try {
-    const parts = dataUrl.split(',');
-    if (parts.length < 2) return null;
-    const mimeMatch = parts[0].match(/data:(.*?);base64/);
-    const mime = mimeMatch ? mimeMatch[1] : 'image/png';
-    const binary = atob(parts[1]);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes], { type: mime });
-    return new File([blob], filename, { type: mime });
-  } catch {
-    return null;
-  }
-};
-
 export const useDesktopTracker = () => {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id ?? null;
@@ -466,12 +450,7 @@ export const useDesktopTracker = () => {
           return;
         }
 
-        const file = dataUrlToFile(screenshotDataUrl, `capture-${now}.png`);
-        if (!file) {
-          return;
-        }
-
-        await screenshotApi.upload(activeEntry.id, file);
+        await screenshotApi.upload(activeEntry.id, screenshotDataUrl, `capture-${now}.png`);
       } catch (error) {
         console.error('Desktop tracker screenshot capture failed:', error);
       } finally {
