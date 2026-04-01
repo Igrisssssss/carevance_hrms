@@ -8,6 +8,7 @@ import type {
   ApiResponse,
   User,
   Organization,
+  Group,
   Project,
   Task,
   TimeEntry,
@@ -276,9 +277,26 @@ export const projectApi = {
     api.get(`/projects/${id}/stats`, { params }),
 };
 
+export const groupApi = {
+  getAll: () =>
+    api.get<{ data: Group[] }>('/groups'),
+
+  get: (id: number) =>
+    api.get<Group>(`/groups/${id}`),
+
+  create: (data: { name: string; description?: string; is_active?: boolean; user_ids?: number[] }) =>
+    api.post<Group>('/groups', data),
+
+  update: (id: number, data: { name?: string; description?: string; is_active?: boolean; user_ids?: number[] }) =>
+    api.patch<Group>(`/groups/${id}`, data),
+
+  delete: (id: number) =>
+    api.delete(`/groups/${id}`),
+};
+
 // Task API
 export const taskApi = {
-  getAll: (params?: { project_id?: number; status?: string; assignee_id?: number }) => 
+  getAll: (params?: { project_id?: number; group_id?: number; status?: string; assignee_id?: number; timer_only?: boolean }) =>
     api.get<Task[]>('/tasks', { params }),
   
   get: (id: number) => 

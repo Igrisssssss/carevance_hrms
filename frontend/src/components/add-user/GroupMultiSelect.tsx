@@ -5,6 +5,7 @@ import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
 import { InviteOption } from '@/services/addUser';
 import { PageEmptyState } from '@/components/ui/PageState';
+import Button from '@/components/ui/Button';
 
 interface GroupMultiSelectProps {
   options: InviteOption[];
@@ -12,6 +13,7 @@ interface GroupMultiSelectProps {
   onChange: (selectedIds: number[]) => void;
   isLoading?: boolean;
   errorMessage?: string;
+  onCreateNew?: () => void;
 }
 
 export default function GroupMultiSelect({
@@ -20,6 +22,7 @@ export default function GroupMultiSelect({
   onChange,
   isLoading = false,
   errorMessage,
+  onCreateNew,
 }: GroupMultiSelectProps) {
   const [query, setQuery] = useState('');
   const groupSearchSuggestions = useMemo(
@@ -40,7 +43,14 @@ export default function GroupMultiSelect({
 
   return (
     <div>
-      <FieldLabel hint={`${selectedIds.length} selected`}>Groups they&apos;re members of</FieldLabel>
+      <div className="flex items-end justify-between gap-3">
+        <FieldLabel hint={`${selectedIds.length} selected`}>Groups they&apos;re members of</FieldLabel>
+        {onCreateNew ? (
+          <Button type="button" variant="ghost" size="sm" onClick={onCreateNew}>
+            + Create new group
+          </Button>
+        ) : null}
+      </div>
       <div className="rounded-[24px] border border-slate-200/90 bg-white/90 p-4 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.2)]">
         <SearchSuggestInput
           value={query}
