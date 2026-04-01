@@ -5,6 +5,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 interface DashboardHeaderProps {
   eyebrow?: string;
   title: string;
+  titleClassName?: string;
   description?: string;
   actions?: ReactNode;
   children?: ReactNode;
@@ -13,6 +14,7 @@ interface DashboardHeaderProps {
 export default function DashboardHeader({
   eyebrow,
   title,
+  titleClassName,
   description,
   actions,
   children,
@@ -20,7 +22,7 @@ export default function DashboardHeader({
   return (
     <div className="relative z-20 space-y-4">
       <SurfaceCard className="relative z-20 overflow-visible border-white/90 bg-white/96 p-5 shadow-[0_18px_44px_-34px_rgba(15,23,42,0.24)] sm:p-6">
-        <PageHeader eyebrow={eyebrow} title={title} description={description} actions={actions} />
+        <PageHeader eyebrow={eyebrow} title={title} titleClassName={titleClassName} description={description} actions={actions} />
         {children ? <div className="mt-5 border-t border-slate-200/80 pt-5">{children}</div> : null}
       </SurfaceCard>
     </div>

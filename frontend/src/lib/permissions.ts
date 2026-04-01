@@ -1,5 +1,7 @@
 import type { Organization, User } from '@/types';
 
+export type AssignableRole = Exclude<User['role'], 'client'>;
+
 export const hasAdminAccess = (user: User | null | undefined): boolean =>
   Boolean(user && (user.role === 'admin' || user.role === 'manager'));
 
@@ -42,7 +44,7 @@ export const isTrackedTimerUser = (user: User | null | undefined): boolean =>
 export const getAssignableRoles = (
   user: User | null | undefined,
   organization: Organization | null | undefined
-): Array<User['role']> => {
+): AssignableRole[] => {
   if (!user || !organization) {
     return [];
   }
@@ -50,11 +52,11 @@ export const getAssignableRoles = (
   const isOwner = organization.owner_user_id === user.id;
 
   if (isOwner) {
-    return ['admin', 'manager', 'employee', 'client'];
+    return ['admin', 'manager', 'employee'];
   }
 
   if (user.role === 'admin') {
-    return ['admin', 'manager', 'employee', 'client'];
+    return ['admin', 'manager', 'employee'];
   }
 
   if (user.role === 'manager') {

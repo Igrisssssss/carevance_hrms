@@ -47,7 +47,7 @@ export type NavGroup = {
 
 export const topNavigation: NavGroup[] = [
   {
-    label: 'Dashboard',
+    label: 'Home',
     to: '/dashboard',
     icon: LayoutDashboard,
   },

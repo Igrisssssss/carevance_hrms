@@ -24,7 +24,7 @@ describe('getAssignableRoles', () => {
           updated_at: '',
         }
       )
-    ).toEqual(['admin', 'manager', 'employee', 'client']);
+    ).toEqual(['admin', 'manager', 'employee']);
   });
 });
 
