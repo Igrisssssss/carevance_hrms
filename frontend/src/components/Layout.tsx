@@ -67,7 +67,7 @@ export default function Layout() {
               ],
             },
             {
-              label: 'Dashboard',
+              label: 'Home',
               to: '/desktop-web-dashboard',
               externalPath: '/dashboard',
               external: true,
