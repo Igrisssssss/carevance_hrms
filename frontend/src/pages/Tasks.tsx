@@ -70,6 +70,7 @@ export default function Tasks() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
+  const [groupModalSource, setGroupModalSource] = useState<'workspace' | 'task-form'>('workspace');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | SavedTaskStatus>('all');
   const [groupFilter, setGroupFilter] = useState('all');
@@ -78,6 +79,7 @@ export default function Tasks() {
   const [groupDirectoryFilter, setGroupDirectoryFilter] = useState('all');
   const [memberDrafts, setMemberDrafts] = useState<Record<number, string>>({});
   const [memberMoveDrafts, setMemberMoveDrafts] = useState<Record<string, string>>({});
+  const [deletingGroupId, setDeletingGroupId] = useState<number | null>(null);
   const [taskForm, setTaskForm] = useState<TaskFormState>(createTaskFormState());
 
   const tasksQuery = useQuery({
@@ -164,6 +166,39 @@ export default function Tasks() {
     },
   });
 
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (group: Group) => {
+      await groupApi.delete(group.id);
+      return group;
+    },
+    onMutate: (group) => {
+      setDeletingGroupId(group.id);
+    },
+    onSuccess: async (group) => {
+      setFeedback({ tone: 'success', message: `${group.name} was deleted.` });
+      setGroupDirectoryFilter((current) => (current === String(group.id) ? 'all' : current));
+      setGroupFilter((current) => (current === String(group.id) ? 'all' : current));
+      setTaskForm((current) => (
+        current.group_id === String(group.id)
+          ? { ...current, group_id: '', assignee_id: '' }
+          : current
+      ));
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.groups }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.users({ period: 'all' }) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.tasks }),
+      ]);
+    },
+    onError: (error: any) => {
+      const fieldError = Object.values(error?.response?.data?.errors || {}).flat().find(Boolean);
+      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to delete group.') });
+    },
+    onSettled: () => {
+      setDeletingGroupId(null);
+    },
+  });
+
   const isLoading = tasksQuery.isLoading || groupsQuery.isLoading || usersQuery.isLoading;
   const isError = tasksQuery.isError || groupsQuery.isError || usersQuery.isError;
 
@@ -245,13 +280,51 @@ export default function Tasks() {
       return;
     }
 
+    const currentGroupIds = (member.groups || []).map((assignedGroup) => assignedGroup.id);
+    const nextGroupIds = Array.from(
+      new Set([
+        ...currentGroupIds.filter((groupId) => groupId !== currentGroup.id),
+        targetGroup.id,
+      ])
+    );
+
     syncMembershipMutation.mutate({
       userId: member.id,
-      groupIds: [targetGroup.id],
+      groupIds: nextGroupIds,
       successMessage: `${member.name} was moved to ${targetGroup.name}.`,
     });
 
     setMemberMoveDrafts((current) => ({ ...current, [draftKey]: '' }));
+  };
+
+  const handleRemoveEmployeeFromGroup = (member: User, currentGroup: Group) => {
+    const currentGroupIds = (member.groups || []).map((assignedGroup) => assignedGroup.id);
+    const nextGroupIds = currentGroupIds.filter((groupId) => groupId !== currentGroup.id);
+
+    if (nextGroupIds.length === 0) {
+      setFeedback({
+        tone: 'error',
+        message: `${member.name} is currently only in ${currentGroup.name}. Move them to another group before removing this membership.`,
+      });
+      return;
+    }
+
+    syncMembershipMutation.mutate({
+      userId: member.id,
+      groupIds: nextGroupIds,
+      successMessage: `${member.name} was removed from ${currentGroup.name}.`,
+    });
+
+    const draftKey = `${currentGroup.id}:${member.id}`;
+    setMemberMoveDrafts((current) => ({ ...current, [draftKey]: '' }));
+  };
+
+  const handleDeleteGroup = (group: Group) => {
+    if (!confirm(`Delete "${group.name}"? Members will be detached and tasks in this group will become ungrouped.`)) {
+      return;
+    }
+
+    deleteGroupMutation.mutate(group);
   };
 
   if (isLoading) return <PageLoadingState label="Loading task workspace..." />;
@@ -282,7 +355,16 @@ export default function Tasks() {
           </div>
           {canManageTasks ? (
             <div className="flex flex-wrap gap-3">
-              <Button variant="secondary" iconLeft={<Building2 className="h-4 w-4" />} onClick={() => setShowGroupModal(true)}>New Group</Button>
+              <Button
+                variant="secondary"
+                iconLeft={<Building2 className="h-4 w-4" />}
+                onClick={() => {
+                  setGroupModalSource('workspace');
+                  setShowGroupModal(true);
+                }}
+              >
+                New Group
+              </Button>
               <Button iconLeft={<Plus className="h-4 w-4" />} onClick={() => {
                 setEditingTask(null);
                 setTaskForm(createTaskFormState(groupFilter === 'all' ? '' : groupFilter));
@@ -300,51 +382,6 @@ export default function Tasks() {
         <MetricCard label="Groups In View" value={groups.length} hint="Available departments" icon={Users2} accent="violet" />
       </div>
 
-      <SurfaceCard className="p-5">
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-          <div className="xl:col-span-2">
-            <FieldLabel>Search</FieldLabel>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <TextInput value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search by task, group, or assignee" className="pl-10" />
-            </div>
-          </div>
-          <div>
-            <FieldLabel>Status</FieldLabel>
-            <SelectInput value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | SavedTaskStatus)}>
-              <option value="all">All statuses</option>
-              {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </SelectInput>
-          </div>
-          <div>
-            <FieldLabel>Assignee</FieldLabel>
-            <SelectInput value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}>
-              <option value="all">All assignees</option>
-              <option value="">Unassigned</option>
-              {users.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
-            </SelectInput>
-          </div>
-        </div>
-        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
-          <div>
-            <FieldLabel>Group</FieldLabel>
-            <SelectInput value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}>
-              <option value="all">All groups</option>
-              {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-            </SelectInput>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {canManageTasks ? <Button variant="secondary" size="sm" onClick={() => setShowGroupModal(true)}>Add Group</Button> : null}
-            <Button variant="ghost" size="sm" onClick={() => {
-              setSearchQuery('');
-              setStatusFilter('all');
-              setGroupFilter('all');
-              setAssigneeFilter('all');
-            }}>Reset Filters</Button>
-          </div>
-        </div>
-      </SurfaceCard>
-
       {canManageTasks ? (
         <SurfaceCard className="p-5 sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -355,7 +392,7 @@ export default function Tasks() {
             </div>
             <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Quick rule</p>
-              <p className="mt-2">Adding keeps the user&apos;s existing memberships. Moving an employee here switches their active group assignment to the selected destination.</p>
+              <p className="mt-2">Adding keeps existing memberships. Moving switches active assignment, and remove detaches the employee from this specific group.</p>
             </div>
           </div>
 
@@ -438,6 +475,17 @@ export default function Tasks() {
                           <CheckCircle2 className="h-3.5 w-3.5" />
                           {group.tasks_count ?? tasks.filter((task) => task.group_id === group.id).length} task{(group.tasks_count ?? tasks.filter((task) => task.group_id === group.id).length) === 1 ? '' : 's'}
                         </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          iconLeft={<Trash2 className="h-4 w-4" />}
+                          className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                          aria-label={`Delete group ${group.name}`}
+                          disabled={deleteGroupMutation.isPending}
+                          onClick={() => handleDeleteGroup(group)}
+                        >
+                          {deletingGroupId === group.id ? 'Deleting...' : 'Delete Group'}
+                        </Button>
                       </div>
                     </div>
 
@@ -478,6 +526,7 @@ export default function Tasks() {
                       ) : (
                         members.map((member) => {
                           const moveKey = `${group.id}:${member.id}`;
+                          const canManageMembership = member.role === 'employee' || (member.role === 'manager' && user?.role === 'admin');
 
                           return (
                             <div key={moveKey} className="rounded-[22px] border border-slate-200/80 bg-white/90 p-4">
@@ -493,34 +542,51 @@ export default function Tasks() {
                                   </p>
                                 </div>
 
-                                {member.role === 'employee' ? (
-                                  <div className="grid min-w-full gap-3 sm:grid-cols-[minmax(0,1fr)_auto] xl:min-w-[22rem]">
+                                {canManageMembership ? (
+                                  <div className="grid min-w-full gap-3 xl:min-w-[22rem]">
                                     <SelectInput
                                       aria-label={`Move ${member.name} to another group`}
                                       value={memberMoveDrafts[moveKey] || ''}
                                       onChange={(event) => setMemberMoveDrafts((current) => ({ ...current, [moveKey]: event.target.value }))}
                                       disabled={groups.length <= 1 || syncMembershipMutation.isPending}
                                     >
-                                      <option value="">{groups.length <= 1 ? 'Create another group first' : 'Move employee to another group'}</option>
+                                      <option value="">{groups.length <= 1 ? 'Create another group first' : 'Move member to another group'}</option>
                                       {groups.filter((targetGroup) => targetGroup.id !== group.id).map((targetGroup) => (
                                         <option key={targetGroup.id} value={targetGroup.id}>
                                           {targetGroup.name}
                                         </option>
                                       ))}
                                     </SelectInput>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      iconLeft={<ArrowRightLeft className="h-4 w-4" />}
-                                      aria-label={`Move ${member.name}`}
-                                      disabled={!memberMoveDrafts[moveKey] || syncMembershipMutation.isPending}
-                                      onClick={() => handleMoveEmployeeToGroup(member, group)}
-                                    >
-                                      {syncMembershipMutation.isPending ? 'Moving...' : 'Move'}
-                                    </Button>
+                                    <div className="flex flex-wrap gap-2 sm:justify-end">
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        iconLeft={<ArrowRightLeft className="h-4 w-4" />}
+                                        aria-label={`Move ${member.name}`}
+                                        disabled={!memberMoveDrafts[moveKey] || syncMembershipMutation.isPending}
+                                        onClick={() => handleMoveEmployeeToGroup(member, group)}
+                                      >
+                                        {syncMembershipMutation.isPending ? 'Moving...' : 'Move'}
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        iconLeft={<Trash2 className="h-4 w-4" />}
+                                        aria-label={`Remove ${member.name} from ${group.name}`}
+                                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                        disabled={(member.groups || []).length <= 1 || syncMembershipMutation.isPending}
+                                        onClick={() => handleRemoveEmployeeFromGroup(member, group)}
+                                      >
+                                        {syncMembershipMutation.isPending ? 'Removing...' : 'Remove'}
+                                      </Button>
+                                    </div>
                                   </div>
                                 ) : (
-                                  <div className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">Move action is available for employees here.</div>
+                                  <div className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+                                    {member.role === 'manager'
+                                      ? 'Only admins can move or remove managers here.'
+                                      : 'Move action is available for employees here.'}
+                                  </div>
                                 )}
                               </div>
                             </div>
@@ -647,7 +713,16 @@ export default function Tasks() {
                 <div>
                   <div className="mb-1.5 flex items-center justify-between gap-3">
                     <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Group</label>
-                    <button type="button" onClick={() => setShowGroupModal(true)} className="text-xs font-semibold text-sky-600 transition hover:text-sky-700">+ Create new group</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGroupModalSource('task-form');
+                        setShowGroupModal(true);
+                      }}
+                      className="text-xs font-semibold text-sky-600 transition hover:text-sky-700"
+                    >
+                      + Create new group
+                    </button>
                   </div>
                   <SelectInput required value={taskForm.group_id} onChange={(event) => setTaskForm((current) => ({ ...current, group_id: event.target.value, assignee_id: '' }))}>
                     <option value="">Select group</option>
@@ -699,8 +774,9 @@ export default function Tasks() {
         open={showGroupModal}
         onClose={() => setShowGroupModal(false)}
         onCreated={(group) => {
-          setTaskForm((current) => ({ ...current, group_id: String(group.id) }));
-          setGroupFilter(String(group.id));
+          if (groupModalSource === 'task-form') {
+            setTaskForm((current) => ({ ...current, group_id: String(group.id) }));
+          }
         }}
         title="Create a group without leaving tasks"
         description="Add the new department here and it will be available immediately in the task form."

@@ -199,6 +199,8 @@ class UserController extends Controller
         $user->update($updatable);
 
         if (array_key_exists('group_ids', $validated)) {
+            $this->organizationRoleService->assertCanAssignRole($request->user(), $user->role, 'group_ids');
+
             $groupIds = Group::where('organization_id', $user->organization_id)
                 ->whereIn('id', $validated['group_ids'] ?? [])
                 ->pluck('id')

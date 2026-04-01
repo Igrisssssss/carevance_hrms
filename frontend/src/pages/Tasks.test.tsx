@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   deleteTask: vi.fn(),
   updateTaskStatus: vi.fn(),
   getAllGroups: vi.fn(),
+  deleteGroup: vi.fn(),
   getAllUsers: vi.fn(),
   updateUser: vi.fn(),
 }));
@@ -43,6 +44,7 @@ vi.mock('@/services/api', async () => {
     },
     groupApi: {
       getAll: mocks.getAllGroups,
+      delete: mocks.deleteGroup,
     },
     userApi: {
       getAll: mocks.getAllUsers,
@@ -139,6 +141,7 @@ describe('Tasks page', () => {
     });
 
     mocks.updateUser.mockResolvedValue({ data: { id: 4 } });
+    mocks.deleteGroup.mockResolvedValue({ data: { success: true } });
   });
 
   it('shows the quick group action and lets group chips filter the board', async () => {
@@ -197,5 +200,218 @@ describe('Tasks page', () => {
 
     expect(screen.queryByRole('heading', { name: 'Digital Marketing' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'IT' })).toBeInTheDocument();
+  });
+
+  it('removes an employee from the current group when they belong to multiple groups', async () => {
+    const user = userEvent.setup();
+
+    mocks.getAllUsers.mockResolvedValueOnce({
+      data: [
+        {
+          id: 3,
+          name: 'Alex Johnson',
+          email: 'alex@example.com',
+          role: 'employee',
+          organization_id: 1,
+          is_active: true,
+          groups: [{ id: 7, name: 'Digital Marketing', is_active: true }],
+          created_at: '',
+          updated_at: '',
+        },
+        {
+          id: 4,
+          name: 'Jordan Miles',
+          email: 'jordan@example.com',
+          role: 'employee',
+          organization_id: 1,
+          is_active: true,
+          groups: [
+            { id: 8, name: 'IT', is_active: true },
+            { id: 7, name: 'Digital Marketing', is_active: true },
+          ],
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+    });
+
+    renderWithProviders(<Tasks />);
+
+    expect(await screen.findByText(/see every group and manage members from this page/i)).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: /search group directory/i }), 'it');
+
+    await user.click(screen.getByRole('button', { name: /remove jordan miles from it/i }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser).toHaveBeenCalledWith(4, { group_ids: [7] });
+    });
+  });
+
+  it('allows admins to remove a manager from a group', async () => {
+    const user = userEvent.setup();
+
+    mocks.getAllGroups.mockResolvedValueOnce({
+      data: {
+        data: [
+          {
+            id: 7,
+            name: 'Digital Marketing',
+            is_active: true,
+            tasks_count: 1,
+            users: [
+              { id: 3, name: 'Alex Johnson', email: 'alex@example.com', role: 'employee' },
+              { id: 5, name: 'Sam Manager', email: 'sam.manager@example.com', role: 'manager' },
+            ],
+          },
+          {
+            id: 8,
+            name: 'IT',
+            is_active: true,
+            tasks_count: 1,
+            users: [{ id: 4, name: 'Jordan Miles', email: 'jordan@example.com', role: 'employee' }],
+          },
+        ],
+      },
+    });
+
+    mocks.getAllUsers.mockResolvedValueOnce({
+      data: [
+        {
+          id: 3,
+          name: 'Alex Johnson',
+          email: 'alex@example.com',
+          role: 'employee',
+          organization_id: 1,
+          is_active: true,
+          groups: [{ id: 7, name: 'Digital Marketing', is_active: true }],
+          created_at: '',
+          updated_at: '',
+        },
+        {
+          id: 4,
+          name: 'Jordan Miles',
+          email: 'jordan@example.com',
+          role: 'employee',
+          organization_id: 1,
+          is_active: true,
+          groups: [{ id: 8, name: 'IT', is_active: true }],
+          created_at: '',
+          updated_at: '',
+        },
+        {
+          id: 5,
+          name: 'Sam Manager',
+          email: 'sam.manager@example.com',
+          role: 'manager',
+          organization_id: 1,
+          is_active: true,
+          groups: [
+            { id: 7, name: 'Digital Marketing', is_active: true },
+            { id: 8, name: 'IT', is_active: true },
+          ],
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+    });
+
+    renderWithProviders(<Tasks />);
+
+    expect(await screen.findByText(/see every group and manage members from this page/i)).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: /search group directory/i }), 'digital');
+
+    const removeButton = screen.getByRole('button', { name: /remove sam manager from digital marketing/i });
+    expect(removeButton).toBeEnabled();
+
+    await user.click(removeButton);
+
+    await waitFor(() => {
+      expect(mocks.updateUser).toHaveBeenCalledWith(5, { group_ids: [8] });
+    });
+  });
+
+  it('moves a member by removing only the current group and keeping other groups', async () => {
+    const user = userEvent.setup();
+
+    mocks.getAllGroups.mockResolvedValueOnce({
+      data: {
+        data: [
+          {
+            id: 3,
+            name: 'IT Services',
+            is_active: true,
+            tasks_count: 1,
+            users: [{ id: 11, name: 'Irbaz', email: 'irbaz@test.com', role: 'manager' }],
+          },
+          {
+            id: 2,
+            name: 'demo 2',
+            is_active: true,
+            tasks_count: 1,
+            users: [{ id: 11, name: 'Irbaz', email: 'irbaz@test.com', role: 'manager' }],
+          },
+          {
+            id: 4,
+            name: 'Digital Marketing',
+            is_active: true,
+            tasks_count: 0,
+            users: [],
+          },
+        ],
+      },
+    });
+
+    mocks.getAllUsers.mockResolvedValueOnce({
+      data: [
+        {
+          id: 11,
+          name: 'Irbaz',
+          email: 'irbaz@test.com',
+          role: 'manager',
+          organization_id: 1,
+          is_active: true,
+          groups: [
+            { id: 2, name: 'demo 2', is_active: true },
+            { id: 3, name: 'IT Services', is_active: true },
+          ],
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+    });
+
+    renderWithProviders(<Tasks />);
+
+    expect(await screen.findByText(/see every group and manage members from this page/i)).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: /search group directory/i }), 'it services');
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /move irbaz to another group/i }),
+      '4'
+    );
+    await user.click(screen.getByRole('button', { name: /^move irbaz$/i }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser).toHaveBeenCalledWith(11, { group_ids: [2, 4] });
+    });
+  });
+
+  it('deletes a group from group directory', async () => {
+    const user = userEvent.setup();
+    const confirmMock = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirmMock);
+
+    renderWithProviders(<Tasks />);
+
+    expect(await screen.findByText(/see every group and manage members from this page/i)).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: /search group directory/i }), 'digital');
+
+    await user.click(screen.getByRole('button', { name: /delete group digital marketing/i }));
+
+    await waitFor(() => {
+      expect(mocks.deleteGroup).toHaveBeenCalledWith(7);
+    });
+
+    vi.unstubAllGlobals();
   });
 });

@@ -171,6 +171,46 @@ class GroupTaskAccessTest extends TestCase
             ->all());
     }
 
+    public function test_admin_can_reassign_manager_group_membership(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance']);
+
+        $admin = $this->createUser($organization, 'Admin', 'admin@carevance.test', 'admin');
+        $manager = $this->createUser($organization, 'Manager', 'manager@carevance.test', 'manager');
+
+        $operationsGroup = $this->createGroup($organization, 'Operations');
+        $digitalGroup = $this->createGroup($organization, 'Digital Marketing');
+
+        $manager->groups()->sync([$operationsGroup->id]);
+
+        $this->putJson("/api/users/{$manager->id}", [
+            'group_ids' => [$digitalGroup->id],
+        ], $this->apiHeadersFor($admin))
+            ->assertOk()
+            ->assertJsonPath('groups.0.id', $digitalGroup->id);
+    }
+
+    public function test_manager_cannot_reassign_another_manager_group_membership(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance']);
+
+        $actingManager = $this->createUser($organization, 'Acting Manager', 'acting-manager@carevance.test', 'manager');
+        $targetManager = $this->createUser($organization, 'Target Manager', 'target-manager@carevance.test', 'manager');
+
+        $operationsGroup = $this->createGroup($organization, 'Operations');
+        $digitalGroup = $this->createGroup($organization, 'Digital Marketing');
+
+        $actingManager->groups()->sync([$operationsGroup->id]);
+        $targetManager->groups()->sync([$operationsGroup->id]);
+
+        $this->putJson("/api/users/{$targetManager->id}", [
+            'group_ids' => [$digitalGroup->id],
+        ], $this->apiHeadersFor($actingManager))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('group_ids')
+            ->assertJsonPath('errors.group_ids.0', 'You are not allowed to assign this role.');
+    }
+
     private function createUser(Organization $organization, string $name, string $email, string $role): User
     {
         return User::create([

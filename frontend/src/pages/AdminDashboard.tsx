@@ -24,12 +24,9 @@ import DataTable from '@/components/dashboard/DataTable';
 import EmptyStateCard from '@/components/dashboard/EmptyStateCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
-import { FieldLabel, SelectInput } from '@/components/ui/FormField';
-import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
+import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState } from '@/components/ui/PageState';
 import { useAuth } from '@/contexts/AuthContext';
-import { deriveDateRangeFromPreset, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
-import { buildEmployeeSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
   Activity,
@@ -50,17 +47,49 @@ import {
 } from 'lucide-react';
 
 type DashboardScope = 'organization' | 'employee';
+type DatePreset = 'today' | '7d' | '30d' | 'custom';
 
 interface PersistedFilterState {
   scope: DashboardScope;
   selectedEmployeeId: number | '';
-  datePreset: DateRangePreset;
+  datePreset: DatePreset;
   startDate: string;
   endDate: string;
 }
 
 const FILTER_STORAGE_KEY = 'admin-dashboard-filters';
 const ATTENDANCE_TABLE_SCROLL_CLASS = 'max-h-[28rem] overflow-y-auto overscroll-contain';
+
+const toDate = (value: Date) =>
+  `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+
+const startOfToday = () => {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const endOfToday = () => {
+  const date = new Date();
+  date.setHours(23, 59, 59, 999);
+  return date;
+};
+
+const deriveDatesFromPreset = (preset: DatePreset) => {
+  const end = endOfToday();
+  const start = startOfToday();
+
+  if (preset === '7d') {
+    start.setDate(start.getDate() - 6);
+  } else if (preset === '30d') {
+    start.setDate(start.getDate() - 29);
+  }
+
+  return {
+    startDate: toDate(start),
+    endDate: toDate(end),
+  };
+};
 
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
@@ -150,7 +179,7 @@ const productivityTone = (classification?: string | null) =>
       : 'bg-slate-100 text-slate-600 border-slate-200';
 
 const defaultFilters = (): PersistedFilterState => {
-  const dates = deriveDateRangeFromPreset('today');
+  const dates = deriveDatesFromPreset('today');
   return {
     scope: 'organization',
     selectedEmployeeId: '',
@@ -276,8 +305,8 @@ export default function AdminDashboard() {
           typeof parsed.selectedEmployeeId === 'number' && parsed.selectedEmployeeId > 0
             ? parsed.selectedEmployeeId
             : '',
-        datePreset: isDateRangePreset(String(parsed.datePreset))
-          ? (parsed.datePreset as DateRangePreset)
+        datePreset: ['today', '7d', '30d', 'custom'].includes(String(parsed.datePreset))
+          ? (parsed.datePreset as DatePreset)
           : fallback.datePreset,
         startDate: parsed.startDate || fallback.startDate,
         endDate: parsed.endDate || fallback.endDate,
@@ -471,14 +500,14 @@ export default function AdminDashboard() {
     }));
   };
 
-  const handleDatePresetChange = (preset: DateRangePreset) => {
+  const handleDatePresetChange = (preset: DatePreset) => {
     setExportFeedback(null);
     if (preset === 'custom') {
       setFilters((current) => ({ ...current, datePreset: preset }));
       return;
     }
 
-    const dates = deriveDateRangeFromPreset(preset);
+    const dates = deriveDatesFromPreset(preset);
     setFilters((current) => ({
       ...current,
       datePreset: preset,
@@ -626,12 +655,17 @@ export default function AdminDashboard() {
     .map((group: any) => ({ id: Number(group?.id || 0), name: String(group?.name || 'Unknown group') }))
     .filter((group: { id: number; name: string }) => group.id > 0)
     .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
-  const attendanceSearchSuggestions = buildEmployeeSearchSuggestions(organizationUsers);
+  const normalizedAttendanceSearch = attendanceSearchQuery.trim().toLowerCase();
   const filteredAttendanceRows = attendanceRows.filter((row: any) => {
     const userId = Number(row.user?.id || row.user_id || 0);
+    const employeeName = String(row.user?.name || '').toLowerCase();
+    const employeeEmail = String(row.user?.email || '').toLowerCase();
     const assignedGroups = employeeGroupsById[userId] || [];
 
-    const matchesSearch = matchesSearchFilter(attendanceSearchQuery, [row.user?.name]);
+    const matchesSearch =
+      normalizedAttendanceSearch.length === 0 ||
+      employeeName.includes(normalizedAttendanceSearch) ||
+      employeeEmail.includes(normalizedAttendanceSearch);
 
     const matchesGroup =
       attendanceGroupFilter === '' ||
@@ -827,6 +861,7 @@ export default function AdminDashboard() {
     const existing = rows.find((row) => row.employeeName === employeeName && row.website === website && row.classification === classification);
 
     if (existing) {
+      
       existing.duration += Number(item.duration || 0);
       existing.events += 1;
       existing.lastUsedAt =
@@ -1095,12 +1130,10 @@ export default function AdminDashboard() {
                         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)_auto] lg:items-end">
                           <div>
                             <FieldLabel>Search employee</FieldLabel>
-                            <SearchSuggestInput
+                            <TextInput
                               value={attendanceSearchQuery}
-                              onValueChange={setAttendanceSearchQuery}
-                              suggestions={attendanceSearchSuggestions}
-                              placeholder="Search by employee name"
-                              emptyMessage="No employee names match this search."
+                              onChange={(event) => setAttendanceSearchQuery(event.target.value)}
+                              placeholder="Search by employee name or email"
                             />
                           </div>
                           <div>
