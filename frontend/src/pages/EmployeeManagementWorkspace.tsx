@@ -54,14 +54,11 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const [groupName, setGroupName] = useState('');
   const [groupMembers, setGroupMembers] = useState<number[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'admin' | 'manager' | 'employee' | 'client'>('employee');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'manager' | 'employee'>('employee');
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const isStrictAdmin = hasStrictAdminAccess(user);
   const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
-  const employeeRoleOptions = useMemo(
-    () => allowedRoles.filter((role): role is 'admin' | 'manager' | 'employee' => role !== 'client'),
-    [allowedRoles]
-  );
+  const employeeRoleOptions = useMemo(() => allowedRoles, [allowedRoles]);
 
   const usersQuery = useQuery({
     queryKey: ['employee-workspace-users'],
@@ -115,7 +112,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     }
 
     if (!allowedRoles.includes(inviteRole)) {
-      setInviteRole(allowedRoles[0] as 'admin' | 'manager' | 'employee' | 'client');
+      setInviteRole(allowedRoles[0]);
     }
   }, [allowedRoles, inviteRole]);
 
@@ -500,7 +497,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               </div>
               <div>
                 <FieldLabel>Role</FieldLabel>
-                <SelectInput value={inviteRole} onChange={(event) => setInviteRole(event.target.value as 'admin' | 'manager' | 'employee' | 'client')}>
+                <SelectInput value={inviteRole} onChange={(event) => setInviteRole(event.target.value as 'admin' | 'manager' | 'employee')}>
                   {allowedRoles.map((role) => (
                     <option key={role} value={role}>
                       {role.charAt(0).toUpperCase() + role.slice(1)}

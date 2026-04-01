@@ -1,6 +1,6 @@
 import { invitationApi, projectApi, reportGroupApi } from '@/services/api';
 
-export type InviteUserRole = 'employee' | 'manager' | 'admin' | 'client';
+export type InviteUserRole = 'employee' | 'manager' | 'admin';
 
 export interface InviteOption {
   id: number;
@@ -72,7 +72,7 @@ export interface CsvParseResult {
 
 const INVITE_DEFAULTS_KEY = 'carevance-add-user-defaults';
 
-const roleAliasMap: Record<string, InviteUserRole> = {
+const roleAliasMap: Partial<Record<string, InviteUserRole>> = {
   employee: 'employee',
   user: 'employee',
   regular: 'employee',
@@ -81,7 +81,6 @@ const roleAliasMap: Record<string, InviteUserRole> = {
   manager: 'manager',
   admin: 'admin',
   administrator: 'admin',
-  client: 'client',
 };
 
 const toSlug = (value: string) =>
@@ -318,18 +317,24 @@ export const addUserService = {
     dataLines.forEach((line, index) => {
       const columns = parseCsvLine(line);
       const email = (columns[emailIndex] || '').trim().toLowerCase();
-      const roleValue = toSlug(columns[roleIndex] || 'employee');
-      const role = roleAliasMap[roleValue] || 'employee';
+      const rawRole = (columns[roleIndex] || '').trim();
+      const roleValue = toSlug(rawRole || 'employee');
+      const role = roleAliasMap[roleValue];
 
       if (!emailPattern.test(email)) {
         errors.push(`Row ${index + 2}: invalid email "${columns[emailIndex] || ''}".`);
         return;
       }
 
+      if (rawRole && !role) {
+        errors.push(`Row ${index + 2}: unsupported role "${rawRole}". Use employee, manager, or admin.`);
+        return;
+      }
+
       rows.push({
         email,
         name: (columns[nameIndex] || '').trim() || deriveDisplayName(email),
-        role,
+        role: role || 'employee',
         groupIds: mapOptionNamesToIds(parseMultiValueField(columns[groupIndex] || ''), groups),
         projectIds: mapOptionNamesToIds(parseMultiValueField(columns[projectIndex] || ''), projects),
       });
@@ -405,7 +410,7 @@ export const addUserService = {
     const template = [
       'email,name,role,groups,projects',
       'alex@example.com,Alex Johnson,employee,"Operations|Night Shift","CareVance HRMS"',
-      'client@example.com,Northwind Client,client,"Client Access","Implementation"',
+      'jordan@example.com,Jordan Lee,manager,"Operations","Implementation"',
     ].join('\n');
 
     const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });

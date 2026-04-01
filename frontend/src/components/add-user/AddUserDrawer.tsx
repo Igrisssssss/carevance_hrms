@@ -24,7 +24,7 @@ type AddUserTab = 'email' | 'link' | 'csv';
 const tabOptions: Array<{ id: AddUserTab; label: string; description: string }> = [
   { id: 'email', label: 'Invite by Email', description: 'Invite multiple people with their roles and access.' },
   { id: 'link', label: 'Invite by Link', description: 'Generate a single-use secure onboarding link for one recipient.' },
-  { id: 'csv', label: 'Add by CSV', description: 'Bulk import employees, managers, admins, or clients.' },
+  { id: 'csv', label: 'Add by CSV', description: 'Bulk import employees, managers, or admins.' },
 ];
 
 const extractInviteError = (error: any, fallback: string) => {
@@ -74,7 +74,7 @@ export default function AddUserDrawer({
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvSummary, setCsvSummary] = useState<{ parsedCount: number; successCount: number; errorCount: number } | null>(null);
   const [csvError, setCsvError] = useState<string | null>(null);
-  const allowedRoles = useMemo(() => getAssignableRoles(user, organization) as InviteUserRole[], [organization, user]);
+  const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
 
   const groupsQuery = useQuery({
     queryKey: ['add-user-groups'],
@@ -298,8 +298,6 @@ export default function AddUserDrawer({
     },
   });
 
-  const selectedRoleIsClient = role === 'client';
-
   if (!open) return null;
 
   return (
@@ -453,12 +451,12 @@ export default function AddUserDrawer({
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-950">Payroll visibility</p>
-                        <p className="mt-1 text-sm text-slate-500">Only useful for admin, manager, or approved client views.</p>
+                        <p className="mt-1 text-sm text-slate-500">Only useful for admin and manager reporting views.</p>
                       </div>
                       <ToggleInput
                         checked={settings.payrollVisibility}
                         onChange={(checked) => setSettings((current) => ({ ...current, payrollVisibility: checked }))}
-                        disabled={!selectedRoleIsClient && role === 'employee'}
+                        disabled={role === 'employee'}
                       />
                     </div>
                   </div>

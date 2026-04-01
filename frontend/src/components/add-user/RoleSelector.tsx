@@ -1,4 +1,4 @@
-import { ShieldCheck, UserCog, UserRound, UsersRound } from 'lucide-react';
+import { ShieldCheck, UserRound, UsersRound } from 'lucide-react';
 import { FieldLabel } from '@/components/ui/FormField';
 import { InviteUserRole } from '@/services/addUser';
 
@@ -10,7 +10,7 @@ const roleOptions: Array<{
 }> = [
   {
     value: 'employee',
-    label: 'Regular User',
+    label: 'Employee',
     description: 'Track work and attendance.',
     icon: UserRound,
   },
@@ -25,12 +25,6 @@ const roleOptions: Array<{
     label: 'Admin',
     description: 'Full platform control and configuration.',
     icon: ShieldCheck,
-  },
-  {
-    value: 'client',
-    label: 'Client',
-    description: 'Limited client-facing visibility.',
-    icon: UserCog,
   },
 ];
 
