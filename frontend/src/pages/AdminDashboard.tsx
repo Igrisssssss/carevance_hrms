@@ -885,9 +885,10 @@ export default function AdminDashboard() {
   const pageTitle =
     filters.scope === 'organization'
       ? {
-          eyebrow: 'Admin dashboard',
-          title: 'Organization command center',
-          description: 'A cleaner executive view of attendance, tracked work, productivity, approvals, and payroll readiness.',
+          
+          title: 'Dashboard',
+          
+          
         }
       : {
           eyebrow: 'Admin dashboard',
