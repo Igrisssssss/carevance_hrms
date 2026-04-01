@@ -7,11 +7,12 @@ use App\Models\Activity;
 use App\Models\AppNotification;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceTimeEditRequest;
+use App\Models\EmployeeWorkInfo;
+use App\Models\Group;
 use App\Models\LeaveRequest;
 use App\Models\Payslip;
 use App\Models\TimeEntry;
 use App\Models\User;
-use App\Models\ReportGroup;
 use App\Services\Authorization\OrganizationRoleService;
 use App\Services\Audit\AuditLogService;
 use App\Services\Reports\TimeBreakdownService;
@@ -60,6 +61,7 @@ class UserController extends Controller
         );
 
         $users = User::where('organization_id', $currentUser->organization_id)
+            ->with('groups:id,name,slug')
             ->when(!in_array($currentUser->role, ['admin', 'manager'], true), fn ($query) => $query->where('id', $currentUser->id))
             ->orderBy('created_at', 'desc')
             ->get();
@@ -137,12 +139,13 @@ class UserController extends Controller
         ]);
 
         if (array_key_exists('group_ids', $validated)) {
-            $groupIds = ReportGroup::where('organization_id', $currentUser->organization_id)
+            $groupIds = Group::where('organization_id', $currentUser->organization_id)
                 ->whereIn('id', $validated['group_ids'] ?? [])
                 ->pluck('id')
                 ->all();
 
-            $user->reportGroups()->sync($groupIds);
+            $user->groups()->sync($groupIds);
+            $this->syncPrimaryGroup($user, $groupIds);
         }
 
         $this->auditLogService->log(
@@ -157,7 +160,7 @@ class UserController extends Controller
             request: $request
         );
 
-        return response()->json($user, 201);
+        return response()->json($user->load('groups:id,name,slug'), 201);
     }
 
     public function show(Request $request, User $user)
@@ -166,7 +169,7 @@ class UserController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        return response()->json($user);
+        return response()->json($user->load('groups:id,name,slug'));
     }
 
     public function update(Request $request, User $user)
@@ -196,12 +199,13 @@ class UserController extends Controller
         $user->update($updatable);
 
         if (array_key_exists('group_ids', $validated)) {
-            $groupIds = ReportGroup::where('organization_id', $user->organization_id)
+            $groupIds = Group::where('organization_id', $user->organization_id)
                 ->whereIn('id', $validated['group_ids'] ?? [])
                 ->pluck('id')
                 ->all();
 
-            $user->reportGroups()->sync($groupIds);
+            $user->groups()->sync($groupIds);
+            $this->syncPrimaryGroup($user, $groupIds);
         }
 
         $this->auditLogService->log(
@@ -229,7 +233,7 @@ class UserController extends Controller
             );
         }
 
-        return response()->json($user);
+        return response()->json($user->load('groups:id,name,slug'));
     }
 
     public function destroy(Request $request, User $user)
@@ -426,6 +430,17 @@ class UserController extends Controller
         ]);
     }
 
+    public function groups(Request $request, User $user)
+    {
+        if (!$this->canAccessUser($request, $user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        return response()->json([
+            'data' => $user->groups()->orderBy('name')->get(['groups.id', 'groups.name', 'groups.slug']),
+        ]);
+    }
+
     private function canAccessUser(Request $request, User $user): bool
     {
         $currentUser = $request->user();
@@ -444,6 +459,19 @@ class UserController extends Controller
     private function canDeleteUsers(?User $user): bool
     {
         return $user?->role === 'admin';
+    }
+
+    private function syncPrimaryGroup(User $user, array $groupIds): void
+    {
+        EmployeeWorkInfo::query()->updateOrCreate(
+            [
+                'organization_id' => $user->organization_id,
+                'user_id' => $user->id,
+            ],
+            [
+                'report_group_id' => $groupIds[0] ?? null,
+            ]
+        );
     }
 
     private function resolvePeriodRange(string $period, string $timezone, ?string $startDate = null, ?string $endDate = null): ?array

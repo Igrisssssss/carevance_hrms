@@ -47,7 +47,7 @@ class EmployeeWorkInfo extends Model
 
     public function department(): BelongsTo
     {
-        return $this->belongsTo(ReportGroup::class, 'report_group_id');
+        return $this->belongsTo(Group::class, 'report_group_id');
     }
 
     public function reportingManager(): BelongsTo

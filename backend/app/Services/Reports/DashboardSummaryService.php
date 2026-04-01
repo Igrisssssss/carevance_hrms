@@ -25,13 +25,13 @@ class DashboardSummaryService
         $weekStart = $now->copy()->startOfWeek();
         $weekEnd = $now->copy()->endOfWeek();
 
-        $todayEntries = TimeEntry::with('project', 'task')
+        $todayEntries = TimeEntry::with('project', 'task.group')
             ->where('user_id', $user->id)
             ->whereBetween('start_time', [$todayStart, $todayEnd])
             ->orderBy('start_time', 'desc')
             ->get();
 
-        $activeEntry = TimeEntry::with('project', 'task')
+        $activeEntry = TimeEntry::with('project', 'task.group')
             ->where('user_id', $user->id)
             ->where(function ($query) {
                 $query->where('timer_slot', 'primary')

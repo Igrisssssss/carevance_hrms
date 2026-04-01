@@ -8,6 +8,7 @@ import type {
   ApiResponse,
   User,
   Organization,
+  Group,
   Project,
   Task,
   TimeEntry,
@@ -185,6 +186,26 @@ export const userApi = {
 
   getProfile360: (id: number, params?: { start_date?: string; end_date?: string }) =>
     api.get<UserProfile360>(`/users/${id}/profile-360`, { params }),
+
+  getGroups: (id: number) =>
+    api.get<{ data: Group[] }>(`/users/${id}/groups`),
+};
+
+export const groupApi = {
+  getAll: () =>
+    api.get<{ data: Group[] }>('/groups'),
+
+  get: (id: number) =>
+    api.get<Group>(`/groups/${id}`),
+
+  create: (data: { name: string; description?: string; is_active?: boolean; user_ids?: number[] }) =>
+    api.post<Group>('/groups', data),
+
+  update: (id: number, data: { name?: string; description?: string; is_active?: boolean; user_ids?: number[] }) =>
+    api.patch<Group>(`/groups/${id}`, data),
+
+  delete: (id: number) =>
+    api.delete(`/groups/${id}`),
 };
 
 export const employeeWorkspaceApi = {
@@ -278,7 +299,7 @@ export const projectApi = {
 
 // Task API
 export const taskApi = {
-  getAll: (params?: { project_id?: number; status?: string; assignee_id?: number }) => 
+  getAll: (params?: { group_id?: number; status?: string; assignee_id?: number; timer_only?: boolean }) => 
     api.get<Task[]>('/tasks', { params }),
   
   get: (id: number) => 
@@ -902,20 +923,13 @@ export const notificationApi = {
 
 export const reportGroupApi = {
   list: () =>
-    api.get<{
-      data: Array<{
-        id: number;
-        organization_id: number;
-        name: string;
-        users: Array<{ id: number; name: string; email: string; role: string }>;
-      }>;
-    }>('/report-groups'),
+    api.get<{ data: Group[] }>('/report-groups'),
 
-  create: (data: { name: string; user_ids?: number[] }) =>
+  create: (data: { name: string; description?: string; is_active?: boolean; user_ids?: number[] }) =>
     api.post('/report-groups', data),
 
-  update: (id: number, data: { name?: string; user_ids?: number[] }) =>
-    api.put(`/report-groups/${id}`, data),
+  update: (id: number, data: { name?: string; description?: string; is_active?: boolean; user_ids?: number[] }) =>
+    api.patch(`/report-groups/${id}`, data),
 
   delete: (id: number) =>
     api.delete(`/report-groups/${id}`),

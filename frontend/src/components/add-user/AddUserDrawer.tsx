@@ -10,9 +10,9 @@ import { FieldLabel, SelectInput, ToggleInput } from '@/components/ui/FormField'
 import EmailTagInput from '@/components/add-user/EmailTagInput';
 import RoleSelector from '@/components/add-user/RoleSelector';
 import GroupMultiSelect from '@/components/add-user/GroupMultiSelect';
-import ProjectMultiSelect from '@/components/add-user/ProjectMultiSelect';
 import InviteLinkPanel from '@/components/add-user/InviteLinkPanel';
 import CsvUploadPanel from '@/components/add-user/CsvUploadPanel';
+import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
 import {
   addUserService,
   AdditionalInviteSettings,
@@ -64,9 +64,9 @@ export default function AddUserDrawer({
   const [invalidEmails, setInvalidEmails] = useState<string[]>([]);
   const [role, setRole] = useState<InviteUserRole>('employee');
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>(storedDefaults.groupIds);
-  const [selectedProjectIds, setSelectedProjectIds] = useState<number[]>(storedDefaults.projectIds);
   const [rememberDefaults, setRememberDefaults] = useState(storedDefaults.remember);
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
   const [settings, setSettings] = useState<AdditionalInviteSettings>(defaultSettings);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [inviteUrl, setInviteUrl] = useState('');
@@ -79,12 +79,6 @@ export default function AddUserDrawer({
   const groupsQuery = useQuery({
     queryKey: ['add-user-groups'],
     queryFn: addUserService.fetchGroups,
-    enabled: open,
-  });
-
-  const projectsQuery = useQuery({
-    queryKey: ['add-user-projects'],
-    queryFn: addUserService.fetchProjects,
     enabled: open,
   });
 
@@ -173,7 +167,7 @@ export default function AddUserDrawer({
     addUserService.saveDefaults({
       remember: true,
       groupIds: selectedGroupIds,
-      projectIds: selectedProjectIds,
+      projectIds: [],
     });
   };
 
@@ -188,7 +182,7 @@ export default function AddUserDrawer({
         emails,
         role,
         groupIds: selectedGroupIds,
-        projectIds: selectedProjectIds,
+        projectIds: [],
         settings,
       });
     },
@@ -227,7 +221,7 @@ export default function AddUserDrawer({
         email: linkEmail.trim(),
         role,
         groupIds: selectedGroupIds,
-        projectIds: selectedProjectIds,
+        projectIds: [],
         settings,
       }),
     onSuccess: (result) => {
@@ -265,7 +259,7 @@ export default function AddUserDrawer({
           settings,
         },
         groupsQuery.data || [],
-        projectsQuery.data || []
+        []
       );
     },
     onSuccess: async ({ parsed, result }) => {
@@ -382,16 +376,7 @@ export default function AddUserDrawer({
               onChange={setSelectedGroupIds}
               isLoading={groupsQuery.isLoading}
               errorMessage={groupsQuery.isError ? 'Failed to load groups.' : undefined}
-            />
-
-            <div className="h-px bg-slate-200" />
-
-            <ProjectMultiSelect
-              options={projectsQuery.data || []}
-              selectedIds={selectedProjectIds}
-              onChange={setSelectedProjectIds}
-              isLoading={projectsQuery.isLoading}
-              errorMessage={projectsQuery.isError ? 'Failed to load projects.' : undefined}
+              onCreateNew={() => setShowGroupModal(true)}
             />
 
             <div className="h-px bg-slate-200" />
@@ -487,7 +472,7 @@ export default function AddUserDrawer({
                 className="mt-1"
               />
               <span>
-                <span className="font-semibold text-slate-950">Remember selected groups and projects for next invite</span>
+                <span className="font-semibold text-slate-950">Remember selected groups for next invite</span>
                 <span className="mt-1 block text-slate-500">Saved locally in this browser so repeated onboarding stays faster.</span>
               </span>
             </label>
@@ -517,7 +502,7 @@ export default function AddUserDrawer({
               />
             ) : null}
 
-            {groupsQuery.isLoading || projectsQuery.isLoading ? (
+            {groupsQuery.isLoading ? (
               <div className="flex items-center gap-2 rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3 text-sm text-slate-500">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Preparing invite configuration data...
@@ -582,6 +567,16 @@ export default function AddUserDrawer({
           </section>
         </div>
       </aside>
+      <QuickCreateGroupDialog
+        open={showGroupModal}
+        onClose={() => setShowGroupModal(false)}
+        onCreated={(group) => {
+          setSelectedGroupIds((current) => (current.includes(group.id) ? current : [...current, group.id]));
+        }}
+        eyebrow="Group quick add"
+        title="Create a group without leaving onboarding"
+        description="Add the new department here and it will be selected for this invite immediately."
+      />
     </div>
   );
 }

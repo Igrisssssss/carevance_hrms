@@ -1,7 +1,7 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { armAutoStart } from '@/lib/desktopTimerSession';
+import { armAutoStart, setWorkedBaselineSnapshot, suppressAutoStart } from '@/lib/desktopTimerSession';
 import DesktopTimerDashboard from '@/pages/DesktopTimerDashboard';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
@@ -14,8 +14,7 @@ const mocks = vi.hoisted(() => ({
   updateMock: vi.fn(),
   updateTaskStatusMock: vi.fn(),
   todayMock: vi.fn(),
-  getProjectsMock: vi.fn(),
-  getProjectTasksMock: vi.fn(),
+  getTasksMock: vi.fn(),
   authUser: {
     id: 1,
     name: 'Employee User',
@@ -48,11 +47,8 @@ vi.mock('@/services/api', async () => {
       today: mocks.todayMock,
     },
     taskApi: {
+      getAll: mocks.getTasksMock,
       updateStatus: mocks.updateTaskStatusMock,
-    },
-    projectApi: {
-      getAll: mocks.getProjectsMock,
-      getTasks: mocks.getProjectTasksMock,
     },
   };
 });
@@ -62,15 +58,12 @@ describe('DesktopTimerDashboard', () => {
     vi.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
-    mocks.authUser = {
-      id: 1,
-      name: 'Employee User',
-      email: 'employee@example.com',
-      role: 'employee',
-      organization_id: 1,
-      is_active: true,
-      created_at: '',
-      updated_at: '',
+    const runningStartTime = new Date(Date.now() - 5000).toISOString();
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
     };
     armAutoStart(1);
 
@@ -90,17 +83,16 @@ describe('DesktopTimerDashboard', () => {
       })
       .mockResolvedValue({
         data: {
-          active_timer: {
+        active_timer: {
             id: 99,
             user_id: 1,
-            project_id: 7,
+            project_id: null,
             task_id: null,
-            start_time: '2026-03-16T09:00:00Z',
+            start_time: runningStartTime,
             duration: 0,
             timer_slot: 'primary',
-            created_at: '2026-03-16T09:00:00Z',
-            updated_at: '2026-03-16T09:00:00Z',
-            project: { id: 7, name: 'Core Platform', status: 'active', color: '#3B82F6' },
+            created_at: runningStartTime,
+            updated_at: runningStartTime,
             task: null,
           },
           today_entries: [],
@@ -125,32 +117,25 @@ describe('DesktopTimerDashboard', () => {
       },
     });
 
-    mocks.getProjectsMock.mockResolvedValue({
-      data: [{ id: 7, name: 'Core Platform', status: 'active', color: '#3B82F6' }],
-    });
-
-    mocks.getProjectTasksMock.mockResolvedValue({
+    mocks.getTasksMock.mockResolvedValue({
       data: [
         {
           id: 42,
+          group_id: 7,
           project_id: 7,
           title: 'Write sync logic',
-          description: 'Connect the running timer to project task selection.',
+          description: 'Connect the running timer to task selection.',
           status: 'todo',
           priority: 'medium',
           assignee_id: 1,
+          group: { id: 7, name: 'Digital Marketing', is_active: true },
           created_at: '2026-03-16T09:00:00Z',
           updated_at: '2026-03-16T09:00:00Z',
         },
       ],
     });
 
-    mocks.updateTaskStatusMock.mockResolvedValue({
-      data: {
-        id: 42,
-        status: 'in_progress',
-      },
-    });
+    mocks.updateTaskStatusMock.mockResolvedValue({ data: { id: 42, status: 'in_progress' } });
 
     mocks.startMock.mockResolvedValue({
       data: {
@@ -158,11 +143,11 @@ describe('DesktopTimerDashboard', () => {
         user_id: 1,
         project_id: null,
         task_id: null,
-        start_time: '2026-03-16T09:00:00Z',
+        start_time: runningStartTime,
         duration: 0,
         timer_slot: 'primary',
-        created_at: '2026-03-16T09:00:00Z',
-        updated_at: '2026-03-16T09:00:00Z',
+        created_at: runningStartTime,
+        updated_at: runningStartTime,
       },
     });
 
@@ -172,19 +157,19 @@ describe('DesktopTimerDashboard', () => {
         user_id: 1,
         project_id: 7,
         task_id: 42,
-        start_time: '2026-03-16T09:00:00Z',
+        start_time: runningStartTime,
         duration: 0,
         timer_slot: 'primary',
-        created_at: '2026-03-16T09:00:00Z',
-        updated_at: '2026-03-16T09:05:00Z',
-        project: { id: 7, name: 'Core Platform', status: 'active', color: '#3B82F6' },
+        created_at: runningStartTime,
+        updated_at: new Date().toISOString(),
         task: {
           id: 42,
+          group_id: 7,
           project_id: 7,
           title: 'Write sync logic',
-          description: 'Connect the running timer to project task selection.',
-          status: 'todo',
+          status: 'in_progress',
           priority: 'medium',
+          group: { id: 7, name: 'Digital Marketing', is_active: true },
           created_at: '2026-03-16T09:00:00Z',
           updated_at: '2026-03-16T09:00:00Z',
         },
@@ -195,40 +180,203 @@ describe('DesktopTimerDashboard', () => {
     mocks.todayMock.mockResolvedValue({ data: { time_entries: [], total_duration: 0 } });
   });
 
-  it('auto-starts for employees and lets the running timer task be changed from the desktop block', async () => {
+  it('removes the project selector and updates the running timer from the task selector only', async () => {
     const user = userEvent.setup();
 
     renderWithProviders(<DesktopTimerDashboard />);
 
     expect(await screen.findByText(/timer running/i)).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /active timer project/i })).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(mocks.startMock).toHaveBeenCalledTimes(1);
-    });
-
-    await waitFor(() => {
-      expect(mocks.getProjectTasksMock).toHaveBeenCalledWith(7);
+      expect(mocks.getTasksMock).toHaveBeenCalledWith({ timer_only: true });
     });
 
     await user.selectOptions(screen.getByRole('combobox', { name: /active timer task/i }), '42');
 
     await waitFor(() => {
       expect(mocks.updateMock).toHaveBeenCalledWith(99, expect.objectContaining({ project_id: 7, task_id: 42 }));
-    });
-
-    await waitFor(() => {
       expect(mocks.updateTaskStatusMock).toHaveBeenCalledWith(42, 'in_progress');
     });
   });
 
-  it('shows attendance-worked time in the today card when approved edits make it higher than tracked timer time', async () => {
+  it('shows the empty task state when no allowed tasks are available', async () => {
+    mocks.getTasksMock.mockReset();
+    mocks.getTasksMock.mockResolvedValue({ data: [] });
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    expect(await screen.findByText(/timer running/i)).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /active timer task/i })).toBeDisabled();
+    expect(screen.getByText(/no tasks are currently available for your assigned groups/i)).toBeInTheDocument();
+  });
+
+  it('keeps the timer stopped after a manual stop', async () => {
+    const user = userEvent.setup();
+    const runningStartTime = new Date(Date.now() - 5000).toISOString();
+    const emptySummary = {
+      data: {
+        active_timer: null,
+        today_entries: [],
+        today_total_elapsed_duration: 0,
+        all_time_total_elapsed_duration: 0,
+        team_members_count: 4,
+        new_members_this_week: 1,
+        productivity_score: 82,
+        active_projects_count: 1,
+        total_projects_count: 1,
+      },
+    };
+    const runningSummary = {
+      data: {
+        active_timer: {
+          id: 99,
+          user_id: 1,
+          project_id: null,
+          task_id: null,
+          start_time: runningStartTime,
+          duration: 0,
+          timer_slot: 'primary',
+          created_at: runningStartTime,
+          updated_at: runningStartTime,
+          task: null,
+        },
+        today_entries: [],
+        today_total_elapsed_duration: 0,
+        all_time_total_elapsed_duration: 0,
+        team_members_count: 4,
+        new_members_this_week: 1,
+        productivity_score: 82,
+        active_projects_count: 1,
+        total_projects_count: 1,
+      },
+    };
+
+    mocks.summaryMock.mockReset();
+    mocks.summaryMock
+      .mockResolvedValueOnce(emptySummary)
+      .mockResolvedValueOnce(runningSummary)
+      .mockResolvedValue(emptySummary);
+
+    mocks.attendanceTodayMock.mockReset();
+    mocks.attendanceTodayMock
+      .mockResolvedValueOnce({
+        data: {
+          shift_target_seconds: 28800,
+          record: {
+            worked_seconds: 0,
+            is_checked_in: false,
+            attendance_date: '2026-03-16',
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          shift_target_seconds: 28800,
+          record: {
+            worked_seconds: 0,
+            is_checked_in: true,
+            attendance_date: '2026-03-16',
+          },
+        },
+      })
+      .mockResolvedValue({
+        data: {
+          shift_target_seconds: 28800,
+          record: {
+            worked_seconds: 900,
+            is_checked_in: false,
+            attendance_date: '2026-03-16',
+          },
+        },
+      });
+
+    mocks.stopMock.mockResolvedValue({
+      data: {
+        id: 99,
+        user_id: 1,
+        project_id: null,
+        task_id: null,
+        start_time: runningStartTime,
+        end_time: new Date().toISOString(),
+        duration: 900,
+        timer_slot: 'primary',
+        created_at: runningStartTime,
+        updated_at: new Date().toISOString(),
+      },
+    });
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    expect(await screen.findByRole('button', { name: /pause timer/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /pause timer/i }));
+
+    await waitFor(() => {
+      expect(mocks.stopMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: /start timer/i })).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText('00:00:00').length).toBeGreaterThan(0);
+    expect(screen.getByText(/today's attendance worked: 0h 15m/i)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(mocks.startMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('does not auto-start in browser mode even when auto-start is armed', async () => {
+    delete window.desktopTracker;
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    expect(await screen.findByRole('button', { name: /start timer/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mocks.summaryMock).toHaveBeenCalledTimes(1);
+    });
+    expect(mocks.startMock).not.toHaveBeenCalled();
+  });
+
+  it('restores the timer snapshot immediately while dashboard data is loading', async () => {
+    localStorage.setItem('active_timer_snapshot', JSON.stringify({
+      id: 120,
+      start_time: new Date().toISOString(),
+      duration: 3600,
+      description: 'Restored timer',
+      timer_slot: 'primary',
+    }));
+
+    mocks.summaryMock.mockImplementation(() => new Promise(() => {}));
+    mocks.attendanceTodayMock.mockImplementation(() => new Promise(() => {}));
+    mocks.getTasksMock.mockImplementation(() => new Promise(() => {}));
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/loading dashboard/i)).not.toBeInTheDocument();
+    });
+    expect(await screen.findByText(/01:00:0[0-1]/)).toBeInTheDocument();
+    expect(screen.getByText(/timer running/i)).toBeInTheDocument();
+  });
+
+  it('does not restore a stopped timer snapshot after reload', async () => {
+    localStorage.setItem('active_timer_snapshot', JSON.stringify({
+      id: 120,
+      start_time: new Date().toISOString(),
+      duration: 3600,
+      description: 'Stopped timer',
+      timer_slot: 'primary',
+    }));
+    suppressAutoStart(1);
+
     mocks.summaryMock.mockReset();
     mocks.summaryMock.mockResolvedValue({
       data: {
         active_timer: null,
         today_entries: [],
-        today_total_elapsed_duration: 4560,
-        all_time_total_elapsed_duration: 4560,
+        today_total_elapsed_duration: 3600,
+        all_time_total_elapsed_duration: 3600,
         team_members_count: 4,
         new_members_this_week: 1,
         productivity_score: 82,
@@ -241,24 +389,28 @@ describe('DesktopTimerDashboard', () => {
       data: {
         shift_target_seconds: 28800,
         record: {
-          worked_seconds: 34020,
+          worked_seconds: 3600,
           is_checked_in: false,
           attendance_date: '2026-03-16',
         },
       },
     });
 
-    sessionStorage.clear();
-
     renderWithProviders(<DesktopTimerDashboard />);
 
-    expect(await screen.findByText("Today's Time")).toBeInTheDocument();
-    expect(screen.getByText('9h 27m')).toBeInTheDocument();
-    expect(screen.getByText(/includes approved attendance edits/i)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /start timer/i })).toBeInTheDocument();
+    expect(screen.getAllByText('00:00:00').length).toBeGreaterThan(0);
+    expect(screen.getByText(/today's attendance worked: 1h 0m/i)).toBeInTheDocument();
+    expect(localStorage.getItem('active_timer_snapshot')).toBeNull();
   });
 
-  it('does not auto-start just from remounting when login did not arm it', async () => {
+  it('keeps paused shift context after reload when backend totals are not updated yet', async () => {
+    const today = new Date().toISOString().split('T')[0];
+    suppressAutoStart(1);
+    setWorkedBaselineSnapshot(1, 120, today);
     sessionStorage.clear();
+    suppressAutoStart(1);
+
     mocks.summaryMock.mockReset();
     mocks.summaryMock.mockResolvedValue({
       data: {
@@ -274,236 +426,106 @@ describe('DesktopTimerDashboard', () => {
       },
     });
 
+    mocks.attendanceTodayMock.mockReset();
+    mocks.attendanceTodayMock.mockResolvedValue({
+      data: {
+        shift_target_seconds: 28800,
+        record: {
+          worked_seconds: 0,
+          is_checked_in: false,
+          attendance_date: today,
+        },
+      },
+    });
+
     renderWithProviders(<DesktopTimerDashboard />);
 
     expect(await screen.findByRole('button', { name: /start timer/i })).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(mocks.startMock).not.toHaveBeenCalled();
-    });
+    expect(screen.getByText(/timer paused/i)).toBeInTheDocument();
+    expect(screen.getByText('07:58:00')).toBeInTheDocument();
+    expect(screen.getByText(/today's attendance worked: 0h 2m/i)).toBeInTheDocument();
   });
 
-  it('keeps the timer stopped after a manual pause when the dashboard remounts', async () => {
-    mocks.summaryMock.mockReset();
-    mocks.summaryMock
-      .mockResolvedValueOnce({
-        data: {
-          active_timer: null,
-          today_entries: [],
-          today_total_elapsed_duration: 0,
-          all_time_total_elapsed_duration: 0,
-          team_members_count: 4,
-          new_members_this_week: 1,
-          productivity_score: 82,
-          active_projects_count: 1,
-          total_projects_count: 1,
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          active_timer: {
-            id: 99,
-            user_id: 1,
-            project_id: 7,
-            task_id: null,
-            start_time: '2026-03-16T09:00:00Z',
-            duration: 0,
-            timer_slot: 'primary',
-            created_at: '2026-03-16T09:00:00Z',
-            updated_at: '2026-03-16T09:00:00Z',
-            project: { id: 7, name: 'Core Platform', status: 'active', color: '#3B82F6' },
-            task: null,
-          },
-          today_entries: [],
-          today_total_elapsed_duration: 0,
-          all_time_total_elapsed_duration: 0,
-          team_members_count: 4,
-          new_members_this_week: 1,
-          productivity_score: 82,
-          active_projects_count: 1,
-          total_projects_count: 1,
-        },
-      })
-      .mockResolvedValue({
-        data: {
-          active_timer: null,
-          today_entries: [],
-          today_total_elapsed_duration: 0,
-          all_time_total_elapsed_duration: 0,
-          team_members_count: 4,
-          new_members_this_week: 1,
-          productivity_score: 82,
-          active_projects_count: 1,
-          total_projects_count: 1,
-        },
-      });
-
-    const user = userEvent.setup();
-    const firstRender = renderWithProviders(<DesktopTimerDashboard />);
-
-    await waitFor(() => {
-      expect(mocks.startMock).toHaveBeenCalledTimes(1);
-    });
-
-    await user.click(await screen.findByRole('button', { name: /pause timer/i }));
-
-    await waitFor(() => {
-      expect(mocks.stopMock).toHaveBeenCalledTimes(1);
-    });
-
-    firstRender.unmount();
-
-    renderWithProviders(<DesktopTimerDashboard />);
-
-    await waitFor(() => {
-      expect(mocks.summaryMock).toHaveBeenCalledTimes(4);
-      expect(mocks.startMock).toHaveBeenCalledTimes(1);
-    });
-
-    expect(screen.getByRole('button', { name: /start timer/i })).toBeInTheDocument();
-  });
-
-  it('shows an idle auto-stop message and keeps the timer stopped when the tracker stops it', async () => {
-    mocks.summaryMock.mockReset();
-    mocks.summaryMock
-      .mockResolvedValueOnce({
-        data: {
-          active_timer: null,
-          today_entries: [],
-          today_total_elapsed_duration: 0,
-          all_time_total_elapsed_duration: 0,
-          team_members_count: 4,
-          new_members_this_week: 1,
-          productivity_score: 82,
-          active_projects_count: 1,
-          total_projects_count: 1,
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          active_timer: {
-            id: 99,
-            user_id: 1,
-            project_id: 7,
-            task_id: null,
-            start_time: '2026-03-16T09:00:00Z',
-            duration: 0,
-            timer_slot: 'primary',
-            created_at: '2026-03-16T09:00:00Z',
-            updated_at: '2026-03-16T09:00:00Z',
-            project: { id: 7, name: 'Core Platform', status: 'active', color: '#3B82F6' },
-            task: null,
-          },
-          today_entries: [],
-          today_total_elapsed_duration: 0,
-          all_time_total_elapsed_duration: 0,
-          team_members_count: 4,
-          new_members_this_week: 1,
-          productivity_score: 82,
-          active_projects_count: 1,
-          total_projects_count: 1,
-        },
-      })
-      .mockResolvedValue({
-        data: {
-          active_timer: null,
-          today_entries: [],
-          today_total_elapsed_duration: 0,
-          all_time_total_elapsed_duration: 0,
-          team_members_count: 4,
-          new_members_this_week: 1,
-          productivity_score: 82,
-          active_projects_count: 1,
-          total_projects_count: 1,
-        },
-      });
-
-    renderWithProviders(<DesktopTimerDashboard />);
-
-    expect(await screen.findByText(/timer running/i)).toBeInTheDocument();
-
-    window.dispatchEvent(new CustomEvent('desktop-timer:idle-auto-stop', {
-      detail: {
-        userId: 1,
-        message: 'You were idle for 5 minutes, so your timer was stopped.',
-      },
-    }));
-
-    expect(await screen.findByText(/idle for 5 minutes/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /start timer/i })).toBeInTheDocument();
-  });
-
-  it('auto-starts for a newly logged-in user even if another user paused earlier', async () => {
-    sessionStorage.setItem('desktop_timer_auto_start_suppressed:1', '1');
-    mocks.authUser = {
-      ...mocks.authUser,
-      id: 2,
-      email: 'different@example.com',
-      name: 'Different Employee',
-    };
-    armAutoStart(2);
+  it('keeps today entries and worked totals when task options request fails', async () => {
+    suppressAutoStart(1);
+    const today = new Date().toISOString().split('T')[0];
 
     mocks.summaryMock.mockReset();
-    mocks.summaryMock
-      .mockResolvedValueOnce({
-        data: {
-          active_timer: null,
-          today_entries: [],
-          today_total_elapsed_duration: 0,
-          all_time_total_elapsed_duration: 0,
-          team_members_count: 4,
-          new_members_this_week: 1,
-          productivity_score: 82,
-          active_projects_count: 1,
-          total_projects_count: 1,
-        },
-      })
-      .mockResolvedValue({
-        data: {
-          active_timer: {
-            id: 199,
-            user_id: 2,
-            project_id: 7,
-            task_id: null,
-            start_time: '2026-03-16T09:00:00Z',
-            duration: 0,
-            timer_slot: 'primary',
-            created_at: '2026-03-16T09:00:00Z',
-            updated_at: '2026-03-16T09:00:00Z',
-            project: { id: 7, name: 'Core Platform', status: 'active', color: '#3B82F6' },
-            task: null,
-          },
-          today_entries: [],
-          today_total_elapsed_duration: 0,
-          all_time_total_elapsed_duration: 0,
-          team_members_count: 4,
-          new_members_this_week: 1,
-          productivity_score: 82,
-          active_projects_count: 1,
-          total_projects_count: 1,
-        },
-      });
-
-    mocks.startMock.mockResolvedValueOnce({
+    mocks.summaryMock.mockResolvedValue({
       data: {
-        id: 199,
-        user_id: 2,
-        project_id: null,
-        task_id: null,
-        start_time: '2026-03-16T09:00:00Z',
-        duration: 0,
-        timer_slot: 'primary',
-        created_at: '2026-03-16T09:00:00Z',
-        updated_at: '2026-03-16T09:00:00Z',
+        active_timer: null,
+        today_entries: [
+          {
+            id: 777,
+            user_id: 1,
+            project_id: null,
+            task_id: null,
+            start_time: `${today}T09:00:00Z`,
+            end_time: `${today}T09:05:00Z`,
+            duration: 300,
+            timer_slot: 'primary',
+            created_at: `${today}T09:00:00Z`,
+            updated_at: `${today}T09:05:00Z`,
+            task: { title: 'Prepare campaign brief', group: { id: 7, name: 'Digital Marketing' } },
+          },
+        ],
+        today_total_elapsed_duration: 300,
+        all_time_total_elapsed_duration: 300,
+        team_members_count: 4,
+        new_members_this_week: 1,
+        productivity_score: 82,
+        active_projects_count: 1,
+        total_projects_count: 1,
       },
     });
 
-    renderWithProviders(<DesktopTimerDashboard />);
-
-    await waitFor(() => {
-      expect(mocks.startMock).toHaveBeenCalledTimes(1);
+    mocks.attendanceTodayMock.mockReset();
+    mocks.attendanceTodayMock.mockResolvedValue({
+      data: {
+        shift_target_seconds: 28800,
+        record: {
+          worked_seconds: 300,
+          is_checked_in: false,
+          attendance_date: today,
+        },
+      },
     });
 
-    expect(await screen.findByText(/timer running/i)).toBeInTheDocument();
+    mocks.getTasksMock.mockReset();
+    mocks.getTasksMock.mockRejectedValue(new Error('Task API down'));
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    expect(await screen.findByRole('button', { name: /start timer/i })).toBeInTheDocument();
+    expect(screen.getByText(/prepare campaign brief/i)).toBeInTheDocument();
+    expect(screen.getByText(/today's attendance worked: 0h 5m/i)).toBeInTheDocument();
+    expect(screen.getByText(/some dashboard data could not be loaded/i)).toBeInTheDocument();
+  });
+
+  it('keeps overtime context after reload when summary endpoints fail', async () => {
+    const today = new Date().toISOString().split('T')[0];
+    suppressAutoStart(1);
+    setWorkedBaselineSnapshot(1, 32400, today);
+    sessionStorage.clear();
+    suppressAutoStart(1);
+
+    mocks.summaryMock.mockReset();
+    mocks.summaryMock.mockRejectedValue(new Error('Summary API down'));
+
+    mocks.attendanceTodayMock.mockReset();
+    mocks.attendanceTodayMock.mockRejectedValue(new Error('Attendance API down'));
+
+    mocks.getTasksMock.mockReset();
+    mocks.getTasksMock.mockRejectedValue(new Error('Tasks API down'));
+
+    mocks.todayMock.mockReset();
+    mocks.todayMock.mockResolvedValue({ data: { time_entries: [], total_duration: 0 } });
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    expect(await screen.findByRole('button', { name: /start timer/i })).toBeInTheDocument();
+    expect(screen.getByText(/timer paused/i)).toBeInTheDocument();
+    expect(screen.getByText('01:00:00')).toBeInTheDocument();
+    expect(screen.getByText(/today's attendance worked: 9h 0m/i)).toBeInTheDocument();
   });
 });

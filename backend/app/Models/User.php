@@ -33,7 +33,7 @@ class User extends Authenticatable
 
     public function tasks()
     {
-        return $this->hasMany(Task::class);
+        return $this->hasMany(Task::class, 'assignee_id');
     }
 
     public function timeEntries()
@@ -116,9 +116,15 @@ class User extends Authenticatable
         return $this->hasMany(AuditLog::class, 'actor_user_id');
     }
 
+    public function groups(): BelongsToMany
+    {
+        return $this->belongsToMany(Group::class, 'group_user')
+            ->withTimestamps();
+    }
+
     public function reportGroups(): BelongsToMany
     {
-        return $this->belongsToMany(ReportGroup::class, 'report_group_user')
+        return $this->belongsToMany(ReportGroup::class, 'group_user', 'user_id', 'group_id')
             ->withTimestamps();
     }
 

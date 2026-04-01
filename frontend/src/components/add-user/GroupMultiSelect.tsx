@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Search, Users } from 'lucide-react';
-import { FieldLabel } from '@/components/ui/FormField';
 import { InviteOption } from '@/services/addUser';
 import { PageEmptyState } from '@/components/ui/PageState';
 
@@ -10,6 +9,7 @@ interface GroupMultiSelectProps {
   onChange: (selectedIds: number[]) => void;
   isLoading?: boolean;
   errorMessage?: string;
+  onCreateNew?: () => void;
 }
 
 export default function GroupMultiSelect({
@@ -18,6 +18,7 @@ export default function GroupMultiSelect({
   onChange,
   isLoading = false,
   errorMessage,
+  onCreateNew,
 }: GroupMultiSelectProps) {
   const [query, setQuery] = useState('');
 
@@ -28,7 +29,19 @@ export default function GroupMultiSelect({
 
   return (
     <div>
-      <FieldLabel hint={`${selectedIds.length} selected`}>Groups they&apos;re members of</FieldLabel>
+      <div className="mb-1.5 flex items-center justify-between gap-3">
+        <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Groups they&apos;re members of</label>
+        <span className="text-xs text-slate-400">{selectedIds.length} selected</span>
+        {onCreateNew ? (
+          <button
+            type="button"
+            onClick={onCreateNew}
+            className="text-xs font-semibold text-sky-600 transition hover:text-sky-700"
+          >
+            + Create new group
+          </button>
+        ) : null}
+      </div>
       <div className="rounded-[24px] border border-slate-200/90 bg-white/90 p-4 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.2)]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -43,7 +56,7 @@ export default function GroupMultiSelect({
         {errorMessage ? <p className="mt-3 text-sm text-rose-600">{errorMessage}</p> : null}
         {!isLoading && !errorMessage && filteredOptions.length === 0 ? (
           <div className="mt-4">
-            <PageEmptyState title="No groups available" description="Report groups can be added later; this selector is ready for existing teams." />
+            <PageEmptyState title="No groups available" description="Create the first group here and it will be ready to assign immediately." />
           </div>
         ) : (
           <div className="mt-4 max-h-52 space-y-2 overflow-auto pr-1">

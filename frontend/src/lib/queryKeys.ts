@@ -1,4 +1,5 @@
 export const queryKeys = {
+  groups: ['groups'] as const,
   projects: ['projects'] as const,
   tasks: ['tasks'] as const,
   invoices: ['invoices'] as const,

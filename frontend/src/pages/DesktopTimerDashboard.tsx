@@ -1,15 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, projectApi, taskApi } from '@/services/api';
+import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, taskApi } from '@/services/api';
 import {
   ACTIVE_TIMER_KEY,
+  canUseDesktopAutoStart,
   clearAutoStartArm,
   clearAutoStartSuppression,
   clearIdleAutoStopNotice,
+  clearWorkedBaselineSnapshot,
   consumeIdleAutoStopNotice,
   DESKTOP_TIMER_IDLE_STOP_EVENT,
   emitDesktopTimerStarted,
   emitDesktopTimerStopped,
+  getWorkedBaselineSnapshot,
+  setWorkedBaselineSnapshot,
   type DesktopTimerIdleStopDetail,
   isAutoStartArmed,
   isAutoStartSuppressed,
@@ -32,9 +36,10 @@ import {
   Users,
   FolderKanban,
   Calendar,
+  Building2,
 } from 'lucide-react';
 import type { TimeEntry } from '@/types';
-import type { Project, Task } from '@/types';
+import type { Task } from '@/types';
 
 const getStartTimeMs = (startTime?: string) => {
   if (!startTime) return NaN;
@@ -42,6 +47,62 @@ const getStartTimeMs = (startTime?: string) => {
   if (Number.isFinite(parsed)) return parsed;
   const normalized = startTime.includes('T') ? startTime : startTime.replace(' ', 'T');
   return new Date(normalized).getTime();
+};
+
+const getLocalDateString = () => {
+  const now = new Date();
+  const timezoneOffsetMs = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
+};
+
+const restoreTimerSnapshot = (
+  userId: number | null,
+  organizationId: number | null | undefined,
+): TimeEntry | null => {
+  if (isAutoStartSuppressed(userId)) {
+    localStorage.removeItem(ACTIVE_TIMER_KEY);
+    return null;
+  }
+
+  const rawSnapshot = localStorage.getItem(ACTIVE_TIMER_KEY);
+  if (!rawSnapshot) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawSnapshot) as Partial<TimeEntry>;
+    const entryId = Number(parsed.id);
+    const duration = Number.isFinite(Number(parsed.duration)) ? Number(parsed.duration) : 0;
+    const startTime = typeof parsed.start_time === 'string' ? parsed.start_time : '';
+
+    if (!entryId || !startTime) {
+      localStorage.removeItem(ACTIVE_TIMER_KEY);
+      return null;
+    }
+
+    return {
+      id: entryId,
+      user_id: userId ?? 0,
+      organization_id: organizationId ?? 0,
+      project_id: parsed.project_id ?? null,
+      task_id: parsed.task_id ?? null,
+      timer_slot: parsed.timer_slot ?? 'primary',
+      start_time: startTime,
+      end_time: undefined,
+      duration,
+      description: parsed.description ?? '',
+      billable: true,
+      is_manual: false,
+      created_at: parsed.created_at ?? startTime,
+      updated_at: parsed.updated_at ?? startTime,
+      project: null,
+      task: parsed.task ?? null,
+    };
+  } catch (error) {
+    console.warn('Failed to restore timer snapshot:', error);
+    localStorage.removeItem(ACTIVE_TIMER_KEY);
+    return null;
+  }
 };
 
 export default function DesktopTimerDashboard() {
@@ -52,9 +113,7 @@ export default function DesktopTimerDashboard() {
   const [todayEntries, setTodayEntries] = useState<TimeEntry[]>([]);
   const [todayTotal, setTodayTotal] = useState(0);
   const [allTimeTotal, setAllTimeTotal] = useState(0);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectTasks, setProjectTasks] = useState<Task[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [allowedTasks, setAllowedTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [teamMembersCount, setTeamMembersCount] = useState(0);
   const [newMembersThisWeek, setNewMembersThisWeek] = useState(0);
@@ -69,7 +128,6 @@ export default function DesktopTimerDashboard() {
   const [workedBaseSeconds, setWorkedBaseSeconds] = useState(0);
   const [timerBaseSeconds, setTimerBaseSeconds] = useState(0);
   const [isSubmittingOvertime, setIsSubmittingOvertime] = useState(false);
-  const [isLoadingProjectTasks, setIsLoadingProjectTasks] = useState(false);
   const [isUpdatingTimerContext, setIsUpdatingTimerContext] = useState(false);
   const [notice, setNotice] = useState('');
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
@@ -79,7 +137,6 @@ export default function DesktopTimerDashboard() {
   useEffect(() => {
     if (!activeTimer) {
       setLiveDuration(0);
-      localStorage.removeItem(ACTIVE_TIMER_KEY);
       return;
     }
 
@@ -90,6 +147,8 @@ export default function DesktopTimerDashboard() {
         start_time: activeTimer.start_time,
         duration: activeTimer.duration ?? 0,
         description: activeTimer.description ?? '',
+        task_id: activeTimer.task_id ?? null,
+        timer_slot: activeTimer.timer_slot ?? 'primary',
       })
     );
 
@@ -128,83 +187,118 @@ export default function DesktopTimerDashboard() {
     });
   };
 
-  const loadProjectTasks = async (projectId: number | null) => {
-    if (!projectId) {
-      setProjectTasks([]);
-      return;
-    }
-
-    setIsLoadingProjectTasks(true);
-    try {
-      const response = await projectApi.getTasks(projectId);
-      const nextTasks = (response.data || []).filter((task) => task.status !== 'done');
-      setProjectTasks(nextTasks);
-    } catch (error) {
-      console.error('Error loading project tasks:', error);
-      setProjectTasks([]);
-    } finally {
-      setIsLoadingProjectTasks(false);
-    }
-  };
-
   const fetchData = async () => {
+    let requestFailed = false;
+
     try {
-      const [dashboardResponse, projectsResponse, attendanceResponse] = await Promise.all([
+      const [dashboardResult, tasksResult, attendanceResult] = await Promise.allSettled([
         dashboardApi.summary(),
-        projectApi.getAll(),
+        taskApi.getAll({ timer_only: true }),
         attendanceApi.today(),
       ]);
-      const data = dashboardResponse.data as any;
-      const fetchedProjects = projectsResponse.data || [];
-      const attendancePayload = attendanceResponse.data as any;
 
+      const dashboardSucceeded = dashboardResult.status === 'fulfilled';
+      const tasksSucceeded = tasksResult.status === 'fulfilled';
+      const attendanceSucceeded = attendanceResult.status === 'fulfilled';
+
+      if (!dashboardSucceeded) {
+        requestFailed = true;
+        console.error('Failed to fetch dashboard summary:', dashboardResult.reason);
+      }
+
+      if (!tasksSucceeded) {
+        requestFailed = true;
+        console.error('Failed to fetch task options for timer:', tasksResult.reason);
+      }
+
+      if (!attendanceSucceeded) {
+        requestFailed = true;
+        console.error('Failed to fetch attendance summary:', attendanceResult.reason);
+      }
+
+      const data = dashboardSucceeded ? (dashboardResult.value.data as any) : null;
+      const attendancePayload = attendanceSucceeded ? (attendanceResult.value.data as any) : null;
       const activeFromApi = data?.active_timer || null;
-      const snapshot = activeFromApi ? null : localStorage.getItem(ACTIVE_TIMER_KEY);
-      setActiveTimer(activeFromApi);
-      if (!activeFromApi) {
-        localStorage.removeItem(ACTIVE_TIMER_KEY);
+      const snapshot = dashboardSucceeded && !activeFromApi ? localStorage.getItem(ACTIVE_TIMER_KEY) : null;
+      let todayElapsedSeconds = Number(data?.today_total_elapsed_duration ?? data?.today_total_duration ?? 0) || 0;
+
+      if (dashboardSucceeded) {
+        setActiveTimer(activeFromApi);
+        if (!activeFromApi) {
+          localStorage.removeItem(ACTIVE_TIMER_KEY);
+        } else {
+          clearAutoStartArm(userId);
+          clearAutoStartSuppression(userId);
+          hasRestoredSnapshotRef.current = false;
+        }
+
+        setTodayEntries(data?.today_entries || []);
+        setAllTimeTotal(Number(data?.all_time_total_elapsed_duration ?? data?.all_time_total_duration ?? 0) || 0);
+        setSelectedTaskId(activeFromApi?.task_id || null);
+        setTeamMembersCount(Number(data?.team_members_count) || 0);
+        setNewMembersThisWeek(Number(data?.new_members_this_week) || 0);
+        setProductivityScore(Number(data?.productivity_score) || 0);
+        setActiveProjectsCount(Number(data?.active_projects_count) || 0);
+        setTotalProjectsCount(Number(data?.total_projects_count) || 0);
+
+        const pct = data?.today_change_percent;
+        if (typeof pct === 'number') {
+          setTodayDeltaLabel(`${pct >= 0 ? '+' : ''}${pct}% from yesterday`);
+        } else {
+          setTodayDeltaLabel(todayElapsedSeconds > 0 ? 'Started today' : 'No change from yesterday');
+        }
       } else {
-        clearAutoStartArm(userId);
-        clearAutoStartSuppression(userId);
+        try {
+          const todayResponse = await timeEntryApi.today();
+          const fallbackEntries = todayResponse.data?.time_entries ?? [];
+          todayElapsedSeconds = Number(todayResponse.data?.total_duration ?? 0) || 0;
+          setTodayEntries(fallbackEntries);
+          setTodayTotal((current) => Math.max(current, todayElapsedSeconds));
+        } catch (fallbackError) {
+          console.error('Failed to fetch today entries fallback:', fallbackError);
+        }
+      }
+
+      if (tasksSucceeded) {
+        const fetchedTasks = (tasksResult.value.data || []).filter((task) => task.status !== 'done');
+        setAllowedTasks(fetchedTasks);
+      }
+
+      const attendanceRecord = attendancePayload?.record || attendanceToday || null;
+      const attendanceDate = attendanceRecord?.attendance_date || getLocalDateString();
+      if (attendanceSucceeded) {
+        setAttendanceToday(attendanceRecord);
+        setShiftTargetSeconds(Number(attendancePayload?.shift_target_seconds || attendanceRecord?.shift_target_seconds || 8 * 3600));
+      }
+
+      const attendanceWorkedSeconds = Number(attendanceRecord?.worked_seconds || 0);
+      const persistedWorkedSeconds = getWorkedBaselineSnapshot(userId, attendanceDate);
+      const resolvedWorkedSeconds = Math.max(attendanceWorkedSeconds, todayElapsedSeconds, persistedWorkedSeconds);
+      setTodayTotal(Math.max(todayElapsedSeconds, persistedWorkedSeconds, attendanceWorkedSeconds));
+      setWorkedBaseSeconds(resolvedWorkedSeconds);
+      if (dashboardSucceeded) {
+        setTimerBaseSeconds(Number(activeFromApi?.duration || 0));
+      }
+
+      if (resolvedWorkedSeconds > 0 || activeFromApi) {
+        setWorkedBaselineSnapshot(userId, resolvedWorkedSeconds, attendanceDate);
+      } else {
+        clearWorkedBaselineSnapshot(userId);
+      }
+
+      if (dashboardSucceeded && !activeFromApi && snapshot && hasRestoredSnapshotRef.current) {
         hasRestoredSnapshotRef.current = false;
-      }
-      setTodayEntries(data?.today_entries || []);
-      setTodayTotal(Number(data?.today_total_elapsed_duration ?? data?.today_total_duration ?? 0) || 0);
-      setAllTimeTotal(Number(data?.all_time_total_elapsed_duration ?? data?.all_time_total_duration ?? 0) || 0);
-      setProjects(fetchedProjects);
-      setSelectedProjectId((current) => activeFromApi?.project_id || current || fetchedProjects[0]?.id || null);
-      setSelectedTaskId(activeFromApi?.task_id || null);
-      setTeamMembersCount(Number(data?.team_members_count) || 0);
-      setNewMembersThisWeek(Number(data?.new_members_this_week) || 0);
-      setProductivityScore(Number(data?.productivity_score) || 0);
-      setActiveProjectsCount(Number(data?.active_projects_count) || 0);
-      setTotalProjectsCount(Number(data?.total_projects_count) || 0);
-
-      const pct = data?.today_change_percent;
-      if (typeof pct === 'number') {
-        setTodayDeltaLabel(`${pct >= 0 ? '+' : ''}${pct}% from yesterday`);
-      } else {
-        const elapsed = Number(data?.today_total_elapsed_duration ?? data?.today_total_duration ?? 0) || 0;
-        setTodayDeltaLabel(elapsed > 0 ? 'Started today' : 'No change from yesterday');
-      }
-
-      const attendanceRecord = attendancePayload?.record || null;
-      setAttendanceToday(attendanceRecord);
-      setShiftTargetSeconds(Number(attendancePayload?.shift_target_seconds || attendanceRecord?.shift_target_seconds || 8 * 3600));
-      setWorkedBaseSeconds(Number(attendanceRecord?.worked_seconds || 0));
-      setTimerBaseSeconds(Number(activeFromApi?.duration || 0));
-
-      if (!activeFromApi) {
-        if (snapshot && !hasRestoredSnapshotRef.current) {
-          hasRestoredSnapshotRef.current = true;
           setNotice(attendanceRecord?.is_checked_in
             ? 'Your previous running timer was not found and was cleared. Start it again if needed.'
             : 'A stale timer snapshot was cleared.');
-        }
       }
     } catch (error) {
+      requestFailed = true;
       console.error('Error fetching data:', error);
     } finally {
+      if (requestFailed) {
+        setNotice((currentNotice) => currentNotice || 'Some dashboard data could not be loaded. Showing the latest available timer context.');
+      }
       setIsLoading(false);
     }
   };
@@ -218,9 +312,7 @@ export default function DesktopTimerDashboard() {
     setTodayEntries([]);
     setTodayTotal(0);
     setAllTimeTotal(0);
-    setProjects([]);
-    setProjectTasks([]);
-    setSelectedProjectId(null);
+    setAllowedTasks([]);
     setSelectedTaskId(null);
 
     if (!userId) {
@@ -228,9 +320,29 @@ export default function DesktopTimerDashboard() {
       return;
     }
 
-    setIsLoading(true);
+    const persistedWorkedSeconds = getWorkedBaselineSnapshot(userId);
+    if (persistedWorkedSeconds > 0) {
+      setWorkedBaseSeconds(persistedWorkedSeconds);
+      setTodayTotal(persistedWorkedSeconds);
+    }
+
+    const restoredSnapshot = restoreTimerSnapshot(userId, user?.organization_id);
+    if (restoredSnapshot) {
+      hasRestoredSnapshotRef.current = true;
+      const restoredWorkedSeconds = Number(restoredSnapshot.duration || 0);
+      const seededWorkedSeconds = Math.max(persistedWorkedSeconds, restoredWorkedSeconds);
+      setActiveTimer(restoredSnapshot);
+      setSelectedTaskId(restoredSnapshot.task_id || null);
+      setTodayTotal(seededWorkedSeconds);
+      setWorkedBaseSeconds(seededWorkedSeconds);
+      setTimerBaseSeconds(restoredWorkedSeconds);
+      setIsLoading(false);
+    } else {
+      setIsLoading(true);
+    }
+
     void fetchData();
-  }, [userId]);
+  }, [user?.organization_id, userId]);
 
   useEffect(() => {
     if (!userId) {
@@ -269,22 +381,15 @@ export default function DesktopTimerDashboard() {
   }, [userId]);
 
   useEffect(() => {
-    void loadProjectTasks(selectedProjectId);
-  }, [selectedProjectId]);
-
-  useEffect(() => {
     if (!activeTimer) {
-      if (selectedTaskId && !projectTasks.some((task) => task.id === selectedTaskId)) {
+      if (selectedTaskId && !allowedTasks.some((task) => task.id === selectedTaskId)) {
         setSelectedTaskId(null);
       }
       return;
     }
 
-    if (activeTimer.project_id) {
-      setSelectedProjectId(activeTimer.project_id);
-    }
     setSelectedTaskId(activeTimer.task_id || null);
-  }, [activeTimer?.id, activeTimer?.project_id, activeTimer?.task_id, projectTasks, selectedTaskId]);
+  }, [activeTimer?.id, activeTimer?.task_id, allowedTasks, selectedTaskId]);
 
   useEffect(() => {
     if (!isTrackedTimerUser(user) || !userId) {
@@ -295,7 +400,7 @@ export default function DesktopTimerDashboard() {
   }, [user, userId]);
 
   useEffect(() => {
-    if (isLoading || !isTrackedTimerUser(user)) {
+    if (isLoading || !isTrackedTimerUser(user) || !canUseDesktopAutoStart()) {
       return;
     }
 
@@ -326,16 +431,19 @@ export default function DesktopTimerDashboard() {
     try {
       const startedAtIso = new Date().toISOString();
       const response = await timeEntryApi.start({
-        project_id: isAutoStart ? null : selectedProjectId,
         task_id: isAutoStart ? null : selectedTaskId,
         timer_slot: 'primary',
       });
       clearAutoStartArm(userId);
       clearAutoStartSuppression(userId);
+      setTimerBaseSeconds(Number(response.data.duration || 0));
+      const resumedWorkedSeconds = Math.max(workedBaseSeconds, todayDisplaySeconds);
+      setWorkedBaseSeconds(resumedWorkedSeconds);
+      setWorkedBaselineSnapshot(userId, resumedWorkedSeconds, attendanceToday?.attendance_date);
       syncTimerEntryLocally(response.data);
       setAttendanceToday((prev: any) => ({
         ...(prev || {}),
-        attendance_date: prev?.attendance_date || startedAtIso.split('T')[0],
+        attendance_date: prev?.attendance_date || getLocalDateString(),
         is_checked_in: true,
         check_in_at: prev?.check_in_at || startedAtIso,
       }));
@@ -354,7 +462,7 @@ export default function DesktopTimerDashboard() {
           entryId: response.data.id,
         });
       }
-      setNotice(isAutoStart ? 'Timer started. Choose a project, then a task for the running session.' : '');
+      setNotice(isAutoStart ? 'Timer started. Choose a task for the running session if needed.' : '');
       await fetchData();
     } catch (error: any) {
       console.error('Error starting timer:', error);
@@ -367,10 +475,26 @@ export default function DesktopTimerDashboard() {
   const handleStopTimer = async () => {
     try {
       setNotice('');
+      clearAutoStartArm(userId);
+      suppressAutoStart(userId);
       const response = await timeEntryApi.stop({ timer_slot: (activeTimer?.timer_slot || 'primary') as 'primary' | 'secondary' });
       const stoppedEntry = response.data;
-      suppressAutoStart(userId);
+      const stoppedDuration = Number(stoppedEntry?.duration || 0);
+      const nextWorkedSeconds = Math.max(
+        todayDisplaySeconds,
+        workedBaseSeconds + Math.max(0, stoppedDuration - timerBaseSeconds),
+      );
       setActiveTimer(null);
+      setTimerBaseSeconds(0);
+      setWorkedBaseSeconds(nextWorkedSeconds);
+      setTodayTotal((current) => Math.max(current, nextWorkedSeconds));
+      setAttendanceToday((prev: any) => prev ? {
+        ...prev,
+        is_checked_in: false,
+        worked_seconds: Math.max(Number(prev?.worked_seconds || 0), nextWorkedSeconds),
+        check_out_at: stoppedEntry?.end_time || new Date().toISOString(),
+      } : prev);
+      setWorkedBaselineSnapshot(userId, nextWorkedSeconds, attendanceToday?.attendance_date);
       localStorage.removeItem(ACTIVE_TIMER_KEY);
       if (userId) {
         emitDesktopTimerStopped({
@@ -399,9 +523,11 @@ export default function DesktopTimerDashboard() {
     } catch (error) {
       const status = (error as any)?.response?.status;
       if (status === 404) {
+        clearAutoStartArm(userId);
         suppressAutoStart(userId);
         setActiveTimer(null);
         localStorage.removeItem(ACTIVE_TIMER_KEY);
+        setWorkedBaselineSnapshot(userId, todayDisplaySeconds, attendanceToday?.attendance_date);
         if (userId) {
           emitDesktopTimerStopped({
             userId,
@@ -412,34 +538,6 @@ export default function DesktopTimerDashboard() {
         return;
       }
       console.error('Error stopping timer:', error);
-    }
-  };
-
-  const handleProjectSelection = async (projectId: number | null) => {
-    setSelectedProjectId(projectId);
-    setSelectedTaskId(null);
-
-    if (!activeTimer) {
-      return;
-    }
-
-    setIsUpdatingTimerContext(true);
-    setNotice('');
-
-    try {
-      const response = await timeEntryApi.update(activeTimer.id, {
-        project_id: projectId,
-        task_id: null,
-      });
-      syncTimerEntryLocally(response.data);
-      setNotice(projectId ? 'Project updated for the running timer. Choose a task next.' : 'Project cleared from the running timer.');
-    } catch (error: any) {
-      console.error('Error updating timer project:', error);
-      setSelectedProjectId(activeTimer.project_id || null);
-      setSelectedTaskId(activeTimer.task_id || null);
-      setNotice(error?.response?.data?.message || 'Failed to update the running timer project.');
-    } finally {
-      setIsUpdatingTimerContext(false);
     }
   };
 
@@ -454,15 +552,15 @@ export default function DesktopTimerDashboard() {
     setNotice('');
 
     try {
-      const nextTask = taskId ? projectTasks.find((task) => task.id === taskId) || null : null;
+      const nextTask = taskId ? allowedTasks.find((task) => task.id === taskId) || null : null;
       const response = await timeEntryApi.update(activeTimer.id, {
-        project_id: selectedProjectId,
+        project_id: nextTask?.project_id ?? null,
         task_id: taskId,
       });
 
       if (nextTask && nextTask.status !== 'in_progress') {
         await taskApi.updateStatus(nextTask.id, 'in_progress');
-        setProjectTasks((current) =>
+        setAllowedTasks((current) =>
           current.map((task) => (task.id === nextTask.id ? { ...task, status: 'in_progress' } : task))
         );
       }
@@ -482,10 +580,12 @@ export default function DesktopTimerDashboard() {
     0,
     workedBaseSeconds + (activeTimer ? Math.max(0, liveDuration - timerBaseSeconds) : 0)
   );
-  const todayDisplaySeconds = Math.max(todayTotal, currentWorkedSeconds);
-  const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - currentWorkedSeconds);
-  const overtimeSeconds = Math.max(0, currentWorkedSeconds - shiftTargetSeconds);
-  const availableTasks = projectTasks.filter((task) => task.status !== 'done');
+  const effectiveWorkedSeconds = Math.max(currentWorkedSeconds, todayTotal);
+  const todayDisplaySeconds = effectiveWorkedSeconds;
+  const timerDisplaySeconds = activeTimer ? liveDuration : 0;
+  const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - effectiveWorkedSeconds);
+  const overtimeSeconds = Math.max(0, effectiveWorkedSeconds - shiftTargetSeconds);
+  const availableTasks = allowedTasks.filter((task) => task.status !== 'done');
 
   const submitOvertimeProof = async () => {
     if (overtimeSeconds <= 0) {
@@ -496,15 +596,15 @@ export default function DesktopTimerDashboard() {
     setIsSubmittingOvertime(true);
     setNotice('');
     try {
-      const todayDate = attendanceToday?.attendance_date || new Date().toISOString().split('T')[0];
+      const todayDate = attendanceToday?.attendance_date || getLocalDateString();
       await attendanceTimeEditApi.create({
         attendance_date: todayDate,
         extra_minutes: Math.ceil(overtimeSeconds / 60),
-        worked_seconds: currentWorkedSeconds,
+        worked_seconds: effectiveWorkedSeconds,
         overtime_seconds: overtimeSeconds,
         message: `Auto overtime proof from dashboard timer. Overtime: ${formatDuration(overtimeSeconds)}.`,
       });
-      setNotice(`Overtime proof sent to admin. Worked: ${formatDuration(currentWorkedSeconds)}, Overtime: ${formatDuration(overtimeSeconds)}.`);
+      setNotice(`Overtime proof sent to admin. Worked: ${formatDuration(effectiveWorkedSeconds)}, Overtime: ${formatDuration(overtimeSeconds)}.`);
     } catch (error: any) {
       setNotice(error?.response?.data?.message || 'Failed to submit overtime proof.');
     } finally {
@@ -549,10 +649,10 @@ export default function DesktopTimerDashboard() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="mb-1 text-sm font-medium text-cyan-100/80">
-              {activeTimer ? 'Timer Running' : 'Desktop timer'}
+              {activeTimer ? 'Timer Running' : currentWorkedSeconds > 0 ? 'Timer Paused' : 'Desktop timer'}
             </p>
             <div className="text-4xl font-semibold tracking-[-0.05em] sm:text-5xl">
-              {activeTimer ? formatTime(liveDuration) : '00:00:00'}
+              {formatTime(timerDisplaySeconds)}
             </div>
             <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
               <div className="rounded-2xl border border-white/15 bg-white/10 px-3 py-3">
@@ -567,14 +667,14 @@ export default function DesktopTimerDashboard() {
             {activeTimer?.description && (
               <p className="mt-3 text-sm text-cyan-50/90">{activeTimer.description}</p>
             )}
-            {activeTimer?.project?.name && (
-              <p className="mt-1 text-sm text-cyan-50/90">Project: {activeTimer.project.name}</p>
-            )}
             {activeTimer?.task?.title && (
               <p className="mt-1 text-sm text-cyan-50/90">Task: {activeTimer.task.title}</p>
             )}
-            {activeTimer && !activeTimer?.project?.name ? (
-              <p className="mt-3 text-sm text-cyan-50/90">Choose a project first, then pick one of that project's tasks for this running timer.</p>
+            {activeTimer?.task?.group?.name && (
+              <p className="mt-1 text-sm text-cyan-50/90">Group: {activeTimer.task.group.name}</p>
+            )}
+            {activeTimer && !activeTimer?.task?.title ? (
+              <p className="mt-3 text-sm text-cyan-50/90">Choose a task from your assigned groups for this running timer.</p>
             ) : null}
           </div>
           <div className="flex flex-col items-start gap-3 lg:items-end">
@@ -602,56 +702,34 @@ export default function DesktopTimerDashboard() {
           </div>
         ) : null}
 
-        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="mt-5">
           <div className="rounded-[24px] border border-white/15 bg-white/10 p-4">
-            <p className="text-xs uppercase tracking-[0.24em] text-cyan-100/70">
-              {activeTimer ? 'Running Timer Project' : 'Project'}
-            </p>
-            <SelectInput
-              aria-label="Active timer project"
-              value={selectedProjectId ?? ''}
-              onChange={(e) => void handleProjectSelection(e.target.value ? Number(e.target.value) : null)}
-              disabled={isStarting || isUpdatingTimerContext}
-              className="mt-3 border-white/35 bg-white/90 text-slate-950 shadow-none focus:border-white focus:bg-white focus:ring-white/30 disabled:bg-white/60 disabled:text-slate-500"
-            >
-              <option value="" className="text-gray-900">Choose project</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id} className="text-gray-900">
-                  {project.name}
-                </option>
-              ))}
-            </SelectInput>
-            <p className="mt-2 text-xs text-cyan-100/75">
-              {activeTimer ? 'Changing the project clears the current task so you can pick a matching one.' : 'The running timer will use this project once started.'}
-            </p>
-          </div>
-
-          <div className="rounded-[24px] border border-white/15 bg-white/10 p-4">
-            <p className="text-xs uppercase tracking-[0.24em] text-cyan-100/70">Running Timer Task</p>
+            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-cyan-100/70">
+              <Building2 className="h-3.5 w-3.5" />
+              <p>{activeTimer ? 'Running Timer Task' : 'Select Task'}</p>
+            </div>
             <SelectInput
               aria-label="Active timer task"
               value={selectedTaskId ?? ''}
               onChange={(e) => void handleTaskSelection(e.target.value ? Number(e.target.value) : null)}
-              disabled={!activeTimer || !selectedProjectId || isLoadingProjectTasks || isUpdatingTimerContext}
+              disabled={availableTasks.length === 0 || isUpdatingTimerContext || isStarting}
               className="mt-3 border-white/35 bg-white/90 text-slate-950 shadow-none focus:border-white focus:bg-white focus:ring-white/30 disabled:bg-white/60 disabled:text-slate-500"
             >
               <option value="" className="text-gray-900">
-                {!selectedProjectId
-                  ? 'Choose project first'
-                  : isLoadingProjectTasks
-                    ? 'Loading tasks...'
-                    : availableTasks.length === 0
-                      ? 'No open tasks available'
-                      : 'Choose task'}
+                {availableTasks.length === 0 ? 'No tasks available for your group' : 'Choose task'}
               </option>
               {availableTasks.map((task) => (
                 <option key={task.id} value={task.id} className="text-gray-900">
-                  {task.title}
+                  {task.group?.name ? `${task.title} - ${task.group.name}` : task.title}
                 </option>
               ))}
             </SelectInput>
             <p className="mt-2 text-xs text-cyan-100/75">
-              {activeTimer ? 'Only tasks from the selected project are listed here for the live timer.' : 'Task selection becomes active while the timer is running.'}
+              {availableTasks.length === 0
+                ? 'No tasks are currently available for your assigned groups.'
+                : activeTimer
+                  ? 'Only tasks you are allowed to work on are listed here.'
+                  : 'Pick a task before starting, or attach one after the timer is already running.'}
             </p>
           </div>
         </div>
@@ -705,8 +783,8 @@ export default function DesktopTimerDashboard() {
                     <Clock className="h-5 w-5 text-slate-600" />
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-slate-950">{entry.project?.name || 'No Project'}</p>
-                    <p className="truncate text-sm text-slate-500">{entry.description || 'No description'}</p>
+                    <p className="truncate font-medium text-slate-950">{entry.task?.title || entry.project?.name || 'No task selected'}</p>
+                    <p className="truncate text-sm text-slate-500">{entry.task?.group?.name || entry.description || 'No description'}</p>
                   </div>
                 </div>
                 <div className="text-right">

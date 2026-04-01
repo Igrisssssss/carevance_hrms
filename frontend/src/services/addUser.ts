@@ -403,9 +403,9 @@ export const addUserService = {
   
   downloadCsvTemplate() {
     const template = [
-      'email,name,role,groups,projects',
-      'alex@example.com,Alex Johnson,employee,"Operations|Night Shift","CareVance HRMS"',
-      'client@example.com,Northwind Client,client,"Client Access","Implementation"',
+      'email,name,role,groups',
+      'alex@example.com,Alex Johnson,employee,"Operations|Night Shift"',
+      'client@example.com,Northwind Client,client,"Client Access"',
     ].join('\n');
 
     const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });

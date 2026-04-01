@@ -2,26 +2,19 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class ReportGroup extends Model
+class ReportGroup extends Group
 {
-    protected $fillable = [
-        'organization_id',
-        'name',
-    ];
-
-    public function organization(): BelongsTo
-    {
-        return $this->belongsTo(Organization::class);
-    }
-
     public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'report_group_user')
+        return $this->belongsToMany(User::class, 'group_user', 'group_id', 'user_id')
             ->withTimestamps();
     }
-}
 
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(Task::class, 'group_id');
+    }
+}

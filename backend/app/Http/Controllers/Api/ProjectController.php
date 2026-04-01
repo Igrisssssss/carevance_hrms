@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\Project;
+use App\Models\User;
+use App\Services\Authorization\GroupAccessService;
 use App\Services\Reports\TimeBreakdownService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -12,6 +14,7 @@ use Illuminate\Http\Request;
 class ProjectController extends Controller
 {
     public function __construct(
+        private readonly GroupAccessService $groupAccessService,
         private readonly TimeBreakdownService $timeBreakdownService,
     ) {
     }
@@ -64,7 +67,15 @@ class ProjectController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $project->load('tasks', 'timeEntries');
+        $user = request()->user();
+        $taskQuery = $project->tasks()->with(['group', 'assignee'])->orderBy('created_at', 'desc');
+        if ($user) {
+            $this->groupAccessService->applyTaskVisibilityScope($taskQuery, $user);
+        }
+
+        $project->load('timeEntries');
+        $project->setRelation('tasks', $taskQuery->get());
+
         return response()->json($project);
     }
 
@@ -122,9 +133,11 @@ class ProjectController extends Controller
             return response()->json(['message' => 'Project not found'], 404);
         }
 
+        $user = $request->user();
         $tasks = $project->tasks()
-            ->with('assignee')
+            ->with(['group', 'assignee'])
             ->when($request->status, fn (Builder $q, string $status) => $q->where('status', $status))
+            ->when($user, fn (Builder $query) => $this->groupAccessService->applyTaskVisibilityScope($query, $user))
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -151,12 +164,17 @@ class ProjectController extends Controller
                 ->where('type', 'idle')
                 ->sum('duration');
         $timeBreakdown = $this->timeBreakdownService->build($totalDuration, $idleDuration);
+        $user = $request->user();
+        $tasksQuery = $project->tasks();
+        if ($user) {
+            $this->groupAccessService->applyTaskVisibilityScope($tasksQuery, $user);
+        }
 
         return response()->json([
             'project_id' => $project->id,
             'entries_count' => $timeEntries->count(),
-            'tasks_count' => $project->tasks()->count(),
-            'completed_tasks' => $project->tasks()->where('status', 'done')->count(),
+            'tasks_count' => (clone $tasksQuery)->count(),
+            'completed_tasks' => (clone $tasksQuery)->where('status', 'done')->count(),
             'total_hours' => round($totalDuration / 3600, 2),
         ] + $timeBreakdown);
     }

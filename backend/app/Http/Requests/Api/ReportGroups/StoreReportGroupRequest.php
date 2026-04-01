@@ -10,6 +10,8 @@ class StoreReportGroupRequest extends ApiFormRequest
     {
         return [
             'name' => 'required|string|max:100',
+            'description' => 'nullable|string',
+            'is_active' => 'nullable|boolean',
             'user_ids' => 'nullable|array',
             'user_ids.*' => 'integer',
         ];

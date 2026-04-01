@@ -22,7 +22,18 @@ const resolveConfigValue = (runtimeValue?: string, buildValue?: string) => {
   return '';
 };
 
-export const apiUrl = resolveConfigValue(runtimeConfig.VITE_API_URL, import.meta.env.VITE_API_URL) || 'http://localhost:8000/api';
+const resolveDefaultApiUrl = () => {
+  if (typeof window === 'undefined') {
+    return 'http://localhost:8000/api';
+  }
+
+  const { hostname, origin } = window.location;
+  const isLocalHost = ['localhost', '127.0.0.1'].includes(hostname);
+
+  return isLocalHost ? 'http://localhost:8000/api' : `${origin}/api`;
+};
+
+export const apiUrl = resolveConfigValue(runtimeConfig.VITE_API_URL, import.meta.env.VITE_API_URL) || resolveDefaultApiUrl();
 
 export const apiBaseUrl = apiUrl.replace(/\/api\/?$/, '');
 

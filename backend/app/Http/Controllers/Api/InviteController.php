@@ -149,7 +149,7 @@ class InviteController extends Controller
 
     private function buildInviteLink(string $token): string
     {
-        $frontendUrl = rtrim((string) env('FRONTEND_URL', 'http://localhost:5173'), '/');
+        $frontendUrl = rtrim((string) config('carevance.frontend_url', config('app.url')), '/');
 
         return $frontendUrl.'/signup?'.http_build_query(['token' => $token]);
     }

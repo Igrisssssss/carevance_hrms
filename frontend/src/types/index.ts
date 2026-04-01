@@ -15,6 +15,7 @@ export interface User {
   total_duration?: number;
   total_elapsed_duration?: number;
   settings?: Record<string, any>;
+  groups?: Group[];
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +34,19 @@ export interface Organization {
   trial_ends_at?: string;
   max_users?: number;
   settings?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Group {
+  id: number;
+  organization_id: number;
+  name: string;
+  slug?: string | null;
+  description?: string | null;
+  is_active: boolean;
+  tasks_count?: number;
+  users?: Array<Pick<User, 'id' | 'name' | 'email' | 'role'>>;
   created_at: string;
   updated_at: string;
 }
@@ -58,8 +72,9 @@ export interface Project {
 // Task Types
 export interface Task {
   id: number;
-  project_id: number;
-  assignee_id?: number;
+  group_id?: number | null;
+  project_id?: number | null;
+  assignee_id?: number | null;
   title: string;
   description?: string;
   status: 'todo' | 'in_progress' | 'in_review' | 'done';
@@ -68,8 +83,9 @@ export interface Task {
   estimated_time?: number;
   created_at: string;
   updated_at: string;
-  project?: Project;
-  assignee?: User;
+  group?: Group | null;
+  project?: Project | null;
+  assignee?: User | null;
 }
 
 // Time Entry Types
@@ -77,8 +93,8 @@ export interface TimeEntry {
   id: number;
   user_id: number;
   organization_id: number;
-  project_id?: number;
-  task_id?: number;
+  project_id?: number | null;
+  task_id?: number | null;
   timer_slot?: 'primary' | 'secondary';
   start_time: string;
   end_time?: string;
@@ -90,8 +106,8 @@ export interface TimeEntry {
   created_at: string;
   updated_at: string;
   user?: User;
-  project?: Project;
-  task?: Task;
+  project?: Project | null;
+  task?: Task | null;
 }
 
 // Screenshot Types

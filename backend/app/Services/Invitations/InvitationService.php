@@ -3,9 +3,10 @@
 namespace App\Services\Invitations;
 
 use App\Mail\CareVanceInvitationMail;
+use App\Models\EmployeeWorkInfo;
+use App\Models\Group;
 use App\Models\Invitation;
 use App\Models\Organization;
-use App\Models\ReportGroup;
 use App\Models\User;
 use App\Services\Authorization\OrganizationRoleService;
 use Illuminate\Support\Facades\DB;
@@ -129,13 +130,23 @@ class InvitationService
                 ->all();
 
             if (!empty($groupIds)) {
-                $allowedGroupIds = ReportGroup::query()
+                $allowedGroupIds = Group::query()
                     ->where('organization_id', $invitation->organization_id)
                     ->whereIn('id', $groupIds)
                     ->pluck('id')
                     ->all();
 
-                $user->reportGroups()->sync($allowedGroupIds);
+                $user->groups()->sync($allowedGroupIds);
+
+                EmployeeWorkInfo::query()->updateOrCreate(
+                    [
+                        'organization_id' => $invitation->organization_id,
+                        'user_id' => $user->id,
+                    ],
+                    [
+                        'report_group_id' => $allowedGroupIds[0] ?? null,
+                    ]
+                );
             }
 
             $invitation->forceFill([
@@ -152,8 +163,14 @@ class InvitationService
     {
         $token = Invitation::generatePublicToken();
         $expiresAt = now()->addHours((int) ($payload['expires_in_hours'] ?? config('carevance.invitation_expiration_hours', 72)));
+        $allowedGroupIds = Group::query()
+            ->where('organization_id', $organization->id)
+            ->whereIn('id', collect($payload['group_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->all())
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
 
-        $invitation = DB::transaction(function () use ($actor, $organization, $email, $payload, $token, $expiresAt) {
+        $invitation = DB::transaction(function () use ($actor, $organization, $email, $payload, $token, $expiresAt, $allowedGroupIds) {
             Invitation::query()
                 ->where('organization_id', $organization->id)
                 ->whereRaw('LOWER(email) = ?', [$email])
@@ -169,7 +186,7 @@ class InvitationService
                 'status' => 'pending',
                 'settings' => $payload['settings'] ?? null,
                 'metadata' => [
-                    'group_ids' => $payload['group_ids'] ?? [],
+                    'group_ids' => $allowedGroupIds,
                     'project_ids' => $payload['project_ids'] ?? [],
                 ],
                 'delivery_method' => $payload['delivery'] ?? 'email',

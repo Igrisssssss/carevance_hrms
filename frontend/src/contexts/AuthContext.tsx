@@ -8,7 +8,7 @@ import {
   removeStoredAuthValue,
   setStoredAuthValue,
 } from '@/lib/authStorage';
-import { ACTIVE_TIMER_KEY, armAutoStart, clearDesktopTimerSession } from '@/lib/desktopTimerSession';
+import { ACTIVE_TIMER_KEY, armAutoStart, canUseDesktopAutoStart, clearDesktopTimerSession } from '@/lib/desktopTimerSession';
 import { apiUrl } from '@/lib/runtimeConfig';
 import { isTrackedTimerUser } from '@/lib/permissions';
 
@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const storeAuthState = (nextToken: string, nextUser: User, nextOrganization?: Organization | null) => {
     clearDesktopTimerSession();
-    if (isTrackedTimerUser(nextUser)) {
+    if (isTrackedTimerUser(nextUser) && canUseDesktopAutoStart()) {
       armAutoStart(nextUser.id);
     }
     setToken(nextToken);

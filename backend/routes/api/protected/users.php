@@ -8,10 +8,14 @@ use Illuminate\Support\Facades\Route;
 Route::get('/users', [UserController::class, 'index']);
 Route::post('/users', [UserController::class, 'store'])->middleware('role:admin,manager');
 Route::get('/users/{user}', [UserController::class, 'show']);
+Route::get('/users/{user}/groups', [UserController::class, 'groups']);
 Route::match(['put', 'patch'], '/users/{user}', [UserController::class, 'update'])->middleware('role:admin,manager');
 Route::delete('/users/{user}', [UserController::class, 'destroy'])->middleware('role:admin');
 Route::get('/users/{id}/stats', [UserController::class, 'stats']);
 Route::get('/users/{id}/profile-360', [UserController::class, 'profile360']);
+
+Route::get('/groups', [ReportGroupController::class, 'index']);
+Route::get('/groups/{id}', [ReportGroupController::class, 'show']);
 
 Route::middleware('role:admin,manager')->group(function () {
     Route::get('/employees/{id}/workspace', [EmployeeWorkspaceController::class, 'show']);
@@ -21,8 +25,12 @@ Route::middleware('role:admin,manager')->group(function () {
     Route::post('/employees/{id}/bank-accounts', [EmployeeWorkspaceController::class, 'storeBankAccount']);
     Route::post('/employees/{id}/documents', [EmployeeWorkspaceController::class, 'storeDocument']);
     Route::get('/employees/{id}/documents/{documentId}/download', [EmployeeWorkspaceController::class, 'downloadDocument']);
+    Route::post('/groups', [ReportGroupController::class, 'store']);
+    Route::match(['put', 'patch'], '/groups/{id}', [ReportGroupController::class, 'update']);
+    Route::delete('/groups/{id}', [ReportGroupController::class, 'destroy']);
     Route::get('/report-groups', [ReportGroupController::class, 'index']);
+    Route::get('/report-groups/{id}', [ReportGroupController::class, 'show']);
     Route::post('/report-groups', [ReportGroupController::class, 'store']);
-    Route::put('/report-groups/{id}', [ReportGroupController::class, 'update']);
+    Route::match(['put', 'patch'], '/report-groups/{id}', [ReportGroupController::class, 'update']);
     Route::delete('/report-groups/{id}', [ReportGroupController::class, 'destroy']);
 });

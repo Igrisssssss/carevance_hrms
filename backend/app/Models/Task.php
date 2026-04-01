@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Task extends Model
 {
     protected $fillable = [
+        'group_id',
         'project_id',
         'assignee_id',
         'title',
@@ -27,6 +28,11 @@ class Task extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function group(): BelongsTo
+    {
+        return $this->belongsTo(Group::class);
     }
 
     public function assignee(): BelongsTo

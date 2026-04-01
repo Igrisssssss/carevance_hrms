@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Tasks from '@/pages/Tasks';
@@ -10,9 +10,24 @@ const mocks = vi.hoisted(() => ({
   updateTask: vi.fn(),
   deleteTask: vi.fn(),
   updateTaskStatus: vi.fn(),
-  getAllProjects: vi.fn(),
-  createProject: vi.fn(),
+  getAllGroups: vi.fn(),
   getAllUsers: vi.fn(),
+  updateUser: vi.fn(),
+}));
+
+vi.mock('@/contexts/AuthContext', () => ({
+  useAuth: () => ({
+    user: {
+      id: 1,
+      name: 'Admin User',
+      email: 'admin@example.com',
+      role: 'admin',
+      organization_id: 1,
+      is_active: true,
+      created_at: '',
+      updated_at: '',
+    },
+  }),
 }));
 
 vi.mock('@/services/api', async () => {
@@ -26,12 +41,12 @@ vi.mock('@/services/api', async () => {
       delete: mocks.deleteTask,
       updateStatus: mocks.updateTaskStatus,
     },
-    projectApi: {
-      getAll: mocks.getAllProjects,
-      create: mocks.createProject,
+    groupApi: {
+      getAll: mocks.getAllGroups,
     },
     userApi: {
       getAll: mocks.getAllUsers,
+      update: mocks.updateUser,
     },
   };
 });
@@ -44,7 +59,7 @@ describe('Tasks page', () => {
       data: [
         {
           id: 1,
-          project_id: 7,
+          group_id: 7,
           assignee_id: 3,
           title: 'Build KPI overview',
           description: 'Create the first draft of the KPI overview cards.',
@@ -54,12 +69,12 @@ describe('Tasks page', () => {
           estimated_time: 90,
           created_at: '2026-03-15T08:00:00Z',
           updated_at: '2026-03-15T10:00:00Z',
-          project: { id: 7, name: 'Core Platform', color: '#3B82F6', status: 'active' },
+          group: { id: 7, name: 'Digital Marketing', is_active: true },
           assignee: { id: 3, name: 'Alex Johnson', email: 'alex@example.com', role: 'employee' },
         },
         {
           id: 2,
-          project_id: 8,
+          group_id: 8,
           assignee_id: null,
           title: 'Prepare onboarding docs',
           description: 'Write the setup notes for new hires.',
@@ -69,17 +84,31 @@ describe('Tasks page', () => {
           estimated_time: 60,
           created_at: '2026-03-12T09:00:00Z',
           updated_at: '2026-03-13T09:00:00Z',
-          project: { id: 8, name: 'Implementation', color: '#10B981', status: 'active' },
+          group: { id: 8, name: 'IT', is_active: true },
           assignee: null,
         },
       ],
     });
 
-    mocks.getAllProjects.mockResolvedValue({
-      data: [
-        { id: 7, name: 'Core Platform', color: '#3B82F6', status: 'active' },
-        { id: 8, name: 'Implementation', color: '#10B981', status: 'active' },
-      ],
+    mocks.getAllGroups.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 7,
+            name: 'Digital Marketing',
+            is_active: true,
+            tasks_count: 1,
+            users: [{ id: 3, name: 'Alex Johnson', email: 'alex@example.com', role: 'employee' }],
+          },
+          {
+            id: 8,
+            name: 'IT',
+            is_active: true,
+            tasks_count: 1,
+            users: [{ id: 4, name: 'Jordan Miles', email: 'jordan@example.com', role: 'employee' }],
+          },
+        ],
+      },
     });
 
     mocks.getAllUsers.mockResolvedValue({
@@ -91,25 +120,82 @@ describe('Tasks page', () => {
           role: 'employee',
           organization_id: 1,
           is_active: true,
+          groups: [{ id: 7, name: 'Digital Marketing', is_active: true }],
+          created_at: '',
+          updated_at: '',
+        },
+        {
+          id: 4,
+          name: 'Jordan Miles',
+          email: 'jordan@example.com',
+          role: 'employee',
+          organization_id: 1,
+          is_active: true,
+          groups: [{ id: 8, name: 'IT', is_active: true }],
           created_at: '',
           updated_at: '',
         },
       ],
     });
+
+    mocks.updateUser.mockResolvedValue({ data: { id: 4 } });
   });
 
-  it('shows the quick project action and lets project chips filter the board', async () => {
+  it('shows the quick group action and lets group chips filter the board', async () => {
     const user = userEvent.setup();
 
     renderWithProviders(<Tasks />);
 
-    expect(await screen.findByRole('button', { name: /new project/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /new group/i })).toBeInTheDocument();
     expect(screen.getByText('Build KPI overview')).toBeInTheDocument();
     expect(screen.getByText('Prepare onboarding docs')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /core platform/i }));
+    await user.click(screen.getByRole('button', { name: /^digital marketing$/i }));
 
     expect(screen.getByText('Build KPI overview')).toBeInTheDocument();
     expect(screen.queryByText('Prepare onboarding docs')).not.toBeInTheDocument();
+  });
+
+  it('shows group membership controls and adds an existing member into a selected group', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<Tasks />);
+
+    expect(await screen.findByText(/see every group and manage members from this page/i)).toBeInTheDocument();
+    expect(screen.getByText(/search for a group name to view directory cards/i)).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: /search group directory/i }), 'digital');
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /add existing member to digital marketing/i }),
+      '4'
+    );
+    await user.click(screen.getByRole('button', { name: /add member to digital marketing/i }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser).toHaveBeenCalledWith(4, { group_ids: [8, 7] });
+    });
+  });
+
+  it('filters group directory cards by search and dropdown', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<Tasks />);
+
+    expect(await screen.findByText(/see every group and manage members from this page/i)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Digital Marketing' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'IT' })).not.toBeInTheDocument();
+    expect(screen.getByText(/groups are hidden by default/i)).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: /search group directory/i }), 'digital');
+
+    expect(screen.getByRole('heading', { name: 'Digital Marketing' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'IT' })).not.toBeInTheDocument();
+
+    await user.clear(screen.getByRole('textbox', { name: /search group directory/i }));
+    await user.selectOptions(screen.getByRole('combobox', { name: /filter group directory/i }), '8');
+
+    expect(screen.queryByRole('heading', { name: 'Digital Marketing' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'IT' })).toBeInTheDocument();
   });
 });

@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'frontend_url' => rtrim((string) env('FRONTEND_APP_URL', env('FRONTEND_URL', 'http://localhost:5173')), '/'),
+    'frontend_url' => rtrim((string) env('FRONTEND_APP_URL', env('FRONTEND_URL', env('APP_URL', 'http://localhost:5173'))), '/'),
 
     'trial_days' => (int) env('SAAS_TRIAL_DAYS', 14),
 

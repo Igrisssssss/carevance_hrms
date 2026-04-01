@@ -11,6 +11,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\User;
+use App\Services\Authorization\GroupAccessService;
 use App\Services\TimeEntries\IdleAutoStopMailService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
@@ -25,6 +26,7 @@ class TimeEntryController extends Controller
     private const IDLE_AUTO_STOP_SECONDS = 300;
 
     public function __construct(
+        private readonly GroupAccessService $groupAccessService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
         private readonly IdleAutoStopMailService $idleAutoStopMailService,
     ) {
@@ -54,7 +56,7 @@ class TimeEntryController extends Controller
             }
         }
 
-        $timeEntries = TimeEntry::with('task', 'project')
+        $timeEntries = TimeEntry::with(['task.group', 'project'])
             ->where('user_id', $targetUser->id)
             ->when($request->timer_slot, fn (Builder $q, string $slot) => $q->where('timer_slot', $slot))
             ->when($request->project_id, fn (Builder $q, string $projectId) => $q->where('project_id', $projectId))
@@ -113,7 +115,7 @@ class TimeEntryController extends Controller
             'timer_slot' => $request->get('timer_slot', 'primary'),
         ]);
 
-        $timeEntry->load('project', 'task');
+        $timeEntry->load(['project', 'task.group']);
         return response()->json($timeEntry, 201);
     }
 
@@ -123,7 +125,7 @@ class TimeEntryController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $timeEntry->load('task', 'project');
+        $timeEntry->load(['task.group', 'project']);
         $timeEntry->duration = $this->timeEntryDurationService->effectiveDuration($timeEntry);
 
         return response()->json($timeEntry);
@@ -174,7 +176,7 @@ class TimeEntryController extends Controller
 
         $timeEntry->update($payload);
 
-        return response()->json($timeEntry->fresh()->load('project', 'task'));
+        return response()->json($timeEntry->fresh()->load(['project', 'task.group']));
     }
 
     public function destroy(TimeEntry $timeEntry)
@@ -232,7 +234,7 @@ class TimeEntryController extends Controller
             'timer_slot' => $slot,
         ]);
 
-        $timeEntry->load('project', 'task');
+        $timeEntry->load(['project', 'task.group']);
         return response()->json($timeEntry, 201);
     }
 
@@ -307,7 +309,7 @@ class TimeEntryController extends Controller
             ]);
         }
 
-        return response()->json($timeEntry->load('project', 'task'));
+        return response()->json($timeEntry->load(['project', 'task.group']));
     }
 
     public function active(Request $request)
@@ -323,7 +325,7 @@ class TimeEntryController extends Controller
         $slot = $request->get('timer_slot', 'primary');
 
         $timeEntry = $this->runningEntriesQuery((int) $user->id, $slot)
-            ->with('task', 'project')
+            ->with(['task.group', 'project'])
             ->orderByDesc('start_time')
             ->first();
 
@@ -346,7 +348,7 @@ class TimeEntryController extends Controller
 
         $today = now()->startOfDay();
 
-        $timeEntries = TimeEntry::with('task', 'project')
+        $timeEntries = TimeEntry::with(['task.group', 'project'])
             ->where('user_id', $user->id)
             ->where('start_time', '>=', $today)
             ->orderBy('start_time', 'desc')
@@ -524,10 +526,6 @@ class TimeEntryController extends Controller
             ? ($request->task_id ? (int) $request->task_id : null)
             : ($existingEntry?->task_id ? (int) $existingEntry->task_id : null);
 
-        if ($request->exists('project_id') && !$projectId) {
-            $taskId = null;
-        }
-
         if ($projectId) {
             $project = Project::query()
                 ->where('organization_id', $user->organization_id)
@@ -540,12 +538,9 @@ class TimeEntryController extends Controller
 
         if ($taskId) {
             $taskQuery = Task::query()
-                ->whereKey($taskId)
-                ->whereHas('project', fn (Builder $query) => $query->where('organization_id', $user->organization_id));
-
-            if ($projectId) {
-                $taskQuery->where('project_id', $projectId);
-            }
+                ->with(['group', 'project']);
+            $this->groupAccessService->applyTaskVisibilityScope($taskQuery, $user);
+            $taskQuery->whereKey($taskId);
 
             $task = $taskQuery->first();
 
@@ -553,12 +548,20 @@ class TimeEntryController extends Controller
                 return response()->json([
                     'message' => $projectId
                         ? 'Selected task is not available in the chosen project.'
-                        : 'Invalid task for your organization.',
+                        : 'Selected task is not available for your assigned group.',
                 ], 422);
             }
 
-            if (!$projectId) {
-                $projectId = (int) $task->project_id;
+            if ($projectId && $task->project_id && (int) $task->project_id !== $projectId) {
+                return response()->json([
+                    'message' => 'Selected task is not available in the chosen project.',
+                ], 422);
+            }
+
+            if ($request->exists('task_id') && !$request->exists('project_id')) {
+                $projectId = $task->project_id ? (int) $task->project_id : null;
+            } elseif (!$projectId) {
+                $projectId = $task->project_id ? (int) $task->project_id : null;
             }
         }
 

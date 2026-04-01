@@ -90,7 +90,7 @@ describe('AuthProvider', () => {
     });
   });
 
-  it('arms auto-start on employee login and stops the timer on logout', async () => {
+  it('does not arm auto-start on employee login in the browser and stops the timer on logout', async () => {
     const user = userEvent.setup();
 
     vi.mocked(authApi.login).mockResolvedValue({
@@ -123,7 +123,7 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
     });
-    expect(isAutoStartArmed(7)).toBe(true);
+    expect(isAutoStartArmed(7)).toBe(false);
 
     await user.click(screen.getByRole('button', { name: /logout/i }));
 
@@ -131,6 +131,48 @@ describe('AuthProvider', () => {
       expect(timeEntryApi.stop).toHaveBeenCalledWith({ timer_slot: 'primary' });
       expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
     });
+  });
+
+  it('arms auto-start on employee login in the desktop shell', async () => {
+    const user = userEvent.setup();
+
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+    };
+
+    vi.mocked(authApi.login).mockResolvedValue({
+      data: {
+        token: 'employee-token',
+        user: {
+          id: 7,
+          name: 'Employee User',
+          email: 'employee@example.com',
+          role: 'employee',
+          organization_id: 2,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        organization: null,
+      },
+    } as any);
+
+    renderWithProviders(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await user.click(await screen.findByRole('button', { name: /login/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+    });
+
+    expect(isAutoStartArmed(7)).toBe(true);
   });
 
   it('restores desktop auth from local storage and keeps it out of session storage', async () => {

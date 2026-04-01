@@ -66,6 +66,8 @@ class AuthController extends Controller
                 'owner_user_id' => $user->id,
             ])->save();
 
+            $user->load(['organization', 'groups']);
+
             $token = $this->apiTokenService->issue($user);
 
             $this->auditLogService->log(
@@ -101,6 +103,7 @@ class AuthController extends Controller
         }
 
         $token = $this->apiTokenService->issue($user);
+        $user->load(['organization', 'groups']);
 
         $this->auditLogService->log(
             action: 'auth.login',
@@ -132,6 +135,7 @@ class AuthController extends Controller
         }
 
         $user->load('organization');
+        $user->loadMissing('groups');
 
         return $this->successResponse($user->toArray());
     }
@@ -183,7 +187,7 @@ class AuthController extends Controller
         }
 
         $token = $this->apiTokenService->issue($user, 'web-handoff-token');
-        $user->load('organization');
+        $user->load(['organization', 'groups']);
 
         return $this->successResponse([
             'user' => $user,

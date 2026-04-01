@@ -84,7 +84,7 @@ class InvitationController extends Controller
     {
         $invitation = $this->invitationService->resolveByToken($token);
         $user = $this->invitationService->accept($invitation, $request->validated());
-        $user->load('organization');
+        $user->load(['organization', 'groups']);
 
         return $this->createdResponse([
             'user' => $user,
