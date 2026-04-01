@@ -6,8 +6,10 @@ import FilterPanel from '@/components/dashboard/FilterPanel';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
+import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { Layers3, Sigma, Wallet } from 'lucide-react';
+import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
 import { payrollWorkspaceApi } from '@/services/api';
 import type { SalaryComponentMaster } from '@/types';
 import PayrollSectionCard from '@/features/payroll/components/PayrollSectionCard';
@@ -61,9 +63,19 @@ export default function PayrollComponentsView() {
   });
 
   const components = componentsQuery.data || [];
+  const componentSearchSuggestions = useMemo(
+    () =>
+      buildSearchSuggestions(components, (component) => ({
+        id: component.id,
+        label: component.name,
+        description: component.code,
+        keywords: [component.category, component.value_type],
+      })),
+    [components]
+  );
   const filteredComponents = useMemo(
     () => components.filter((component) => {
-      const matchesSearch = !search.trim() || [component.name, component.code].some((value) => value.toLowerCase().includes(search.toLowerCase()));
+      const matchesSearch = matchesSearchFilter(search, [component.name, component.code, component.category, component.value_type]);
       const matchesCategory = !category || component.category === category;
       const matchesActive = activeFilter === 'all' || (activeFilter === 'active' ? component.is_active : !component.is_active);
       return matchesSearch && matchesCategory && matchesActive;
@@ -170,7 +182,13 @@ export default function PayrollComponentsView() {
       <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <div className="xl:col-span-2">
           <FieldLabel>Search</FieldLabel>
-          <TextInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by component name or code" />
+          <SearchSuggestInput
+            value={search}
+            onValueChange={setSearch}
+            suggestions={componentSearchSuggestions}
+            placeholder="Search by component name or code"
+            emptyMessage="No salary components match this search."
+          />
         </div>
         <div>
           <FieldLabel>Category</FieldLabel>

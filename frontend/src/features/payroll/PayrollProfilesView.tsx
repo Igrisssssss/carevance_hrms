@@ -7,7 +7,9 @@ import FilterPanel from '@/components/dashboard/FilterPanel';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
+import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
+import { buildEmployeeSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
 import { payrollWorkspaceApi } from '@/services/api';
 import type { PayrollProfile } from '@/types';
 import { Landmark, Receipt, UserRound, Wallet } from 'lucide-react';
@@ -47,22 +49,21 @@ export default function PayrollProfilesView() {
 
   const profiles = profilesQuery.data?.profiles || [];
   const employees = profilesQuery.data?.employees || [];
+  const employeeSearchSuggestions = useMemo(() => buildEmployeeSearchSuggestions(employees), [employees]);
   const templates = profilesQuery.data?.templates || [];
   const profileByUserId = useMemo(() => new Map(profiles.map((profile) => [profile.user_id, profile])), [profiles]);
   const missingEmployees = useMemo(() => employees.filter((employee) => !profileByUserId.has(employee.id)), [employees, profileByUserId]);
 
   const filteredProfiles = useMemo(
     () => profiles.filter((profile) => {
-      const haystack = `${profile.user?.name || ''} ${profile.user?.email || ''}`.toLowerCase();
-      return !search.trim() || haystack.includes(search.toLowerCase());
+      return matchesSearchFilter(search, [profile.user?.name]);
     }),
     [profiles, search]
   );
 
   const filteredMissing = useMemo(
     () => missingEmployees.filter((employee) => {
-      const haystack = `${employee.name} ${employee.email}`.toLowerCase();
-      return !search.trim() || haystack.includes(search.toLowerCase());
+      return matchesSearchFilter(search, [employee.name]);
     }),
     [missingEmployees, search]
   );
@@ -151,7 +152,13 @@ export default function PayrollProfilesView() {
       <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_0.6fr_auto]">
         <div>
           <FieldLabel>Search employee</FieldLabel>
-          <TextInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by employee name or email" />
+          <SearchSuggestInput
+            value={search}
+            onValueChange={setSearch}
+            suggestions={employeeSearchSuggestions}
+            placeholder="Search by employee name"
+            emptyMessage="No employee names match this search."
+          />
         </div>
         <div>
           <FieldLabel>View</FieldLabel>

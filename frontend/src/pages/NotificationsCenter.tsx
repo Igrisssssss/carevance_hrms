@@ -6,8 +6,10 @@ import type { AppNotificationItem } from '@/types';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
+import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
+import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
 import { BellRing, Send } from 'lucide-react';
 
 export default function NotificationsCenter() {
@@ -32,7 +34,6 @@ export default function NotificationsCenter() {
         notificationApi.list({
           limit: 100,
           type: typeFilter || undefined,
-          q: query || undefined,
           unread_only: statusFilter === 'unread' ? true : undefined,
         }),
         isAdmin ? userApi.getAll({ period: 'all' }) : Promise.resolve({ data: [] }),
@@ -54,9 +55,23 @@ export default function NotificationsCenter() {
 
   useEffect(() => {
     load();
-  }, [typeFilter, statusFilter, query]);
+  }, [typeFilter, statusFilter]);
 
-  const unreadCount = useMemo(() => notifications.filter((item) => !item.is_read).length, [notifications]);
+  const filteredNotifications = useMemo(
+    () => notifications.filter((item) => matchesSearchFilter(query, [item.title, item.message, item.type])),
+    [notifications, query]
+  );
+  const unreadCount = useMemo(() => filteredNotifications.filter((item) => !item.is_read).length, [filteredNotifications]);
+  const notificationSearchSuggestions = useMemo(
+    () =>
+      buildSearchSuggestions(notifications, (item) => ({
+        id: item.id,
+        label: item.title,
+        description: item.message,
+        keywords: [item.type],
+      })),
+    [notifications]
+  );
 
   const markRead = async (id: number) => {
     try {
@@ -122,7 +137,7 @@ export default function NotificationsCenter() {
             <div className="rounded-2xl bg-sky-100 p-3 text-sky-700"><BellRing className="h-5 w-5" /></div>
             <div>
               <p className="text-sm text-slate-500">Visible notifications</p>
-              <p className="text-2xl font-semibold text-slate-950">{notifications.length}</p>
+              <p className="text-2xl font-semibold text-slate-950">{filteredNotifications.length}</p>
             </div>
           </div>
         </SurfaceCard>
@@ -143,7 +158,13 @@ export default function NotificationsCenter() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div>
             <FieldLabel>Search</FieldLabel>
-            <TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search title or message" />
+            <SearchSuggestInput
+              value={query}
+              onValueChange={setQuery}
+              suggestions={notificationSearchSuggestions}
+              placeholder="Search title or message"
+              emptyMessage="No notification titles match this search."
+            />
           </div>
           <div>
             <FieldLabel>Type</FieldLabel>
@@ -226,11 +247,11 @@ export default function NotificationsCenter() {
 
       {isLoading ? (
         <PageLoadingState label="Loading notifications..." />
-      ) : notifications.length === 0 ? (
+      ) : filteredNotifications.length === 0 ? (
         <PageEmptyState title="No notifications found" description="Try a different filter or wait for the next update." />
       ) : (
         <div className="space-y-3">
-          {notifications.map((item) => (
+          {filteredNotifications.map((item) => (
             <SurfaceCard key={item.id} className={`p-5 ${item.is_read ? '' : 'border-sky-200 bg-sky-50/40'}`}>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-1">

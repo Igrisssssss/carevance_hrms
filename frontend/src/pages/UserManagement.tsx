@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { reportGroupApi, userApi } from '@/services/api';
+import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import { useAuth } from '@/contexts/AuthContext';
+import { deriveDateRangeFromPreset, getDateRangePresetLabel, type DateRangePreset } from '@/lib/dateRange';
 import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
@@ -34,12 +36,12 @@ export default function UserManagement() {
   const isAdmin = hasAdminAccess(user);
   const isStrictAdmin = hasStrictAdminAccess(user);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
-  const [period, setPeriod] = useState<'today' | 'week' | 'all'>('all');
+  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
   const [country, setCountry] = useState('India');
   const defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
   const [timezone, setTimezone] = useState(defaultTimezone);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState(() => deriveDateRangeFromPreset('30d').startDate);
+  const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
   const [selectedProfileUserId, setSelectedProfileUserId] = useState<number | null>(null);
 
   const [userForm, setUserForm] = useState({ id: 0, name: '', email: '', role: 'employee' as OrgUser['role'], password: '' });
@@ -51,15 +53,26 @@ export default function UserManagement() {
     }
   }, [country, timezone]);
 
+  const handleDatePresetChange = (preset: DateRangePreset) => {
+    setDatePreset(preset);
+    if (preset === 'custom') {
+      return;
+    }
+
+    const nextRange = deriveDateRangeFromPreset(preset);
+    setStartDate(nextRange.startDate);
+    setEndDate(nextRange.endDate);
+  };
+
   const userQueryParams = useMemo(
     () => ({
-      period,
+      period: 'all' as const,
       country,
       timezone,
       start_date: startDate || undefined,
       end_date: endDate || undefined,
     }),
-    [period, country, timezone, startDate, endDate]
+    [country, timezone, startDate, endDate]
   );
 
   const usersQuery = useQuery({
@@ -291,23 +304,7 @@ export default function UserManagement() {
         <p className="text-gray-500 mt-1">Add/edit users and create groups for reports</p>
       </div>
 
-      <div className="flex gap-2">
-        {[
-          { id: 'today', label: 'Today' },
-          { id: 'week', label: 'This Week' },
-          { id: 'all', label: 'All Time' },
-        ].map((option) => (
-          <button
-            key={option.id}
-            onClick={() => setPeriod(option.id as 'today' | 'week' | 'all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium ${period === option.id ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-600'}`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200 p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="bg-white rounded-xl border border-gray-200 p-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Country</label>
           <select value={country} onChange={(e) => setCountry(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
@@ -324,20 +321,32 @@ export default function UserManagement() {
             ))}
           </select>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
-          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
-          <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-        </div>
+        <DateRangeFields
+          datePreset={datePreset}
+          onDatePresetChange={handleDatePresetChange}
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={(value) => {
+            setDatePreset('custom');
+            setStartDate(value);
+          }}
+          onEndDateChange={(value) => {
+            setDatePreset('custom');
+            setEndDate(value);
+          }}
+          inputClassName="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm shadow-none"
+        />
         <div className="flex items-end">
           <button
-            onClick={() => { setStartDate(''); setEndDate(''); setPeriod('all'); }}
+            onClick={() => {
+              const nextRange = deriveDateRangeFromPreset('30d');
+              setDatePreset('30d');
+              setStartDate(nextRange.startDate);
+              setEndDate(nextRange.endDate);
+            }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
           >
-            Clear Filters
+            Reset Range
           </button>
         </div>
       </div>
@@ -375,7 +384,7 @@ export default function UserManagement() {
               Attendance: <span className={u.is_working ? 'text-green-600' : 'text-gray-500'}>{u.is_working ? 'Present (Working)' : 'Not Working'}</span>
             </div>
             <div className="mt-1 text-xs text-gray-600">
-              Total worked ({startDate || endDate ? 'Custom Range' : period === 'today' ? 'Today' : period === 'week' ? 'This Week' : 'All Time'} - {timezone}): {formatDuration(u.total_elapsed_duration ?? u.total_duration)}
+              Total worked ({datePreset === 'custom' ? 'Custom Range' : getDateRangePresetLabel(datePreset)} - {timezone}): {formatDuration(u.total_elapsed_duration ?? u.total_duration)}
             </div>
           </button>
         ))}

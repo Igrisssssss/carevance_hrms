@@ -8,10 +8,12 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
+import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasStrictAdminAccess } from '@/lib/permissions';
+import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
 import { KeyRound, MailPlus, ShieldCheck, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
@@ -203,14 +205,18 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const isError = usersQuery.isError || groupsQuery.isError || membersQuery.isError || profileQuery.isError || invitationsQuery.isError;
   const pageTitle = modeCopy[mode];
   const users = usersQuery.data || [];
+  const employeeSearchSuggestions = useMemo(
+    () =>
+      buildSearchSuggestions(users, (item: any) => ({
+        id: item.id,
+        label: item.name || item.email || `User #${item.id}`,
+        description: item.email || undefined,
+        keywords: [item.role].filter(Boolean),
+      })),
+    [users]
+  );
   const filteredUsers = useMemo(() => {
-    const query = employeeSearch.trim().toLowerCase();
-    if (!query) return users;
-    return users.filter((item: any) =>
-      [item.name, item.email, item.role]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query))
-    );
+    return users.filter((item: any) => matchesSearchFilter(employeeSearch, [item.name]));
   }, [employeeSearch, users]);
   const groups = groupsQuery.data || [];
   const members = membersQuery.data || [];
@@ -284,7 +290,13 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             </div>
             <div>
               <FieldLabel>Search Employee</FieldLabel>
-              <TextInput value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Search by name, email, or role" />
+              <SearchSuggestInput
+                value={employeeSearch}
+                onValueChange={setEmployeeSearch}
+                suggestions={employeeSearchSuggestions}
+                placeholder="Search by employee name"
+                emptyMessage="No employee names match this search."
+              />
             </div>
             <div className="flex items-end">
               <div className="flex w-full gap-3">

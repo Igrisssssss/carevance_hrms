@@ -9,6 +9,7 @@ import {
   timeEntryApi,
   userApi,
 } from '@/services/api';
+import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
 import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
@@ -16,7 +17,10 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
-import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
+import { FieldLabel, SelectInput } from '@/components/ui/FormField';
+import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
+import { buildEmployeeSearchSuggestions, buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
+import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
   Activity,
@@ -40,9 +44,7 @@ type ReportsWorkspaceMode =
   | 'productivity'
   | 'custom-export';
 
-const today = new Date();
-const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-const toDate = (value: Date) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+const defaultDateRange = deriveDateRangeFromPreset('30d');
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
   const hours = Math.floor(safe / 3600);
@@ -65,8 +67,16 @@ const formatTimelineDuration = (seconds: number) => {
 
   return `${remainingSeconds}s`;
 };
-const normalizeSearchValue = (value: unknown) => String(value ?? '').trim().toLowerCase();
-const matchesWorkspaceSearch = (search: string, values: unknown[]) => !search || values.some((value) => normalizeSearchValue(value).includes(search));
+const formatPreviewList = (items: unknown[], emptyLabel: string, limit = 3) => {
+  const normalizedItems = Array.from(new Set(items.map((item) => String(item || '').trim()).filter(Boolean)));
+  if (!normalizedItems.length) {
+    return emptyLabel;
+  }
+
+  const preview = normalizedItems.slice(0, limit).join(', ');
+  return normalizedItems.length > limit ? `${preview} +${normalizedItems.length - limit} more` : preview;
+};
+const matchesWorkspaceSearch = (search: string, values: unknown[]) => matchesSearchFilter(search, values);
 
 const fetchTimeEntriesForUsers = async (userIds: number[], startDate: string, endDate: string) => {
   const uniqueUserIds = Array.from(new Set(userIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
@@ -143,13 +153,29 @@ const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: strin
 };
 
 export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode }) {
-  const [startDate, setStartDate] = useState(toDate(monthStart));
-  const [endDate, setEndDate] = useState(toDate(today));
+  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
+  const [startDate, setStartDate] = useState(defaultDateRange.startDate);
+  const [endDate, setEndDate] = useState(defaultDateRange.endDate);
   const [query, setQuery] = useState('');
+  const [appliedQuery, setAppliedQuery] = useState('');
+  const [projectTaskSearchQuery, setProjectTaskSearchQuery] = useState('');
+  const [projectEmployeeSearchQuery, setProjectEmployeeSearchQuery] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState<number | ''>('');
   const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
   const [selectedGroupId, setSelectedGroupId] = useState<number | ''>('');
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
+
+  const handleDatePresetChange = (preset: DateRangePreset) => {
+    setDatePreset(preset);
+    if (preset === 'custom') {
+      return;
+    }
+
+    const nextRange = deriveDateRangeFromPreset(preset);
+    setStartDate(nextRange.startDate);
+    setEndDate(nextRange.endDate);
+  };
 
   const usersQuery = useQuery({
     queryKey: ['report-workspace-users'],
@@ -167,8 +193,11 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   });
   const users = usersQuery.data || [];
   const groups = groupsQuery.data || [];
-  const projectsTasksSearch = query.trim().toLowerCase();
-  const remoteSearch = mode === 'attendance' || mode === 'web-app-usage' ? query : '';
+  const projectsTaskTextSearch = projectTaskSearchQuery.trim().toLowerCase();
+  const projectsEmployeeNameSearch = projectEmployeeSearchQuery.trim();
+  const hasSelectedProject = selectedProjectId !== '';
+  const selectedProjectIdNumber = hasSelectedProject ? Number(selectedProjectId) : null;
+  const remoteSearch = mode === 'attendance' || mode === 'web-app-usage' ? appliedQuery : '';
   const selectedGroup = selectedGroupId ? groups.find((group: any) => Number(group.id) === Number(selectedGroupId)) : null;
   const scopedUserIds = useMemo(() => {
     let ids = users.map((user: any) => Number(user.id));
@@ -188,6 +217,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const dataQuery = useQuery({
     queryKey: ['report-workspace-data', mode, startDate, endDate, remoteSearch, selectedUserId, selectedGroupId],
     enabled: usersQuery.isSuccess && groupsQuery.isSuccess,
+    placeholderData: (previousData) => previousData,
     refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 10000 : false,
     refetchIntervalInBackground: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity',
     queryFn: async () => {
@@ -251,7 +281,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     },
   });
 
-  const isLoading = usersQuery.isLoading || groupsQuery.isLoading || dataQuery.isLoading;
+  const isLoading = usersQuery.isLoading || groupsQuery.isLoading || (dataQuery.isLoading && !dataQuery.data);
   const isError = usersQuery.isError || groupsQuery.isError || dataQuery.isError;
   const pageTitle = modeCopy[mode];
 
@@ -292,17 +322,31 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       const project = projectsById.get(Number(task.project_id));
       const assignee = usersById.get(Number(task.assignee_id));
       const matchesScope = !hasProjectsTasksScope || (task.assignee_id ? scopedUserIdSet.has(Number(task.assignee_id)) : false);
-
-      return matchesScope && matchesWorkspaceSearch(projectsTasksSearch, [
+      const matchesSelectedProject = !hasSelectedProject || Number(task.project_id) === selectedProjectIdNumber;
+      const matchesTaskProjectSearch = matchesWorkspaceSearch(projectsTaskTextSearch, [
         task.title,
         task.description,
         task.status,
         task.priority,
         project?.name,
-        assignee?.name,
+        project?.description,
       ]);
+      const matchesEmployeeSearch = matchesSearchFilter(projectsEmployeeNameSearch, [assignee?.name]);
+
+      return matchesScope && matchesSelectedProject && matchesTaskProjectSearch && matchesEmployeeSearch;
     });
-  }, [hasProjectsTasksScope, mode, projectsById, projectsTasksSearch, scopedUserIdSet, tasks, usersById]);
+  }, [
+    hasProjectsTasksScope,
+    hasSelectedProject,
+    mode,
+    projectsById,
+    projectsEmployeeNameSearch,
+    projectsTaskTextSearch,
+    scopedUserIdSet,
+    selectedProjectIdNumber,
+    tasks,
+    usersById,
+  ]);
   const filteredProjectTimeEntries = useMemo(() => {
     if (mode !== 'projects-tasks') return [];
 
@@ -314,52 +358,351 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       const task = tasksById.get(Number(entry.task_id));
       const user = usersById.get(Number(entry.user_id));
       const matchesScope = !hasProjectsTasksScope || scopedUserIdSet.has(Number(entry.user_id));
-
-      return matchesScope && matchesWorkspaceSearch(projectsTasksSearch, [
+      const matchesSelectedProject = !hasSelectedProject || projectId === selectedProjectIdNumber;
+      const matchesTaskProjectSearch = matchesWorkspaceSearch(projectsTaskTextSearch, [
         project?.name,
         project?.description,
         task?.title,
-        user?.name,
+        task?.description,
         entry.description,
       ]);
+      const matchesEmployeeSearch = matchesSearchFilter(projectsEmployeeNameSearch, [user?.name]);
+
+      return matchesScope && matchesSelectedProject && matchesTaskProjectSearch && matchesEmployeeSearch;
     });
-  }, [hasProjectsTasksScope, mode, projectTimeEntries, projectsById, projectsTasksSearch, scopedUserIdSet, tasksById, usersById]);
+  }, [
+    hasProjectsTasksScope,
+    hasSelectedProject,
+    mode,
+    projectTimeEntries,
+    projectsById,
+    projectsEmployeeNameSearch,
+    projectsTaskTextSearch,
+    scopedUserIdSet,
+    selectedProjectIdNumber,
+    tasksById,
+    usersById,
+  ]);
   const filteredProjectIds = useMemo(() => new Set([
     ...filteredTasks.map((task: any) => Number(task.project_id)),
     ...filteredProjectTimeEntries.map((entry: any) => Number(entry.project_id)),
   ]), [filteredProjectTimeEntries, filteredTasks]);
   const filteredProjects = useMemo(() => {
     if (mode !== 'projects-tasks') return [];
-    if (!hasProjectsTasksScope && !projectsTasksSearch) return projects;
+    if (!hasProjectsTasksScope && !hasSelectedProject && !projectsTaskTextSearch && !projectsEmployeeNameSearch) return projects;
 
     return projects.filter((project: any) => {
       const projectId = Number(project.id);
-      const matchesSearch = matchesWorkspaceSearch(projectsTasksSearch, [project.name, project.description, project.status]);
+      const matchesSelectedProject = !hasSelectedProject || projectId === selectedProjectIdNumber;
+      const matchesSearch = matchesWorkspaceSearch(projectsTaskTextSearch, [project.name, project.description, project.status]);
+      if (!matchesSelectedProject) {
+        return false;
+      }
 
-      if (hasProjectsTasksScope) {
-        return filteredProjectIds.has(projectId);
+      if (hasProjectsTasksScope || Boolean(projectsEmployeeNameSearch)) {
+        return hasSelectedProject ? true : filteredProjectIds.has(projectId);
       }
 
       return filteredProjectIds.has(projectId) || matchesSearch;
     });
-  }, [filteredProjectIds, hasProjectsTasksScope, mode, projects, projectsTasksSearch]);
+  }, [
+    filteredProjectIds,
+    hasProjectsTasksScope,
+    hasSelectedProject,
+    mode,
+    projects,
+    projectsEmployeeNameSearch,
+    projectsTaskTextSearch,
+    selectedProjectIdNumber,
+  ]);
+  const employeeSearchSuggestions = useMemo(() => {
+    if (mode === 'attendance' || mode === 'web-app-usage') {
+      return buildEmployeeSearchSuggestions(users);
+    }
+
+    return [];
+  }, [mode, users]);
+  const projectTaskSearchSuggestions = useMemo(() => {
+    if (mode !== 'projects-tasks') {
+      return [];
+    }
+
+    return buildSearchSuggestions(
+      [
+        ...projects.map((project: any) => ({
+          id: `project:${project.id}`,
+          label: project.name,
+          description: project.description || 'Project',
+          keywords: [project.status].filter(Boolean),
+        })),
+        ...tasks.map((task: any) => ({
+          id: `task:${task.id}`,
+          label: task.title,
+          description: projectsById.get(Number(task.project_id))?.name || 'Task',
+          keywords: [task.description, task.priority, task.status].filter(Boolean),
+        })),
+      ],
+      (item) => item
+    );
+  }, [mode, projects, projectsById, tasks]);
+  const projectEmployeeSearchSuggestions = useMemo(() => {
+    if (mode !== 'projects-tasks') {
+      return [];
+    }
+
+    const visibleUsers = hasProjectsTasksScope
+      ? users.filter((employee: any) => scopedUserIdSet.has(Number(employee.id)))
+      : users;
+
+    return buildEmployeeSearchSuggestions(visibleUsers);
+  }, [hasProjectsTasksScope, mode, scopedUserIdSet, users]);
+  const selectedProject = useMemo(() => {
+    if (!hasSelectedProject || mode !== 'projects-tasks') {
+      return null;
+    }
+
+    return projectsById.get(Number(selectedProjectId)) || null;
+  }, [hasSelectedProject, mode, projectsById, selectedProjectId]);
+  const filteredTasksByProjectId = useMemo(() => {
+    const groupedTasks = new Map<number, any[]>();
+
+    filteredTasks.forEach((task: any) => {
+      const projectId = Number(task.project_id);
+      if (!projectId) return;
+
+      const existingTasks = groupedTasks.get(projectId) || [];
+      existingTasks.push(task);
+      groupedTasks.set(projectId, existingTasks);
+    });
+
+    return groupedTasks;
+  }, [filteredTasks]);
+  const filteredProjectTimeEntriesByProjectId = useMemo(() => {
+    const groupedEntries = new Map<number, any[]>();
+
+    filteredProjectTimeEntries.forEach((entry: any) => {
+      const projectId = Number(entry.project_id);
+      if (!projectId) return;
+
+      const existingEntries = groupedEntries.get(projectId) || [];
+      existingEntries.push(entry);
+      groupedEntries.set(projectId, existingEntries);
+    });
+
+    return groupedEntries;
+  }, [filteredProjectTimeEntries]);
+  const filteredTasksByAssigneeId = useMemo(() => {
+    const groupedTasks = new Map<number, any[]>();
+
+    filteredTasks.forEach((task: any) => {
+      const assigneeId = Number(task.assignee_id || task.assignee?.id);
+      if (!assigneeId) return;
+
+      const existingTasks = groupedTasks.get(assigneeId) || [];
+      existingTasks.push(task);
+      groupedTasks.set(assigneeId, existingTasks);
+    });
+
+    return groupedTasks;
+  }, [filteredTasks]);
+  const filteredProjectTimeEntriesByUserId = useMemo(() => {
+    const groupedEntries = new Map<number, any[]>();
+
+    filteredProjectTimeEntries.forEach((entry: any) => {
+      const userId = Number(entry.user_id || entry.user?.id);
+      if (!userId) return;
+
+      const existingEntries = groupedEntries.get(userId) || [];
+      existingEntries.push(entry);
+      groupedEntries.set(userId, existingEntries);
+    });
+
+    return groupedEntries;
+  }, [filteredProjectTimeEntries]);
+  const matchedProjectEmployees = useMemo(() => {
+    if (mode !== 'projects-tasks' || !projectsEmployeeNameSearch) {
+      return [];
+    }
+
+    const visibleUsers = hasProjectsTasksScope
+      ? users.filter((employee: any) => scopedUserIdSet.has(Number(employee.id)))
+      : users;
+
+    return visibleUsers.filter((employee: any) => matchesSearchFilter(projectsEmployeeNameSearch, [employee.name]));
+  }, [hasProjectsTasksScope, mode, projectsEmployeeNameSearch, scopedUserIdSet, users]);
 
   const projectRows = useMemo(() => {
     if (mode !== 'projects-tasks') return [];
     return filteredProjects.map((project: any) => {
-      const projectTasks = filteredTasks.filter((task: any) => Number(task.project_id) === Number(project.id));
-      const trackedSeconds = filteredProjectTimeEntries
-        .filter((entry: any) => Number(entry.project_id) === Number(project.id))
-        .reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0);
+      const projectId = Number(project.id);
+      const projectTasks = filteredTasksByProjectId.get(projectId) || [];
+      const projectEntries = filteredProjectTimeEntriesByProjectId.get(projectId) || [];
+      const trackedSeconds = projectEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0);
+      const completedTaskCount = projectTasks.filter((task: any) => task.status === 'done').length;
+      const inProgressTaskCount = projectTasks.filter((task: any) => task.status === 'in_progress' || task.status === 'in_review').length;
+      const todoTaskCount = projectTasks.filter((task: any) => task.status === 'todo').length;
+      const openTaskCount = projectTasks.filter((task: any) => task.status !== 'done').length;
+      const completionRate = projectTasks.length > 0 ? Math.round((completedTaskCount / projectTasks.length) * 100) : 0;
+      const assignedEmployees = Array.from(
+        new Set(
+          projectTasks
+            .map((task: any) => usersById.get(Number(task.assignee_id))?.name || task.assignee?.name)
+            .filter(Boolean)
+        )
+      );
 
       return {
         ...project,
         task_count: projectTasks.length,
-        open_tasks: projectTasks.filter((task: any) => task.status !== 'done').length,
+        open_tasks: openTaskCount,
+        completed_tasks: completedTaskCount,
+        in_progress_tasks: inProgressTaskCount,
+        todo_tasks: todoTaskCount,
+        completion_rate: completionRate,
+        tracked_seconds: trackedSeconds,
+        assigned_employee_count: assignedEmployees.length,
+        assigned_employees: assignedEmployees,
+      };
+    });
+  }, [filteredProjectTimeEntriesByProjectId, filteredProjects, filteredTasksByProjectId, mode, usersById]);
+  const taskAllocationRows = useMemo(() => {
+    if (mode !== 'projects-tasks') {
+      return [];
+    }
+
+    return filteredTasks.map((task: any) => {
+      const project = projectsById.get(Number(task.project_id)) || task.project;
+      const assigneeName = usersById.get(Number(task.assignee_id))?.name || task.assignee?.name || 'Unassigned';
+      const taskEntries = filteredProjectTimeEntries
+        .filter((entry: any) => Number(entry.task_id) === Number(task.id));
+      const trackedSeconds = taskEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0);
+      const completionLabel = task.status === 'done' ? 'Completed' : 'Open';
+
+      return {
+        ...task,
+        project_name: project?.name || 'No project',
+        assignee_name: assigneeName,
+        completion_label: completionLabel,
         tracked_seconds: trackedSeconds,
       };
     });
-  }, [filteredProjectTimeEntries, filteredProjects, filteredTasks, mode]);
+  }, [filteredProjectTimeEntries, filteredTasks, mode, projectsById, usersById]);
+  const employeeFocusRows = useMemo(() => {
+    if (mode !== 'projects-tasks' || !projectsEmployeeNameSearch) {
+      return [];
+    }
+
+    return matchedProjectEmployees.map((employee: any) => {
+      const employeeId = Number(employee.id);
+      const employeeTasks = filteredTasksByAssigneeId.get(employeeId) || [];
+      const employeeEntries = filteredProjectTimeEntriesByUserId.get(employeeId) || [];
+      const completedTaskCount = employeeTasks.filter((task: any) => task.status === 'done').length;
+      const openTaskCount = employeeTasks.filter((task: any) => task.status !== 'done').length;
+      const completionRate = employeeTasks.length > 0 ? Math.round((completedTaskCount / employeeTasks.length) * 100) : 0;
+
+      return {
+        ...employee,
+        assigned_task_count: employeeTasks.length,
+        open_task_count: openTaskCount,
+        completed_task_count: completedTaskCount,
+        completion_rate: completionRate,
+        assigned_task_names: employeeTasks.map((task: any) => task.title),
+        assigned_project_names: Array.from(
+          new Set(
+            employeeTasks
+              .map((task: any) => projectsById.get(Number(task.project_id))?.name || task.project?.name)
+              .filter(Boolean)
+          )
+        ),
+        tracked_seconds: employeeEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0),
+      };
+    });
+  }, [filteredProjectTimeEntriesByUserId, filteredTasksByAssigneeId, matchedProjectEmployees, mode, projectsById, projectsEmployeeNameSearch]);
+  const selectedProjectRow = useMemo(() => {
+    if (!hasSelectedProject || mode !== 'projects-tasks') {
+      return null;
+    }
+
+    const selectedRow = projectRows.find((row: any) => Number(row.id) === selectedProjectIdNumber);
+    if (selectedRow) {
+      return selectedRow;
+    }
+
+    if (!selectedProject) {
+      return null;
+    }
+
+    return {
+      ...selectedProject,
+      task_count: 0,
+      open_tasks: 0,
+      completed_tasks: 0,
+      in_progress_tasks: 0,
+      todo_tasks: 0,
+      completion_rate: 0,
+      tracked_seconds: 0,
+      assigned_employee_count: 0,
+      assigned_employees: [],
+    };
+  }, [hasSelectedProject, mode, projectRows, selectedProject, selectedProjectIdNumber]);
+  const selectedProjectEmployeeRows = useMemo(() => {
+    if (mode !== 'projects-tasks' || !selectedProjectRow) {
+      return [];
+    }
+
+    const selectedId = Number(selectedProjectRow.id);
+    const projectTasks = filteredTasksByProjectId.get(selectedId) || [];
+    const projectEntries = filteredProjectTimeEntriesByProjectId.get(selectedId) || [];
+    const tasksByAssignee = new Map<number, any[]>();
+    const trackedSecondsByAssignee = new Map<number, number>();
+
+    projectTasks.forEach((task: any) => {
+      const assigneeId = Number(task.assignee_id || task.assignee?.id);
+      if (!assigneeId) {
+        return;
+      }
+
+      const existingTasks = tasksByAssignee.get(assigneeId) || [];
+      existingTasks.push(task);
+      tasksByAssignee.set(assigneeId, existingTasks);
+    });
+
+    projectEntries.forEach((entry: any) => {
+      const userId = Number(entry.user_id || entry.user?.id);
+      if (!userId || !tasksByAssignee.has(userId)) {
+        return;
+      }
+
+      trackedSecondsByAssignee.set(userId, (trackedSecondsByAssignee.get(userId) || 0) + Number(entry.duration || 0));
+    });
+
+    return Array.from(tasksByAssignee.entries())
+      .map(([assigneeId, employeeTasks]) => {
+        const employee = usersById.get(assigneeId);
+        const completedTaskCount = employeeTasks.filter((task: any) => task.status === 'done').length;
+        const openTaskCount = employeeTasks.filter((task: any) => task.status !== 'done').length;
+        const completionRate = employeeTasks.length > 0 ? Math.round((completedTaskCount / employeeTasks.length) * 100) : 0;
+
+        return {
+          id: assigneeId,
+          employee_name: employee?.name || `Employee #${assigneeId}`,
+          employee_email: employee?.email || '',
+          assigned_task_count: employeeTasks.length,
+          open_task_count: openTaskCount,
+          completed_task_count: completedTaskCount,
+          completion_rate: completionRate,
+          tracked_seconds: trackedSecondsByAssignee.get(assigneeId) || 0,
+          assigned_task_names: employeeTasks.map((task: any) => task.title),
+        };
+      })
+      .sort((left, right) => {
+        if (right.assigned_task_count !== left.assigned_task_count) {
+          return right.assigned_task_count - left.assigned_task_count;
+        }
+
+        return right.tracked_seconds - left.tracked_seconds;
+      });
+  }, [filteredProjectTimeEntriesByProjectId, filteredTasksByProjectId, mode, selectedProjectRow, usersById]);
 
   const timelineRows = (dataQuery.data as any[]) || [];
   const timelineSummary = useMemo(() => {
@@ -454,23 +797,84 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       {exportMessage ? <FeedbackBanner tone="success" message={exportMessage} /> : null}
       {exportError ? <FeedbackBanner tone="error" message={exportError} /> : null}
 
-      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <div>
-          <FieldLabel>Start Date</FieldLabel>
-          <TextInput type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
-        </div>
-        <div>
-          <FieldLabel>End Date</FieldLabel>
-          <TextInput type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
-        </div>
-        <div>
-          <FieldLabel>Search</FieldLabel>
-          <TextInput
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={mode === 'attendance' || mode === 'web-app-usage' ? 'Name or email' : 'Optional filter'}
-          />
-        </div>
+      <FilterPanel className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${mode === 'projects-tasks' ? 'xl:grid-cols-10' : 'xl:grid-cols-6'}`}>
+        <DateRangeFields
+          datePreset={datePreset}
+          onDatePresetChange={handleDatePresetChange}
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={(value) => {
+            setDatePreset('custom');
+            setStartDate(value);
+          }}
+          onEndDateChange={(value) => {
+            setDatePreset('custom');
+            setEndDate(value);
+          }}
+        />
+        {mode === 'projects-tasks' ? (
+          <>
+            <div className="xl:col-span-2">
+              <FieldLabel><span className="whitespace-nowrap">Task / Project</span></FieldLabel>
+              <SearchSuggestInput
+                value={projectTaskSearchQuery}
+                onValueChange={setProjectTaskSearchQuery}
+                suggestions={projectTaskSearchSuggestions}
+                placeholder="Search tasks or projects"
+                emptyMessage="No tasks or projects match this search."
+              />
+            </div>
+            <div className="xl:col-span-2">
+              <FieldLabel><span className="whitespace-nowrap">Employee Search</span></FieldLabel>
+              <SearchSuggestInput
+                value={projectEmployeeSearchQuery}
+                onValueChange={setProjectEmployeeSearchQuery}
+                suggestions={projectEmployeeSearchSuggestions}
+                placeholder="Search employee name"
+                emptyMessage="No employee names match this search."
+              />
+            </div>
+            <div>
+              <FieldLabel>Project</FieldLabel>
+              <SelectInput value={selectedProjectId} onChange={(event) => setSelectedProjectId(event.target.value ? Number(event.target.value) : '')}>
+                <option value="">All projects</option>
+                {projects.map((project: any) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </SelectInput>
+            </div>
+          </>
+        ) : (
+          <div>
+            <FieldLabel>Search</FieldLabel>
+            <SearchSuggestInput
+              value={query}
+              onValueChange={(value) => {
+                setQuery(value);
+                if ((mode === 'attendance' || mode === 'web-app-usage') && !value.trim()) {
+                  setAppliedQuery('');
+                }
+              }}
+              onSuggestionSelect={(suggestion) => {
+                const nextValue = String(suggestion.value || suggestion.label || '').trim();
+                setQuery(nextValue);
+                if (mode === 'attendance' || mode === 'web-app-usage') {
+                  setAppliedQuery(nextValue);
+                }
+              }}
+              onCommit={(value) => {
+                if (mode === 'attendance' || mode === 'web-app-usage') {
+                  setAppliedQuery(value);
+                }
+              }}
+              suggestions={employeeSearchSuggestions}
+              placeholder="Employee name"
+              emptyMessage="No employee names match this search."
+            />
+          </div>
+        )}
         <div>
           <FieldLabel>Employee</FieldLabel>
           <SelectInput value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value ? Number(event.target.value) : '')}>
@@ -594,32 +998,157 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             <MetricCard label="Tracked Time" value={formatDuration(filteredProjectTimeEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0))} hint="Project-linked time in scope" icon={TimerReset} accent="emerald" />
           </div>
 
+          {projectsEmployeeNameSearch ? (
+            <DataTable
+              title="Employee Work Focus"
+              description="Assigned task and completion stats for the current employee search."
+              rows={employeeFocusRows}
+              emptyMessage="No employees in this search have assigned work or tracked project activity in the selected range."
+              headerAction={renderPanelRefreshButton()}
+              columns={[
+                {
+                  key: 'employee',
+                  header: 'Employee',
+                  render: (row: any) => (
+                    <div>
+                      <p className="font-medium text-slate-950">{row.name}</p>
+                      <p className="text-xs text-slate-500">{row.email}</p>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'assigned_tasks',
+                  header: 'Assigned Tasks',
+                  render: (row: any) => (
+                    <div>
+                      <p className="font-medium text-slate-950">{row.assigned_task_count} task{row.assigned_task_count === 1 ? '' : 's'}</p>
+                      <p className="text-xs text-slate-500">{formatPreviewList(row.assigned_task_names, 'No assigned tasks')}</p>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'stats',
+                  header: 'Task Stats',
+                  render: (row: any) => (
+                    <div>
+                      <p className="font-medium text-slate-950">{row.completed_task_count} done / {row.open_task_count} open</p>
+                      <p className="text-xs text-slate-500">{row.completion_rate}% completion</p>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'projects',
+                  header: 'Projects',
+                  render: (row: any) => formatPreviewList(row.assigned_project_names, 'No linked project'),
+                },
+                {
+                  key: 'tracked',
+                  header: 'Tracked',
+                  render: (row: any) => formatDuration(row.tracked_seconds || 0),
+                },
+              ]}
+            />
+          ) : null}
+
+          {selectedProjectRow ? (
+            <DataTable
+              title="Selected Project - Employee Details"
+              description="Employee-level assignment and completion stats for the selected project."
+              rows={selectedProjectEmployeeRows}
+              emptyMessage="No assigned employees found for the selected project."
+              headerAction={renderPanelRefreshButton()}
+              columns={[
+                {
+                  key: 'employee',
+                  header: 'Employee',
+                  render: (row: any) => (
+                    <div>
+                      <p className="font-medium text-slate-950">{row.employee_name}</p>
+                      <p className="text-xs text-slate-500">{row.employee_email || 'No email available'}</p>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'assigned_tasks',
+                  header: 'Assigned Tasks',
+                  render: (row: any) => (
+                    <div>
+                      <p className="font-medium text-slate-950">{row.assigned_task_count}</p>
+                      <p className="text-xs text-slate-500">{formatPreviewList(row.assigned_task_names, 'No assigned tasks')}</p>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'task_stats',
+                  header: 'Task Stats',
+                  render: (row: any) => (
+                    <div>
+                      <p className="font-medium text-slate-950">{row.completed_task_count} done / {row.open_task_count} open</p>
+                      <p className="text-xs text-slate-500">{row.completion_rate}% completion</p>
+                    </div>
+                  ),
+                },
+                { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.tracked_seconds || 0) },
+              ]}
+            />
+          ) : null}
+
           <DataTable
             title="Project Overview"
-            description="Tracked duration, task volume, and current status by project."
-            rows={projectRows}
+            description="Project details, assignment coverage, and completion stats."
+            rows={hasSelectedProject && selectedProjectRow ? [selectedProjectRow] : projectRows}
             emptyMessage="No project data found."
             headerAction={renderPanelRefreshButton()}
             columns={[
               { key: 'project', header: 'Project', render: (row: any) => <div><p className="font-medium text-slate-950">{row.name}</p><p className="text-xs text-slate-500">{row.description || 'No description'}</p></div> },
               { key: 'status', header: 'Status', render: (row: any) => row.status },
+              {
+                key: 'assigned_employees',
+                header: 'Assigned Employees',
+                render: (row: any) => (
+                  <div>
+                    <p className="font-medium text-slate-950">{row.assigned_employee_count} employee{row.assigned_employee_count === 1 ? '' : 's'}</p>
+                    <p className="text-xs text-slate-500">{formatPreviewList(row.assigned_employees, 'No one assigned')}</p>
+                  </div>
+                ),
+              },
+              {
+                key: 'task_stats',
+                header: 'Task Stats',
+                render: (row: any) => (
+                  <div>
+                    <p className="font-medium text-slate-950">{row.completed_tasks} done / {row.open_tasks} open</p>
+                    <p className="text-xs text-slate-500">Todo {row.todo_tasks} and in-progress {row.in_progress_tasks}</p>
+                  </div>
+                ),
+              },
+              { key: 'completion', header: 'Completion', render: (row: any) => `${row.completion_rate}%` },
               { key: 'tasks', header: 'Tasks', render: (row: any) => row.task_count },
-              { key: 'open_tasks', header: 'Open', render: (row: any) => row.open_tasks },
               { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.tracked_seconds || 0) },
             ]}
           />
 
           <DataTable
             title="Task Allocation"
-            description="Task status and priority mapped to projects."
-            rows={filteredTasks}
+            description="Task status, assignees, and tracked duration mapped to projects."
+            rows={taskAllocationRows}
             emptyMessage="No tasks found."
             headerAction={renderPanelRefreshButton()}
             columns={[
-              { key: 'title', header: 'Task', render: (row: any) => <div><p className="font-medium text-slate-950">{row.title}</p><p className="text-xs text-slate-500">{row.project?.name || 'No project'}</p></div> },
+              { key: 'title', header: 'Task', render: (row: any) => <div><p className="font-medium text-slate-950">{row.title}</p><p className="text-xs text-slate-500">{row.project_name}</p></div> },
               { key: 'status', header: 'Status', render: (row: any) => row.status },
               { key: 'priority', header: 'Priority', render: (row: any) => row.priority },
-              { key: 'assignee', header: 'Assignee', render: (row: any) => row.assignee?.name || 'Unassigned' },
+              {
+                key: 'assignee',
+                header: 'Assignee',
+                render: (row: any) => (
+                  <div>
+                    <p className="font-medium text-slate-950">{row.assignee_name}</p>
+                    <p className="text-xs text-slate-500">{row.completion_label}</p>
+                  </div>
+                ),
+              },
+              { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.tracked_seconds || 0) },
               { key: 'due', header: 'Due Date', render: (row: any) => row.due_date ? row.due_date.split('T')[0] : 'No due date' },
             ]}
           />

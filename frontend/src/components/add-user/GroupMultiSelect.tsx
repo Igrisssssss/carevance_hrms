@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Search, Users } from 'lucide-react';
+import { FieldLabel } from '@/components/ui/FormField';
+import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
+import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
 import { InviteOption } from '@/services/addUser';
 import { PageEmptyState } from '@/components/ui/PageState';
 
@@ -9,7 +12,6 @@ interface GroupMultiSelectProps {
   onChange: (selectedIds: number[]) => void;
   isLoading?: boolean;
   errorMessage?: string;
-  onCreateNew?: () => void;
 }
 
 export default function GroupMultiSelect({
@@ -18,45 +20,45 @@ export default function GroupMultiSelect({
   onChange,
   isLoading = false,
   errorMessage,
-  onCreateNew,
 }: GroupMultiSelectProps) {
   const [query, setQuery] = useState('');
+  const groupSearchSuggestions = useMemo(
+    () =>
+      buildSearchSuggestions(options, (option) => ({
+        id: option.id,
+        label: option.name,
+        description: option.description,
+        keywords: [option.isDefault ? 'default' : 'custom'],
+      })),
+    [options]
+  );
 
   const filteredOptions = useMemo(
-    () => options.filter((option) => option.name.toLowerCase().includes(query.trim().toLowerCase())),
+    () => options.filter((option) => matchesSearchFilter(query, [option.name, option.description, option.isDefault ? 'default' : 'custom'])),
     [options, query]
   );
 
   return (
     <div>
-      <div className="mb-1.5 flex items-center justify-between gap-3">
-        <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Groups they&apos;re members of</label>
-        <span className="text-xs text-slate-400">{selectedIds.length} selected</span>
-        {onCreateNew ? (
-          <button
-            type="button"
-            onClick={onCreateNew}
-            className="text-xs font-semibold text-sky-600 transition hover:text-sky-700"
-          >
-            + Create new group
-          </button>
-        ) : null}
-      </div>
+      <FieldLabel hint={`${selectedIds.length} selected`}>Groups they&apos;re members of</FieldLabel>
       <div className="rounded-[24px] border border-slate-200/90 bg-white/90 p-4 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.2)]">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search groups"
-            className="w-full rounded-[18px] border border-slate-200 bg-slate-50 px-10 py-2.5 text-sm outline-none transition focus:border-sky-300 focus:bg-white"
-          />
-        </div>
+        <SearchSuggestInput
+          value={query}
+          onValueChange={setQuery}
+          suggestions={groupSearchSuggestions}
+          placeholder="Search groups"
+          className="border-slate-200 bg-slate-50 shadow-none focus:bg-white"
+          icon={<Search className="h-4 w-4" />}
+          emptyMessage="No groups match this search."
+        />
         {isLoading ? <p className="mt-3 text-sm text-slate-500">Loading available groups...</p> : null}
         {errorMessage ? <p className="mt-3 text-sm text-rose-600">{errorMessage}</p> : null}
         {!isLoading && !errorMessage && filteredOptions.length === 0 ? (
           <div className="mt-4">
-            <PageEmptyState title="No groups available" description="Create the first group here and it will be ready to assign immediately." />
+            <PageEmptyState
+              title={query.trim() ? 'No groups match this search' : 'No groups available'}
+              description={query.trim() ? 'Try another group name or clear the search to view all groups.' : 'Report groups can be added later; this selector is ready for existing teams.'}
+            />
           </div>
         ) : (
           <div className="mt-4 max-h-52 space-y-2 overflow-auto pr-1">

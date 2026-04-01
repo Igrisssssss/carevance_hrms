@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { reportApi, reportGroupApi, userApi } from '@/services/api';
+import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess } from '@/lib/permissions';
+import { deriveDateRangeFromPreset, getDateRangePresetLabel, type DateRangePreset } from '@/lib/dateRange';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import DataTable from '@/components/dashboard/DataTable';
@@ -16,7 +18,6 @@ import { BarChart3, Calendar, Clock, Download, TrendingUp, Users } from 'lucide-
 type OrgUser = { id: number; name: string; email: string; role: string };
 type Group = { id: number; name: string; users: OrgUser[] };
 
-const toDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
   const h = Math.floor(safe / 3600);
@@ -34,13 +35,25 @@ const formatLastActivity = (value?: string | null) => {
 export default function Reports() {
   const { user } = useAuth();
   const isAdmin = hasAdminAccess(user);
-  const [startDate, setStartDate] = useState(toDate(new Date(new Date().setDate(1))));
-  const [endDate, setEndDate] = useState(toDate(new Date()));
+  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
+  const [startDate, setStartDate] = useState(() => deriveDateRangeFromPreset('30d').startDate);
+  const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
   const [reportType, setReportType] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
   const [filterMode, setFilterMode] = useState<'team' | 'user' | 'group'>(isAdmin ? 'team' : 'user');
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([]);
   const [exportError, setExportError] = useState('');
+
+  const handleDatePresetChange = (preset: DateRangePreset) => {
+    setDatePreset(preset);
+    if (preset === 'custom') {
+      return;
+    }
+
+    const nextRange = deriveDateRangeFromPreset(preset);
+    setStartDate(nextRange.startDate);
+    setEndDate(nextRange.endDate);
+  };
 
   const reportScope: 'self' | 'organization' = isAdmin ? 'organization' : 'self';
 
@@ -199,15 +212,22 @@ export default function Reports() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-white/80 px-3 py-2.5 text-sm" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-white/80 px-3 py-2.5 text-sm" />
-          </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
+          <DateRangeFields
+            datePreset={datePreset}
+            onDatePresetChange={handleDatePresetChange}
+            startDate={startDate}
+            endDate={endDate}
+            onStartDateChange={(value) => {
+              setDatePreset('custom');
+              setStartDate(value);
+            }}
+            onEndDateChange={(value) => {
+              setDatePreset('custom');
+              setEndDate(value);
+            }}
+            inputClassName="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2.5 text-sm shadow-none"
+          />
           {isAdmin ? (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Report Type</label>
@@ -219,7 +239,7 @@ export default function Reports() {
             </div>
           ) : (
             <div className="flex items-end">
-              <div className="text-sm text-gray-500">Employee view only shows your own data.</div>
+              <div className="text-sm text-gray-500">Employee view shows your own data for {datePreset === 'custom' ? 'the custom range' : getDateRangePresetLabel(datePreset).toLowerCase()}.</div>
             </div>
           )}
         </div>

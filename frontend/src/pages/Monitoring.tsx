@@ -1,12 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { reportApi, screenshotApi } from '@/services/api';
+import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
+import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
-import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
+import { FieldLabel, SelectInput } from '@/components/ui/FormField';
+import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
+import { buildEmployeeSearchSuggestions } from '@/lib/searchSuggestions';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Activity, Camera, Search, Users } from 'lucide-react';
 
@@ -36,11 +40,23 @@ const arcPath = (cx: number, cy: number, r: number, startAngle: number, endAngle
 
 export default function Monitoring() {
   const [query, setQuery] = useState('');
-  const [startDate, setStartDate] = useState(new Date(new Date().setDate(1)).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
+  const [startDate, setStartDate] = useState(() => deriveDateRangeFromPreset('30d').startDate);
+  const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
   const [selectedUserId, setSelectedUserId] = useState<number | undefined>(undefined);
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const handleDatePresetChange = (preset: DateRangePreset) => {
+    setDatePreset(preset);
+    if (preset === 'custom') {
+      return;
+    }
+
+    const nextRange = deriveDateRangeFromPreset(preset);
+    setStartDate(nextRange.startDate);
+    setEndDate(nextRange.endDate);
+  };
 
   const fetchData = async (overrides?: { userId?: number }) => {
     setIsLoading(true);
@@ -76,6 +92,10 @@ export default function Monitoring() {
   const employeeRankings = data?.employee_rankings || null;
   const teamRankings = data?.team_rankings || { by_efficiency: [], top_productive: null, least_productive: null };
   const liveMonitoring = data?.live_monitoring || { selected_user: null, working_now: [], all_users: [] };
+  const employeeSearchSuggestions = useMemo(
+    () => buildEmployeeSearchSuggestions(data?.matched_users?.length ? data.matched_users : liveMonitoring?.all_users || []),
+    [data?.matched_users, liveMonitoring?.all_users]
+  );
   const selectedUserLive = liveMonitoring?.selected_user;
   const employeesActive = liveMonitoring?.employees_active || [];
   const employeesInactive = liveMonitoring?.employees_inactive || [];
@@ -108,28 +128,35 @@ export default function Monitoring() {
         description="Review live activity, productive vs unproductive tracking, screenshots, and team-wide efficiency signals."
       />
 
-      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-5">
-        <div className="md:col-span-2">
-          <FieldLabel>Employee Name / Email</FieldLabel>
-          <div className="relative">
-            <Search className="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <TextInput
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search employee..."
-              className="py-2.5 pl-9 pr-3"
-            />
-          </div>
+      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div className="md:col-span-2 xl:col-span-2">
+          <FieldLabel>Employee Name</FieldLabel>
+          <SearchSuggestInput
+            type="text"
+            value={query}
+            onValueChange={setQuery}
+            suggestions={employeeSearchSuggestions}
+            placeholder="Search employee name..."
+            className="py-2.5 pl-9 pr-3"
+            icon={<Search className="h-4 w-4" />}
+            emptyMessage="No employee names match this search."
+          />
         </div>
-        <div>
-          <FieldLabel>Start Date</FieldLabel>
-          <TextInput type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="py-2.5" />
-        </div>
-        <div>
-          <FieldLabel>End Date</FieldLabel>
-          <TextInput type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="py-2.5" />
-        </div>
+        <DateRangeFields
+          datePreset={datePreset}
+          onDatePresetChange={handleDatePresetChange}
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={(value) => {
+            setDatePreset('custom');
+            setStartDate(value);
+          }}
+          onEndDateChange={(value) => {
+            setDatePreset('custom');
+            setEndDate(value);
+          }}
+          inputClassName="py-2.5"
+        />
         <div className="flex items-end">
           <Button onClick={() => fetchData()} className="w-full">
             Apply

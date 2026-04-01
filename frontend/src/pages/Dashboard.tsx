@@ -22,7 +22,6 @@ export default function Dashboard() {
   const [activeTimer, setActiveTimer] = useState<TimeEntry | null>(null);
   const [todayEntries, setTodayEntries] = useState<TimeEntry[]>([]);
   const [todayTotal, setTodayTotal] = useState(0);
-  const [allTimeTotal, setAllTimeTotal] = useState(0);
   const [teamMembersCount, setTeamMembersCount] = useState(0);
   const [newMembersThisWeek, setNewMembersThisWeek] = useState(0);
   const [productivityScore, setProductivityScore] = useState(0);
@@ -51,7 +50,6 @@ export default function Dashboard() {
         setActiveTimer(data?.active_timer || null);
         setTodayEntries(data?.today_entries || []);
         setTodayTotal(Number(data?.today_total_elapsed_duration ?? data?.today_total_duration ?? 0) || 0);
-        setAllTimeTotal(Number(data?.all_time_total_elapsed_duration ?? data?.all_time_total_duration ?? 0) || 0);
         setTeamMembersCount(Number(data?.team_members_count) || 0);
         setNewMembersThisWeek(Number(data?.new_members_this_week) || 0);
         setProductivityScore(Number(data?.productivity_score) || 0);
@@ -87,6 +85,7 @@ export default function Dashboard() {
   const completedShift = workedSeconds >= shiftTargetSeconds;
   const completedSessions = todayEntries.filter((entry) => Boolean(entry.end_time)).length;
   const averageEntrySeconds = todayEntries.length > 0 ? Math.round(todayTotal / todayEntries.length) : 0;
+  const trackedTodaySeconds = Math.max(todayTotal, workedSeconds);
 
   const submitOvertimeProof = async () => {
     if (overtimeSeconds <= 0) {
@@ -211,7 +210,7 @@ export default function Dashboard() {
           </div>
           <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-cyan-50">
             <Clock className="h-4 w-4" />
-            Total tracked {formatDuration(allTimeTotal)}
+            Attendance worked {formatDuration(trackedTodaySeconds)}
           </div>
           {overtimeSeconds > 0 ? (
             <Button

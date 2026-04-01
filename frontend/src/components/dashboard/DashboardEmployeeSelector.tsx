@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, Search } from 'lucide-react';
+import { buildEmployeeSearchSuggestions, rankSearchSuggestions } from '@/lib/searchSuggestions';
 import { cn } from '@/utils/cn';
 
 interface DashboardEmployeeSelectorProps {
@@ -21,12 +22,11 @@ export default function DashboardEmployeeSelector({
 
   const selectedEmployee = employees.find((employee) => employee.id === value) || null;
   const filteredEmployees = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return employees;
+    if (!search.trim()) return employees;
 
-    return employees.filter((employee) =>
-      `${employee.name} ${employee.email}`.toLowerCase().includes(term)
-    );
+    return rankSearchSuggestions(buildEmployeeSearchSuggestions(employees), search, employees.length)
+      .map((suggestion) => suggestion.payload)
+      .filter((employee): employee is DashboardEmployeeSelectorProps['employees'][number] => Boolean(employee));
   }, [employees, search]);
 
   useEffect(() => {
@@ -76,7 +76,7 @@ export default function DashboardEmployeeSelector({
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search employee"
+                placeholder="Search employee name"
                 className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
               />
             </div>

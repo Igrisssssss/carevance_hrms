@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { activityApi, reportApi, screenshotApi, userApi } from '@/services/api';
+import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
 import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
@@ -10,7 +11,10 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
-import { FieldLabel, TextInput } from '@/components/ui/FormField';
+import { FieldLabel } from '@/components/ui/FormField';
+import { deriveDateRangeFromPreset, detectDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
+import { buildEmployeeSearchSuggestions } from '@/lib/searchSuggestions';
+import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { Activity, AppWindow, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
 
 type MonitoringWorkspaceMode = 'productive-time' | 'unproductive-time' | 'screenshots' | 'app-usage' | 'website-usage';
@@ -19,9 +23,7 @@ type SectionFeedback = {
   message: string;
 } | null;
 
-const today = new Date();
-const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-const toDate = (value: Date) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+const defaultDateRange = deriveDateRangeFromPreset('30d');
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
   const hours = Math.floor(safe / 3600);
@@ -117,9 +119,11 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [startDate, setStartDate] = useState(toDate(monthStart));
-  const [endDate, setEndDate] = useState(toDate(today));
+  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
+  const [startDate, setStartDate] = useState(defaultDateRange.startDate);
+  const [endDate, setEndDate] = useState(defaultDateRange.endDate);
   const [query, setQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
   const [screenshotPage, setScreenshotPage] = useState(1);
   const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
@@ -140,16 +144,23 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     const nextQuery = params.get('q');
     const nextUserId = params.get('user');
 
-    if (nextStartDate) {
+    if (nextStartDate && nextEndDate) {
       setStartDate(nextStartDate);
-    }
-
-    if (nextEndDate) {
       setEndDate(nextEndDate);
+      setDatePreset(detectDateRangePreset(nextStartDate, nextEndDate));
+    } else if (nextStartDate || nextEndDate) {
+      if (nextStartDate) {
+        setStartDate(nextStartDate);
+      }
+      if (nextEndDate) {
+        setEndDate(nextEndDate);
+      }
+      setDatePreset('custom');
     }
 
     if (nextQuery !== null) {
       setQuery(nextQuery);
+      setSearchInput(nextQuery);
     }
 
     if (nextUserId !== null) {
@@ -157,6 +168,17 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
       setSelectedUserId(Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : '');
     }
   }, [location.search]);
+
+  const handleDatePresetChange = (preset: DateRangePreset) => {
+    setDatePreset(preset);
+    if (preset === 'custom') {
+      return;
+    }
+
+    const nextRange = deriveDateRangeFromPreset(preset);
+    setStartDate(nextRange.startDate);
+    setEndDate(nextRange.endDate);
+  };
 
   const usersQuery = useQuery({
     queryKey: ['monitoring-users'],
@@ -168,6 +190,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
 
   const dataQuery = useQuery({
     queryKey: ['monitoring-workspace-data', mode, startDate, endDate, query, selectedUserId, screenshotPage],
+    placeholderData: (previousData) => previousData,
     queryFn: async () => {
       if (mode === 'productive-time' || mode === 'unproductive-time') {
         const response = await reportApi.employeeInsights({
@@ -243,12 +266,13 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     },
   });
 
-  const isLoading = usersQuery.isLoading || dataQuery.isLoading;
+  const isLoading = usersQuery.isLoading || (dataQuery.isLoading && !dataQuery.data);
   const isError = usersQuery.isError || dataQuery.isError;
   const users = useMemo(
     () => (usersQuery.data || []).filter((employee: any) => user?.role !== 'manager' || employee.role === 'employee'),
     [user?.role, usersQuery.data]
   );
+  const employeeSearchSuggestions = useMemo(() => buildEmployeeSearchSuggestions(users), [users]);
   const usersById = useMemo(
     () => new Map(users.map((employee: any) => [Number(employee.id), employee])),
     [users]
@@ -515,18 +539,41 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     <div className="space-y-6">
       <PageHeader eyebrow={pageTitle.eyebrow} title={pageTitle.title} description={pageTitle.description} />
 
-      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div>
-          <FieldLabel>Start Date</FieldLabel>
-          <TextInput type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
-        </div>
-        <div>
-          <FieldLabel>End Date</FieldLabel>
-          <TextInput type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
-        </div>
+      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <DateRangeFields
+          datePreset={datePreset}
+          onDatePresetChange={handleDatePresetChange}
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={(value) => {
+            setDatePreset('custom');
+            setStartDate(value);
+          }}
+          onEndDateChange={(value) => {
+            setDatePreset('custom');
+            setEndDate(value);
+          }}
+        />
         <div>
           <FieldLabel>Search</FieldLabel>
-          <TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Employee name or email" />
+          <SearchSuggestInput
+            value={searchInput}
+            onValueChange={(value) => {
+              setSearchInput(value);
+              if (!value.trim()) {
+                setQuery('');
+              }
+            }}
+            onSuggestionSelect={(suggestion) => {
+              const nextValue = String(suggestion.value || suggestion.label || '').trim();
+              setSearchInput(nextValue);
+              setQuery(nextValue);
+            }}
+            onCommit={(value) => setQuery(value)}
+            suggestions={employeeSearchSuggestions}
+            placeholder="Employee name"
+            emptyMessage="No employee names match this search."
+          />
         </div>
         <div>
           <FieldLabel>Employee</FieldLabel>

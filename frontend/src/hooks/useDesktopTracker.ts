@@ -110,10 +110,12 @@ export const useDesktopTracker = () => {
       activeSegmentRef.current = null;
       activeEntryRef.current = null;
       pendingIdleRewindRef.current.clear();
+      lastAutoStoppedEntryIdRef.current = null;
       activeScreenshotEntryIdRef.current = null;
       idleStopInFlightRef.current = false;
       return;
     }
+
     const runId = ++desktopTrackerRunSequence;
     const isCurrentRun = () => desktopTrackerRunSequence === runId;
     let inFlight = false;
@@ -229,6 +231,7 @@ export const useDesktopTracker = () => {
           activeSegmentRef.current = null;
           activeEntryRef.current = null;
           pendingIdleRewindRef.current.clear();
+          syncScreenshotInterval(null);
           return true;
         }
 
@@ -262,6 +265,7 @@ export const useDesktopTracker = () => {
       activeSegmentRef.current = null;
       activeEntryRef.current = null;
       pendingIdleRewindRef.current.clear();
+      syncScreenshotInterval(null);
 
       if (userId) {
         suppressAutoStart(userId);
@@ -473,6 +477,7 @@ export const useDesktopTracker = () => {
         return;
       }
 
+      activeEntryRef.current = null;
       syncScreenshotInterval(null);
     };
 

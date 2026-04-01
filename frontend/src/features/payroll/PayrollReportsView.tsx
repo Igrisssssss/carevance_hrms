@@ -7,7 +7,7 @@ import Button from '@/components/ui/Button';
 import { FieldLabel, TextInput } from '@/components/ui/FormField';
 import { PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { payrollWorkspaceApi } from '@/services/api';
-import { Building2, Clock3, Download, Landmark, Wallet } from 'lucide-react';
+import { Building2, Clock3, Download, Wallet } from 'lucide-react';
 import PayrollSectionCard from '@/features/payroll/components/PayrollSectionCard';
 import PayrollStatusBadge from '@/features/payroll/components/PayrollStatusBadge';
 import { defaultPayrollMonth, formatPayrollCurrency, formatPayrollDuration, formatPayrollMonth } from '@/features/payroll/utils';

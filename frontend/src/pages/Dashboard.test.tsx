@@ -74,4 +74,44 @@ describe('Dashboard', () => {
     expect(screen.queryByRole('button', { name: /sending|send overtime proof/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/start tracking/i)).not.toBeInTheDocument();
   });
+
+  it('shows attendance worked time instead of the smaller timer total when edits increase worked hours', async () => {
+    mocks.summaryMock.mockResolvedValue({
+      data: {
+        today_entries: [
+          {
+            id: 5,
+            start_time: '2026-03-11T09:00:00Z',
+            end_time: '2026-03-11T10:16:00Z',
+            duration: 4560,
+            description: 'Worked on QA fixes',
+            project: { id: 7, name: 'Core Platform' },
+          },
+        ],
+        today_total_elapsed_duration: 4560,
+        all_time_total_elapsed_duration: 4560,
+        team_members_count: 4,
+        new_members_this_week: 1,
+        productivity_score: 82,
+        active_projects_count: 2,
+        total_projects_count: 3,
+      },
+    });
+
+    mocks.attendanceTodayMock.mockResolvedValue({
+      data: {
+        shift_target_seconds: 28800,
+        record: {
+          worked_seconds: 34020,
+          is_checked_in: false,
+          shift_target_seconds: 28800,
+          attendance_date: '2026-03-11',
+        },
+      },
+    });
+
+    renderWithProviders(<Dashboard />);
+
+    expect(await screen.findByText(/attendance worked 9h 27m/i)).toBeInTheDocument();
+  });
 });

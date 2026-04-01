@@ -7,14 +7,20 @@ const baseControlClassName =
 export function FieldLabel({
   children,
   hint,
+  className,
+  labelClassName,
 }: {
   children: ReactNode;
   hint?: ReactNode;
+  className?: string;
+  labelClassName?: string;
 }) {
   return (
-    <div className="mb-1.5 flex items-center justify-between gap-3">
-      <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{children}</label>
-      {hint ? <span className="text-xs text-slate-400">{hint}</span> : null}
+    <div className={cn('mb-1.5 flex min-h-[1.2rem] items-center justify-between gap-3', className)}>
+      <label className={cn('block min-w-0 flex-1 truncate whitespace-nowrap text-xs font-semibold uppercase tracking-[0.2em] text-slate-500', labelClassName)}>
+        {children}
+      </label>
+      {hint ? <span className="shrink-0 text-xs text-slate-400">{hint}</span> : null}
     </div>
   );
 }

@@ -11,7 +11,7 @@ import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { payrollApi, payrollWorkspaceApi } from '@/services/api';
 import type { PayrollRecord, PayrollRunItem } from '@/types';
-import { AlertTriangle, CheckCircle2, Receipt, RefreshCw, Send, ShieldCheck, Users, Wallet } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Send, ShieldCheck, Users, Wallet } from 'lucide-react';
 import PayrollSectionCard from '@/features/payroll/components/PayrollSectionCard';
 import PayrollStatusBadge from '@/features/payroll/components/PayrollStatusBadge';
 import PayrollWarningPanel from '@/features/payroll/components/PayrollWarningPanel';

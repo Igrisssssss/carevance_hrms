@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, reportGroupApi, screenshotApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { canReviewApprovalRequest, hasAdminAccess } from '@/lib/permissions';
+import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import FilterPanel from '@/components/dashboard/FilterPanel';
@@ -10,6 +11,9 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
+import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
+import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
+import { buildEmployeeSearchSuggestions } from '@/lib/searchSuggestions';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Briefcase, CalendarDays, Clock, Eye, FolderKanban, Layers3, Users } from 'lucide-react';
 import type { UserProfile360 } from '@/types';
@@ -163,8 +167,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [query, setQuery] = useState('');
   const [countryFilter, setCountryFilter] = useState('ALL');
   const [calendarScope, setCalendarScope] = useState<'selected' | 'overall'>('selected');
-  const [startDate, setStartDate] = useState(formatLocalDate(new Date(new Date().setDate(1))));
-  const [endDate, setEndDate] = useState(formatLocalDate(new Date()));
+  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
+  const [startDate, setStartDate] = useState(() => deriveDateRangeFromPreset('30d').startDate);
+  const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
   const [rows, setRows] = useState<any[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [workingDays, setWorkingDays] = useState(0);
@@ -235,6 +240,21 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const isAdmin = hasAdminAccess(user);
   const canSeeAttendanceMonitoring = isAdmin;
+  const employeeSearchSuggestions = useMemo(
+    () => buildEmployeeSearchSuggestions(rows.map((row) => row.user).filter(Boolean)),
+    [rows]
+  );
+  const handleDatePresetChange = (preset: DateRangePreset) => {
+    setDatePreset(preset);
+    if (preset === 'custom') {
+      return;
+    }
+
+    const nextRange = deriveDateRangeFromPreset(preset);
+    setStartDate(nextRange.startDate);
+    setEndDate(nextRange.endDate);
+  };
+
   const setPunchFeedback = (nextMessage = '', nextError = '') => {
     if (nextMessage) {
       setPunchFeedbackState({ tone: 'success', message: nextMessage });
@@ -1012,23 +1032,31 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     <div className="space-y-6 animate-fade-in">
       <PageHeader eyebrow="Attendance operations" title="Attendance" description={isAdmin ? 'Track attendance, punches, leave, and overtime requests across the team.' : 'Review your attendance, punches, leave requests, and overtime history.'} />
 
-      <FilterPanel className={`grid grid-cols-1 gap-3 ${isAdmin ? 'md:grid-cols-6' : 'md:grid-cols-3'}`}>
-        <div>
-          <FieldLabel>Start Date</FieldLabel>
-          <TextInput type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-        </div>
-        <div>
-          <FieldLabel>End Date</FieldLabel>
-          <TextInput type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-        </div>
+      <FilterPanel className={`grid grid-cols-1 gap-3 ${isAdmin ? 'md:grid-cols-7' : 'md:grid-cols-4'}`}>
+        <DateRangeFields
+          datePreset={datePreset}
+          onDatePresetChange={handleDatePresetChange}
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={(value) => {
+            setDatePreset('custom');
+            setStartDate(value);
+          }}
+          onEndDateChange={(value) => {
+            setDatePreset('custom');
+            setEndDate(value);
+          }}
+        />
         {isAdmin && (
           <div>
-            <FieldLabel>Employee Name/Email</FieldLabel>
-            <TextInput
+            <FieldLabel>Employee Name</FieldLabel>
+            <SearchSuggestInput
               type="text"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search employee..."
+              onValueChange={setQuery}
+              suggestions={employeeSearchSuggestions}
+              placeholder="Search employee name..."
+              emptyMessage="No employee names match this search."
             />
           </div>
         )}
