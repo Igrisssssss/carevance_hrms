@@ -13,7 +13,7 @@ import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasStrictAdminAccess } from '@/lib/permissions';
-import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
+import { buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
 import { KeyRound, MailPlus, ShieldCheck, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
@@ -52,6 +52,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const { organization, user } = useAuth();
   const queryClient = useQueryClient();
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [selectedUserSource, setSelectedUserSource] = useState<'picker' | 'search' | null>(null);
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [groupName, setGroupName] = useState('');
   const [groupMembers, setGroupMembers] = useState<number[]>([]);
@@ -216,8 +217,12 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     [users]
   );
   const filteredUsers = useMemo(() => {
+    if (selectedUserSource === 'search' && selectedUserId) {
+      return users.filter((item: any) => Number(item.id) === Number(selectedUserId));
+    }
+
     return users.filter((item: any) => matchesSearchFilter(employeeSearch, [item.name]));
-  }, [employeeSearch, users]);
+  }, [employeeSearch, selectedUserId, selectedUserSource, users]);
   const groups = groupsQuery.data || [];
   const members = membersQuery.data || [];
   const invitations = invitationsQuery.data || [];
@@ -280,7 +285,13 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
               <FieldLabel>Selected Employee</FieldLabel>
-              <SelectInput value={selectedUserId || ''} onChange={(event) => setSelectedUserId(event.target.value ? Number(event.target.value) : null)}>
+              <SelectInput
+                value={selectedUserId || ''}
+                onChange={(event) => {
+                  setSelectedUserId(event.target.value ? Number(event.target.value) : null);
+                  setSelectedUserSource(event.target.value ? 'picker' : null);
+                }}
+              >
                 {filteredUsers.map((user: any) => (
                   <option key={user.id} value={user.id}>
                     {user.name}
@@ -292,7 +303,26 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               <FieldLabel>Search Employee</FieldLabel>
               <SearchSuggestInput
                 value={employeeSearch}
-                onValueChange={setEmployeeSearch}
+                onValueChange={(value) => {
+                  setEmployeeSearch(value);
+
+                  if (
+                    selectedUserSource === 'search' &&
+                    normalizeSearchValue(value) !== normalizeSearchValue(selectedUser?.name || '')
+                  ) {
+                    setSelectedUserId(null);
+                    setSelectedUserSource(null);
+                  }
+                }}
+                onSuggestionSelect={(suggestion) => {
+                  const nextUserId = Number((suggestion.payload as any)?.id || suggestion.id || 0);
+                  setEmployeeSearch(getSuggestionDisplayValue(suggestion));
+
+                  if (Number.isFinite(nextUserId) && nextUserId > 0) {
+                    setSelectedUserId(nextUserId);
+                    setSelectedUserSource('search');
+                  }
+                }}
                 suggestions={employeeSearchSuggestions}
                 placeholder="Search by employee name"
                 emptyMessage="No employee names match this search."

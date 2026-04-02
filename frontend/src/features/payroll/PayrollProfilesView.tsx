@@ -9,7 +9,7 @@ import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
-import { buildEmployeeSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
+import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
 import { payrollWorkspaceApi } from '@/services/api';
 import type { PayrollProfile } from '@/types';
 import { Landmark, Receipt, UserRound, Wallet } from 'lucide-react';
@@ -38,6 +38,7 @@ export default function PayrollProfilesView() {
   const [draftUserId, setDraftUserId] = useState<number | undefined>(undefined);
   const [payrollMonth, setPayrollMonth] = useState(defaultPayrollMonth());
   const [search, setSearch] = useState('');
+  const [selectedSearchEmployeeId, setSelectedSearchEmployeeId] = useState<number | null>(null);
   const [filterType, setFilterType] = useState<'all' | 'configured' | 'missing'>('all');
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -56,16 +57,24 @@ export default function PayrollProfilesView() {
 
   const filteredProfiles = useMemo(
     () => profiles.filter((profile) => {
+      if (selectedSearchEmployeeId) {
+        return Number(profile.user_id) === Number(selectedSearchEmployeeId);
+      }
+
       return matchesSearchFilter(search, [profile.user?.name]);
     }),
-    [profiles, search]
+    [profiles, search, selectedSearchEmployeeId]
   );
 
   const filteredMissing = useMemo(
     () => missingEmployees.filter((employee) => {
+      if (selectedSearchEmployeeId) {
+        return Number(employee.id) === Number(selectedSearchEmployeeId);
+      }
+
       return matchesSearchFilter(search, [employee.name]);
     }),
-    [missingEmployees, search]
+    [missingEmployees, search, selectedSearchEmployeeId]
   );
 
   const selectedProfile = useMemo(
@@ -154,7 +163,21 @@ export default function PayrollProfilesView() {
           <FieldLabel>Search employee</FieldLabel>
           <SearchSuggestInput
             value={search}
-            onValueChange={setSearch}
+            onValueChange={(value) => {
+              setSearch(value);
+
+              const selectedEmployeeName =
+                employees.find((employee) => Number(employee.id) === Number(selectedSearchEmployeeId))?.name || '';
+
+              if (!value.trim() || normalizeSearchValue(value) !== normalizeSearchValue(selectedEmployeeName)) {
+                setSelectedSearchEmployeeId(null);
+              }
+            }}
+            onSuggestionSelect={(suggestion) => {
+              const nextEmployeeId = Number((suggestion.payload as any)?.id || 0);
+              setSearch(getSuggestionDisplayValue(suggestion));
+              setSelectedSearchEmployeeId(Number.isFinite(nextEmployeeId) && nextEmployeeId > 0 ? nextEmployeeId : null);
+            }}
             suggestions={employeeSearchSuggestions}
             placeholder="Search by employee name"
             emptyMessage="No employee names match this search."
@@ -169,7 +192,15 @@ export default function PayrollProfilesView() {
           </SelectInput>
         </div>
         <div className="flex items-end">
-          <Button variant="secondary" className="w-full" onClick={() => { setSearch(''); setFilterType('all'); }}>
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={() => {
+              setSearch('');
+              setSelectedSearchEmployeeId(null);
+              setFilterType('all');
+            }}
+          >
             Reset Filters
           </Button>
         </div>

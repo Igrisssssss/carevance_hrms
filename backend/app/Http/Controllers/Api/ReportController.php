@@ -13,6 +13,7 @@ use App\Models\Screenshot;
 use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Reports\ActivityProductivityService;
+use App\Services\Reports\ActivityDurationNormalizer;
 use App\Services\Reports\DashboardSummaryService;
 use App\Services\Reports\ReportPayloadBuilder;
 use App\Services\Reports\TimeBreakdownService;
@@ -25,6 +26,7 @@ class ReportController extends Controller
 {
     public function __construct(
         private readonly ActivityProductivityService $activityProductivityService,
+        private readonly ActivityDurationNormalizer $activityDurationNormalizer,
         private readonly DashboardSummaryService $dashboardSummaryService,
         private readonly ReportPayloadBuilder $reportPayloadBuilder,
         private readonly TimeBreakdownService $timeBreakdownService,
@@ -196,10 +198,11 @@ class ReportController extends Controller
             ->get();
 
         $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries);
-        $idleDuration = (int) Activity::where('user_id', $user->id)
+        $idleActivities = Activity::where('user_id', $user->id)
             ->where('type', 'idle')
             ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->sum('duration');
+            ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+        $idleDuration = $this->activityDurationNormalizer->sumIdleDuration($idleActivities);
         $timeBreakdown = $this->timeBreakdownService->build($trackedDuration, $idleDuration);
         $score = $this->timeBreakdownService->productivityScore($trackedDuration, $idleDuration);
 
@@ -337,8 +340,8 @@ class ReportController extends Controller
 
         $activities = Activity::whereIn('user_id', $userIds)
             ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->get(['user_id', 'type', 'duration', 'recorded_at']);
-        $idleActivities = $activities->where('type', 'idle')->values();
+            ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+        $idleActivities = $this->activityDurationNormalizer->collapseIdle($activities)->values();
 
         $activeUserIds = TimeEntry::whereIn('user_id', $userIds)
             ->whereNull('end_time')
@@ -385,8 +388,13 @@ class ReportController extends Controller
         }
 
         foreach ($idleActivities as $activity) {
-            $date = Carbon::parse($activity->recorded_at)->toDateString();
-            $key = (string) $activity->user_id.'|'.$date;
+            $recordedAt = data_get($activity, 'recorded_at');
+            if (!$recordedAt) {
+                continue;
+            }
+
+            $date = Carbon::parse($recordedAt)->toDateString();
+            $key = (string) data_get($activity, 'user_id', 0).'|'.$date;
 
             if (! isset($dayUserBuckets[$key])) {
                 $dayUserBuckets[$key] = [
@@ -396,7 +404,7 @@ class ReportController extends Controller
                 ];
             }
 
-            $dayUserBuckets[$key]['idle_duration'] += (int) ($activity->duration ?? 0);
+            $dayUserBuckets[$key]['idle_duration'] += (int) data_get($activity, 'duration', 0);
         }
 
         $byDay = collect($dayUserBuckets)
@@ -460,12 +468,14 @@ class ReportController extends Controller
             ->where('project_id', $project->id)
             ->whereBetween('start_time', [$startDate, $endDate])
             ->get();
-        $idleDuration = $entries->isEmpty()
-            ? 0
-            : (int) Activity::query()
+        $idleDuration = 0;
+        if ($entries->isNotEmpty()) {
+            $idleActivities = Activity::query()
                 ->whereIn('time_entry_id', $entries->pluck('id'))
                 ->where('type', 'idle')
-                ->sum('duration');
+                ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+            $idleDuration = $this->activityDurationNormalizer->sumIdleDuration($idleActivities);
+        }
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries),
             $idleDuration
@@ -874,14 +884,16 @@ class ReportController extends Controller
 
         $activities = Activity::where('user_id', $selectedUser->id)
             ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->get(['type', 'name', 'duration', 'recorded_at']);
+            ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+        $effectiveActivities = $this->activityProductivityService->collapseLogicalActivities($activities);
+        $effectiveIdleActivities = $this->activityDurationNormalizer->collapseIdle($activities);
 
-        $totalIdle = (int) $activities->where('type', 'idle')->sum('duration');
-        $idleCount = max(1, $activities->where('type', 'idle')->count());
+        $totalIdle = (int) $effectiveIdleActivities->sum('duration');
+        $idleCount = max(1, $effectiveIdleActivities->count());
         $avgIdle = (float) round($totalIdle / $idleCount, 2);
         $timeBreakdown = $this->timeBreakdownService->build($totalDuration, $totalIdle);
 
-        $activityBreakdown = $activities->groupBy('type')->map(function ($group, $type) {
+        $activityBreakdown = $effectiveActivities->groupBy('type')->map(function ($group, $type) {
             return [
                 'type' => $type,
                 'count' => $group->count(),
@@ -903,7 +915,8 @@ class ReportController extends Controller
             ? collect()
             : Activity::whereIn('user_id', $analyticsUserIds)
                 ->whereBetween('recorded_at', [$startDate, $endDate])
-                ->get(['user_id', 'type', 'name', 'duration']);
+                ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+        $effectiveOrganizationActivities = $this->activityProductivityService->collapseLogicalActivities($organizationActivities);
 
         $toolTotalsByKey = [];
         $perUserScore = [];
@@ -923,7 +936,7 @@ class ReportController extends Controller
             ];
         }
 
-        foreach ($organizationActivities as $item) {
+        foreach ($effectiveOrganizationActivities as $item) {
             $duration = max(0, (int) ($item->duration ?? 0));
             if ($duration <= 0) {
                 continue;

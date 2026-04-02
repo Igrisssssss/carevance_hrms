@@ -9,7 +9,7 @@ import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { Layers3, Sigma, Wallet } from 'lucide-react';
-import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
+import { buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
 import { payrollWorkspaceApi } from '@/services/api';
 import type { SalaryComponentMaster } from '@/types';
 import PayrollSectionCard from '@/features/payroll/components/PayrollSectionCard';
@@ -51,6 +51,7 @@ const componentCategories: SalaryComponentMaster['category'][] = ['basic', 'allo
 export default function PayrollComponentsView() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
+  const [selectedSearchComponentId, setSelectedSearchComponentId] = useState<number | null>(null);
   const [category, setCategory] = useState<string>('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [form, setForm] = useState<ComponentFormState>(emptyForm);
@@ -70,17 +71,22 @@ export default function PayrollComponentsView() {
         label: component.name,
         description: component.code,
         keywords: [component.category, component.value_type],
+        payload: component,
       })),
     [components]
   );
   const filteredComponents = useMemo(
     () => components.filter((component) => {
+      if (selectedSearchComponentId && Number(component.id) !== Number(selectedSearchComponentId)) {
+        return false;
+      }
+
       const matchesSearch = matchesSearchFilter(search, [component.name, component.code, component.category, component.value_type]);
       const matchesCategory = !category || component.category === category;
       const matchesActive = activeFilter === 'all' || (activeFilter === 'active' ? component.is_active : !component.is_active);
       return matchesSearch && matchesCategory && matchesActive;
     }),
-    [activeFilter, category, components, search]
+    [activeFilter, category, components, search, selectedSearchComponentId]
   );
 
   const selectedComponent = useMemo(
@@ -184,7 +190,26 @@ export default function PayrollComponentsView() {
           <FieldLabel>Search</FieldLabel>
           <SearchSuggestInput
             value={search}
-            onValueChange={setSearch}
+            onValueChange={(value) => {
+              setSearch(value);
+
+              const selectedComponentName =
+                components.find((component) => Number(component.id) === Number(selectedSearchComponentId))?.name || '';
+
+              if (!value.trim() || normalizeSearchValue(value) !== normalizeSearchValue(selectedComponentName)) {
+                setSelectedSearchComponentId(null);
+              }
+            }}
+            onSuggestionSelect={(suggestion) => {
+              const nextComponent = suggestion.payload as SalaryComponentMaster | undefined;
+              const nextComponentId = Number(nextComponent?.id || suggestion.id || 0);
+              setSearch(getSuggestionDisplayValue(suggestion));
+              setSelectedSearchComponentId(Number.isFinite(nextComponentId) && nextComponentId > 0 ? nextComponentId : null);
+
+              if (nextComponent) {
+                loadComponent(nextComponent);
+              }
+            }}
             suggestions={componentSearchSuggestions}
             placeholder="Search by component name or code"
             emptyMessage="No salary components match this search."
@@ -206,7 +231,16 @@ export default function PayrollComponentsView() {
           </SelectInput>
         </div>
         <div className="flex items-end">
-          <Button variant="secondary" className="w-full" onClick={() => { setSearch(''); setCategory(''); setActiveFilter('all'); }}>
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={() => {
+              setSearch('');
+              setSelectedSearchComponentId(null);
+              setCategory('');
+              setActiveFilter('all');
+            }}
+          >
             Reset Filters
           </Button>
         </div>

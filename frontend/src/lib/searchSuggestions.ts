@@ -20,12 +20,15 @@ type SuggestionBuilderResult<T> =
   | null
   | undefined;
 
-const normalizeSearchValue = (value: unknown) =>
+export const normalizeSearchValue = (value: unknown) =>
   String(value ?? '')
     .toLowerCase()
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+export const getSuggestionDisplayValue = <T>(suggestion: SearchSuggestionOption<T>) =>
+  String(suggestion.value || suggestion.label || '').trim();
 
 const tokenizeSearchValue = (value: unknown) =>
   normalizeSearchValue(value)

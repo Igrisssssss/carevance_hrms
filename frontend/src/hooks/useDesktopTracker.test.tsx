@@ -305,4 +305,61 @@ describe('useDesktopTracker', () => {
     expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
     expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
   });
+
+  it('recovers future screenshots when one screenshot capture call hangs', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let captureCallCount = 0;
+    mocks.captureScreenshotMock.mockImplementation(() => {
+      captureCallCount += 1;
+
+      if (captureCallCount === 1) {
+        return new Promise(() => {});
+      }
+
+      return Promise.resolve('data:image/png;base64,ZmFrZQ==');
+    });
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+    });
+
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(0);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 1000);
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+    });
+
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
+
+    errorSpy.mockRestore();
+  });
+
+  it('tracks browser activity duration from system-wide input even when the app window is not focused', async () => {
+    mocks.getActiveWindowContextMock.mockResolvedValue({
+      app: 'Google Chrome',
+      title: 'Instagram - Google Chrome',
+      url: null,
+    });
+    mocks.getSystemIdleSecondsMock.mockResolvedValue(0);
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 1000);
+    });
+
+    expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'url',
+      name: 'Instagram',
+      duration: 5,
+    }));
+  });
 });

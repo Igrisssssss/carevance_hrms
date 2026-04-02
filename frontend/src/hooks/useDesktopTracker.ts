@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { buildTrackedContextName } from '@/lib/activityProductivity';
 import { idleAutoStopThresholdSeconds, idleGuardIntervalMs, idleTrackThresholdSeconds } from '@/lib/runtimeConfig';
 import { isTrackedTimerUser } from '@/lib/permissions';
 import {
@@ -15,10 +16,31 @@ import type { TimeEntry } from '@/types';
 
 const ACTIVITY_TRACK_INTERVAL_MS = 5000;
 const SCREENSHOT_INTERVAL_MS = 3 * 60 * 1000;
+const SCREENSHOT_CAPTURE_TIMEOUT_MS = 15 * 1000;
+const SCREENSHOT_UPLOAD_TIMEOUT_MS = 30 * 1000;
 const IDLE_THRESHOLD_SECONDS = idleTrackThresholdSeconds;
 const IDLE_AUTO_STOP_THRESHOLD_SECONDS = Math.max(idleAutoStopThresholdSeconds, IDLE_THRESHOLD_SECONDS);
 const IDLE_GUARD_INTERVAL_MS = idleGuardIntervalMs;
 const BROWSER_APP_KEYWORDS = ['chrome', 'edge', 'firefox', 'brave', 'opera', 'safari', 'vivaldi'];
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, label: string) => {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+  }
+};
 
 const formatIdleDurationLabel = (seconds: number) => {
   const minutes = Math.floor(seconds / 60);
@@ -341,7 +363,7 @@ export const useDesktopTracker = () => {
         if (idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
           idleStopBlockedUntilMsRef.current = 0;
         }
-        const trackedWindowEnd = Math.min(now, Math.max(lastInputRef.current, previousTickAt));
+        const trackedWindowEnd = Math.min(now, Math.max(lastActivityAtMs, previousTickAt));
         const trackedSecondsThisTick = Math.max(
           0,
           Math.round((trackedWindowEnd - previousTickAt) / 1000)
@@ -350,12 +372,10 @@ export const useDesktopTracker = () => {
           ? await desktopApi.getActiveWindowContext()
           : null;
         const appName = String(activeContext?.app || '').trim();
-        const title = String(activeContext?.title || '').trim();
         const url = String(activeContext?.url || '').trim();
         const isBrowserApp = BROWSER_APP_KEYWORDS.some((keyword) => appName.toLowerCase().includes(keyword));
         const fallbackTitle = typeof document !== 'undefined' ? document.title : '';
-        const contextNameBase = url || [appName, title].filter(Boolean).join(' - ') || fallbackTitle || 'Active Input';
-        const contextName = contextNameBase.slice(0, 255);
+        const contextName = buildTrackedContextName(activeContext || {}) || fallbackTitle || 'Active Input';
         const recordedAt = new Date(now).toISOString();
         const activityType: 'app' | 'url' = url || isBrowserApp ? 'url' : 'app';
 
@@ -427,7 +447,7 @@ export const useDesktopTracker = () => {
             const response = await activityApi.create(payload);
             activeSegmentRef.current = {
               activityId: response.data.id,
-              durationSeconds: elapsedSeconds,
+              durationSeconds: trackedSecondsThisTick,
               signature,
               kind: 'tracked',
             };
@@ -484,12 +504,20 @@ export const useDesktopTracker = () => {
         }
 
         const now = Date.now();
-        const screenshotDataUrl = await desktopApi.captureScreenshot();
+        const screenshotDataUrl = await withTimeout(
+          desktopApi.captureScreenshot(),
+          SCREENSHOT_CAPTURE_TIMEOUT_MS,
+          'Desktop screenshot capture'
+        );
         if (!screenshotDataUrl) {
           return;
         }
 
-        await screenshotApi.upload(activeEntry.id, screenshotDataUrl, `capture-${now}.png`);
+        await withTimeout(
+          screenshotApi.upload(activeEntry.id, screenshotDataUrl, `capture-${now}.png`),
+          SCREENSHOT_UPLOAD_TIMEOUT_MS,
+          'Desktop screenshot upload'
+        );
       } catch (error) {
         console.error('Desktop tracker screenshot capture failed:', error);
       } finally {

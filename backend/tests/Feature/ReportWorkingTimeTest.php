@@ -110,6 +110,57 @@ class ReportWorkingTimeTest extends TestCase
             ->assertJsonPath('productivity_score', 75);
     }
 
+    public function test_duplicate_idle_snapshots_are_counted_once_in_time_breakdowns(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-03-16 11:15:00'));
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+            $entry = $this->createOpenEntryFor($employee);
+
+            Activity::create([
+                'user_id' => $employee->id,
+                'time_entry_id' => $entry->id,
+                'type' => 'idle',
+                'name' => 'System Idle - Visual Studio Code',
+                'duration' => 180,
+                'recorded_at' => '2026-03-16 11:03:00',
+            ]);
+
+            Activity::create([
+                'user_id' => $employee->id,
+                'time_entry_id' => $entry->id,
+                'type' => 'idle',
+                'name' => 'System Idle - Visual Studio Code',
+                'duration' => 240,
+                'recorded_at' => '2026-03-16 11:04:00',
+            ]);
+
+            Activity::create([
+                'user_id' => $employee->id,
+                'time_entry_id' => $entry->id,
+                'type' => 'idle',
+                'name' => 'System Idle - Visual Studio Code',
+                'duration' => 244,
+                'recorded_at' => '2026-03-16 11:04:05',
+            ]);
+
+            $this->getJson('/api/reports/overall?start_date=2026-03-16&end_date=2026-03-16&user_ids[]='.$employee->id, $headers)
+                ->assertOk()
+                ->assertJsonPath('summary.total_duration', 1800)
+                ->assertJsonPath('summary.working_duration', 1556)
+                ->assertJsonPath('summary.idle_duration', 244);
+
+            $this->getJson("/api/users/{$employee->id}/profile-360?start_date=2026-03-16&end_date=2026-03-16", $headers)
+                ->assertOk()
+                ->assertJsonPath('summary.total_duration', 1800)
+                ->assertJsonPath('summary.working_duration', 1556)
+                ->assertJsonPath('summary.idle_duration', 244);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_admin_overall_report_counts_live_duration_for_open_time_entries(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-03-16 11:15:00'));
@@ -203,6 +254,73 @@ class ReportWorkingTimeTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    public function test_employee_insights_classifies_browser_window_titles_as_unproductive_tools(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        $entry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-03-16 10:45:00',
+            'end_time' => '2026-03-16 11:00:00',
+            'duration' => 900,
+            'billable' => true,
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'time_entry_id' => $entry->id,
+            'type' => 'url',
+            'name' => 'Google Chrome - Instagram - Google Chrome',
+            'duration' => 300,
+            'recorded_at' => '2026-03-16 10:55:00',
+        ]);
+
+        $this->getJson("/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}", $headers)
+            ->assertOk()
+            ->assertJsonPath('selected_user_tools.unproductive.0.label', 'instagram.com')
+            ->assertJsonPath('selected_user_tools.unproductive.0.total_duration', 300)
+            ->assertJsonPath('organization_summary.unproductive_duration', 300)
+            ->assertJsonPath('employee_rankings.by_unproductive_duration.0.unproductive_duration', 300);
+    }
+
+    public function test_employee_insights_collapse_duplicate_tool_snapshots_before_reporting_totals(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        $entry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-03-16 10:45:00',
+            'end_time' => '2026-03-16 11:00:00',
+            'duration' => 900,
+            'billable' => true,
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'time_entry_id' => $entry->id,
+            'type' => 'url',
+            'name' => 'Instagram',
+            'duration' => 120,
+            'recorded_at' => '2026-03-16 10:57:00',
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'time_entry_id' => $entry->id,
+            'type' => 'url',
+            'name' => 'Instagram',
+            'duration' => 125,
+            'recorded_at' => '2026-03-16 10:57:04',
+        ]);
+
+        $this->getJson("/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}", $headers)
+            ->assertOk()
+            ->assertJsonPath('selected_user_tools.unproductive.0.label', 'instagram.com')
+            ->assertJsonPath('selected_user_tools.unproductive.0.total_duration', 125)
+            ->assertJsonPath('organization_summary.unproductive_duration', 125)
+            ->assertJsonPath('employee_rankings.by_unproductive_duration.0.unproductive_duration', 125);
     }
 
     public function test_admin_time_entries_index_returns_selected_employee_live_duration(): void

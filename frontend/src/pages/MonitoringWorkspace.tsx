@@ -12,8 +12,9 @@ import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel } from '@/components/ui/FormField';
+import { classifyActivityProductivity, normalizeActivityToolLabel } from '@/lib/activityProductivity';
 import { deriveDateRangeFromPreset, detectDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
-import { buildEmployeeSearchSuggestions } from '@/lib/searchSuggestions';
+import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue } from '@/lib/searchSuggestions';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { Activity, AppWindow, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
 
@@ -31,55 +32,6 @@ const formatDuration = (seconds: number) => {
   return `${hours}h ${minutes}m`;
 };
 const formatDateTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : 'No recent activity');
-const normalizeToolLabel = (name: string, activityType: string) => {
-  const trimmed = String(name || '').trim();
-  const normalizedType = String(activityType || '').trim().toLowerCase();
-
-  if (!trimmed) {
-    return normalizedType === 'url' ? 'unknown-site' : 'unknown-app';
-  }
-
-  if (normalizedType === 'url') {
-    try {
-      const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
-      return parsed.hostname.replace(/^www\./, '').toLowerCase();
-    } catch {
-      const match = trimmed.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
-      if (match?.[0]) {
-        return match[0].replace(/^www\./, '').toLowerCase();
-      }
-    }
-  }
-
-  return trimmed.slice(0, 120);
-};
-const classifyProductivity = (toolLabel: string, activityType: string) => {
-  const text = String(toolLabel || '').toLowerCase();
-  const normalizedType = String(activityType || '').trim().toLowerCase();
-  const productiveKeywords = [
-    'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'notion', 'slack', 'teams', 'zoom',
-    'vscode', 'visual studio', 'intellij', 'pycharm', 'webstorm', 'phpstorm', 'terminal',
-    'powershell', 'cmd', 'postman', 'figma', 'miro', 'docs.google', 'sheets.google', 'drive.google',
-    'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
-    'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint', 'meet.google',
-    'chat.openai', 'chatgpt', 'claude.ai', 'gemini.google', 'code', 'cursor', 'android studio',
-    'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat',
-  ];
-  const unproductiveKeywords = [
-    'youtube', 'netflix', 'primevideo', 'hotstar', 'spotify', 'instagram', 'facebook', 'twitter',
-    'x.com', 'reddit', 'snapchat', 'tiktok', 'discord', 'twitch', 'pinterest', '9gag',
-    'telegram', 'whatsapp', 'web.whatsapp', 'wa.me', 'fb.com', 'reels', 'shorts', 'cricbuzz', 'espncricinfo',
-  ];
-
-  const isProductive = productiveKeywords.some((keyword) => text.includes(keyword));
-  const isUnproductive = unproductiveKeywords.some((keyword) => text.includes(keyword));
-
-  if (isUnproductive && !isProductive) return 'unproductive';
-  if (isProductive && !isUnproductive) return 'productive';
-  if (normalizedType === 'idle') return 'neutral';
-  if (normalizedType === 'url' || normalizedType === 'app') return 'productive';
-  return 'neutral';
-};
 const productivityTone = (classification?: string | null) =>
   classification === 'productive'
     ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
@@ -125,6 +77,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const [query, setQuery] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
+  const [selectedUserSource, setSelectedUserSource] = useState<'picker' | 'search' | null>(null);
   const [screenshotPage, setScreenshotPage] = useState(1);
   const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
   const [screenshotFeedback, setScreenshotFeedback] = useState<SectionFeedback>(null);
@@ -165,7 +118,9 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
 
     if (nextUserId !== null) {
       const parsedUserId = Number(nextUserId);
-      setSelectedUserId(Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : '');
+      const hasValidUserId = Number.isFinite(parsedUserId) && parsedUserId > 0;
+      setSelectedUserId(hasValidUserId ? parsedUserId : '');
+      setSelectedUserSource(hasValidUserId ? 'picker' : null);
     }
   }, [location.search]);
 
@@ -277,6 +232,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     () => new Map(users.map((employee: any) => [Number(employee.id), employee])),
     [users]
   );
+  const selectedSearchEmployeeLabel = selectedUserId ? String(usersById.get(Number(selectedUserId))?.name || '').trim() : '';
   const pageTitle = modeCopy[mode];
   const selectedEmployeeLabel =
     users.find((employee: any) => employee.id === selectedUserId)?.name || 'All employees';
@@ -311,9 +267,9 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     const mapped = new Map<string, { label: string; duration: number; count: number; users: Set<string>; classification: string }>();
 
     activityRows.forEach((item: any) => {
-      const label = normalizeToolLabel(item.name || 'Unknown', item.type || (mode === 'website-usage' ? 'url' : 'app'));
+      const label = normalizeActivityToolLabel(item.name || 'Unknown', item.type || (mode === 'website-usage' ? 'url' : 'app'));
       const key = label || 'Unknown';
-      const classification = classifyProductivity(label, item.type || (mode === 'website-usage' ? 'url' : 'app'));
+      const classification = classifyActivityProductivity(label, item.type || (mode === 'website-usage' ? 'url' : 'app'));
       if (!mapped.has(key)) {
         mapped.set(key, { label: key, duration: 0, count: 0, users: new Set(), classification });
       }
@@ -337,8 +293,8 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
 
     activityRows.forEach((item: any) => {
       const employeeId = item.user?.id || 'unknown';
-      const website = normalizeToolLabel(item.name || 'Unknown', item.type || 'url');
-      const classification = classifyProductivity(website, item.type || 'url');
+      const website = normalizeActivityToolLabel(item.name || 'Unknown', item.type || 'url');
+      const classification = classifyActivityProductivity(website, item.type || 'url');
       const key = `${employeeId}:${website}:${classification}`;
 
       if (!mapped.has(key)) {
@@ -560,16 +516,44 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
             value={searchInput}
             onValueChange={(value) => {
               setSearchInput(value);
-              if (!value.trim()) {
+              const normalizedValue = normalizeSearchValue(value);
+              const normalizedSelectedLabel = normalizeSearchValue(selectedSearchEmployeeLabel);
+
+              if (!normalizedValue) {
                 setQuery('');
+                if (selectedUserSource === 'search') {
+                  setSelectedUserId('');
+                  setSelectedUserSource(null);
+                }
+                return;
+              }
+
+              if (selectedUserSource === 'search' && normalizedValue !== normalizedSelectedLabel) {
+                setSelectedUserId('');
+                setSelectedUserSource(null);
               }
             }}
             onSuggestionSelect={(suggestion) => {
-              const nextValue = String(suggestion.value || suggestion.label || '').trim();
+              const nextValue = getSuggestionDisplayValue(suggestion);
+              const nextUserId = Number((suggestion.payload as any)?.id || 0);
               setSearchInput(nextValue);
+              if (Number.isFinite(nextUserId) && nextUserId > 0) {
+                setSelectedUserId(nextUserId);
+                setSelectedUserSource('search');
+                setQuery('');
+                return;
+              }
+
+              setSelectedUserSource(null);
               setQuery(nextValue);
             }}
-            onCommit={(value) => setQuery(value)}
+            onCommit={(value) => {
+              if (selectedUserSource === 'search') {
+                setSelectedUserId('');
+                setSelectedUserSource(null);
+              }
+              setQuery(value);
+            }}
             suggestions={employeeSearchSuggestions}
             placeholder="Employee name"
             emptyMessage="No employee names match this search."
@@ -593,6 +577,9 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   type="button"
                   onClick={() => {
                     setSelectedUserId('');
+                    setSelectedUserSource(null);
+                    setSearchInput('');
+                    setQuery('');
                     setEmployeeMenuOpen(false);
                   }}
                   className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-slate-700 transition hover:bg-sky-50"
@@ -607,6 +594,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                       type="button"
                       onClick={() => {
                         setSelectedUserId(Number(employee.id));
+                        setSelectedUserSource('picker');
                         setEmployeeMenuOpen(false);
                       }}
                       className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-slate-700 transition hover:bg-sky-50"
@@ -1083,7 +1071,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
               { key: 'recorded_at', header: 'When', render: (row: any) => new Date(row.recorded_at).toLocaleString() },
               { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
               { key: 'name', header: 'Name', render: (row: any) => row.name },
-              { key: 'classification', header: 'Productivity', render: (row: any) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(classifyProductivity(normalizeToolLabel(row.name || '', row.type || 'app'), row.type || 'app'))}`}>{classifyProductivity(normalizeToolLabel(row.name || '', row.type || 'app'), row.type || 'app')}</span> },
+              { key: 'classification', header: 'Productivity', render: (row: any) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(classifyActivityProductivity(normalizeActivityToolLabel(row.name || '', row.type || 'app'), row.type || 'app'))}`}>{classifyActivityProductivity(normalizeActivityToolLabel(row.name || '', row.type || 'app'), row.type || 'app')}</span> },
               { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
             ]}
           />

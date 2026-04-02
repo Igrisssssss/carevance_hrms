@@ -27,6 +27,7 @@ import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState } from '@/components/ui/PageState';
 import { useAuth } from '@/contexts/AuthContext';
+import { classifyActivityProductivity, normalizeActivityToolLabel } from '@/lib/activityProductivity';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
   Activity,
@@ -55,6 +56,11 @@ interface PersistedFilterState {
   datePreset: DatePreset;
   startDate: string;
   endDate: string;
+}
+
+interface RequestResult<T> {
+  value: T;
+  warning: string | null;
 }
 
 const FILTER_STORAGE_KEY = 'admin-dashboard-filters';
@@ -120,57 +126,6 @@ const percentage = (value: number, total: number) => {
   return Math.round((value / total) * 100);
 };
 
-const normalizeToolLabel = (name: string, activityType: string) => {
-  const trimmed = String(name || '').trim();
-  const normalizedType = String(activityType || '').toLowerCase();
-
-  if (!trimmed) {
-    return normalizedType === 'url' ? 'unknown-site' : 'unknown-app';
-  }
-
-  if (normalizedType === 'url') {
-    try {
-      const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
-      return parsed.hostname.replace(/^www\./, '').toLowerCase();
-    } catch {
-      const match = trimmed.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
-      if (match?.[0]) {
-        return match[0].replace(/^www\./, '').toLowerCase();
-      }
-    }
-  }
-
-  return trimmed.slice(0, 120);
-};
-
-const classifyProductivity = (toolLabel: string, activityType: string) => {
-  const text = String(toolLabel || '').toLowerCase();
-  const normalizedType = String(activityType || '').toLowerCase();
-  const productiveKeywords = [
-    'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'notion', 'slack', 'teams', 'zoom',
-    'vscode', 'visual studio', 'intellij', 'pycharm', 'webstorm', 'phpstorm', 'terminal',
-    'powershell', 'cmd', 'postman', 'figma', 'miro', 'docs.google', 'sheets.google', 'drive.google',
-    'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
-    'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint', 'meet.google',
-    'chat.openai', 'chatgpt', 'claude.ai', 'gemini.google', 'code', 'cursor', 'android studio',
-    'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat',
-  ];
-  const unproductiveKeywords = [
-    'youtube', 'netflix', 'primevideo', 'hotstar', 'spotify', 'instagram', 'facebook', 'twitter',
-    'x.com', 'reddit', 'snapchat', 'tiktok', 'discord', 'twitch', 'pinterest', '9gag',
-    'telegram', 'whatsapp', 'web.whatsapp', 'wa.me', 'fb.com', 'reels', 'shorts', 'cricbuzz', 'espncricinfo',
-  ];
-
-  const isProductive = productiveKeywords.some((keyword) => text.includes(keyword));
-  const isUnproductive = unproductiveKeywords.some((keyword) => text.includes(keyword));
-
-  if (isUnproductive && !isProductive) return 'unproductive';
-  if (isProductive && !isUnproductive) return 'productive';
-  if (normalizedType === 'idle') return 'neutral';
-  if (normalizedType === 'url' || normalizedType === 'app') return 'productive';
-  return 'neutral';
-};
-
 const productivityTone = (classification?: string | null) =>
   classification === 'productive'
     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -187,6 +142,32 @@ const defaultFilters = (): PersistedFilterState => {
     startDate: dates.startDate,
     endDate: dates.endDate,
   };
+};
+
+const getRequestWarningMessage = (label: string, error: any) => {
+  const message = error?.response?.data?.message || error?.message;
+  return message ? `${label}: ${message}` : `${label} is temporarily unavailable.`;
+};
+
+const withDashboardFallback = async <T,>(
+  label: string,
+  request: Promise<any>,
+  fallback: T,
+  select: (response: any) => T
+): Promise<RequestResult<T>> => {
+  try {
+    const response = await request;
+    return {
+      value: select(response),
+      warning: null,
+    };
+  } catch (error: any) {
+    console.error(`[admin-dashboard] ${label} request failed`, error);
+    return {
+      value: fallback,
+      warning: getRequestWarningMessage(label, error),
+    };
+  }
 };
 
 function DashboardSkeleton() {
@@ -382,55 +363,139 @@ export default function AdminDashboard() {
     enabled: filters.scope === 'organization' && usersQuery.isSuccess,
     queryFn: async () => {
       const payrollMonth = filters.endDate.slice(0, 7);
-      const organizationTimeEntryResponses = organizationUsers.length === 0
+      const organizationTimeEntryResults = organizationUsers.length === 0
         ? []
         : await Promise.all(
             organizationUsers.map((user: any) =>
-              timeEntryApi.getAll({
-                user_id: Number(user.id),
-                start_date: filters.startDate,
-                end_date: filters.endDate,
-                page: 1,
-                per_page: 500,
-              })
+              withDashboardFallback(
+                `Time entries for ${user.name || 'employee'}`,
+                timeEntryApi.getAll({
+                  user_id: Number(user.id),
+                  start_date: filters.startDate,
+                  end_date: filters.endDate,
+                  page: 1,
+                  per_page: 500,
+                }),
+                [],
+                (response) => response.data?.data || []
+              )
             )
           );
       const [
-        attendanceResponse,
-        overallResponse,
-        insightsResponse,
-        websiteActivityResponse,
-        leaveResponse,
-        timeEditResponse,
-        payrollResponse,
-        notificationsResponse,
-        groupsResponse,
-        tasksResponse,
+        attendanceResult,
+        overallResult,
+        insightsResult,
+        websiteActivityResult,
+        leaveResult,
+        timeEditResult,
+        payrollResult,
+        notificationsResult,
+        groupsResult,
+        tasksResult,
       ] = await Promise.all([
-        attendanceApi.summary({ start_date: filters.startDate, end_date: filters.endDate }),
-        reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate }),
-        reportApi.employeeInsights({ start_date: filters.startDate, end_date: filters.endDate }),
-        activityApi.getAll({ start_date: filters.startDate, end_date: filters.endDate, type: 'url', page: 1 }),
-        leaveApi.list({ status: 'pending' }),
-        attendanceTimeEditApi.list({ status: 'pending' }),
-        payrollApi.getRecords({ payroll_month: payrollMonth }),
-        notificationApi.list({ limit: 6 }),
-        reportGroupApi.list(),
-        taskApi.getAll({ status: 'done' }),
+        withDashboardFallback(
+          'Attendance summary',
+          attendanceApi.summary({ start_date: filters.startDate, end_date: filters.endDate }),
+          { data: [] },
+          (response) => response.data || { data: [] }
+        ),
+        withDashboardFallback(
+          'Overall report',
+          reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate }),
+          { summary: {}, by_user: [], by_day: [] },
+          (response) => response.data || { summary: {}, by_user: [], by_day: [] }
+        ),
+        withDashboardFallback(
+          'Employee insights',
+          reportApi.employeeInsights({ start_date: filters.startDate, end_date: filters.endDate }),
+          {
+            organization_summary: {},
+            live_monitoring: { employees_active: [], employees_inactive: [], employees_on_leave: [] },
+            team_rankings: { by_efficiency: [] },
+          },
+          (response) => response.data || {
+            organization_summary: {},
+            live_monitoring: { employees_active: [], employees_inactive: [], employees_on_leave: [] },
+            team_rankings: { by_efficiency: [] },
+          }
+        ),
+        withDashboardFallback(
+          'Website activity',
+          activityApi.getAll({ start_date: filters.startDate, end_date: filters.endDate, type: 'url', page: 1 }),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Pending leaves',
+          leaveApi.list({ status: 'pending' }),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Pending time edits',
+          attendanceTimeEditApi.list({ status: 'pending' }),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Payroll records',
+          payrollApi.getRecords({ payroll_month: payrollMonth }),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Notifications',
+          notificationApi.list({ limit: 6 }),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Groups',
+          reportGroupApi.list(),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Completed tasks',
+          taskApi.getAll({ status: 'done' }),
+          [],
+          (response) => response.data || []
+        ),
       ]);
 
+      const requestWarnings = [
+        attendanceResult.warning,
+        overallResult.warning,
+        insightsResult.warning,
+        websiteActivityResult.warning,
+        leaveResult.warning,
+        timeEditResult.warning,
+        payrollResult.warning,
+        notificationsResult.warning,
+        groupsResult.warning,
+        tasksResult.warning,
+      ].filter(Boolean) as string[];
+
+      const failedTimeEntryRequests = organizationTimeEntryResults.filter((result) => result.warning).length;
+      if (failedTimeEntryRequests > 0) {
+        requestWarnings.push(
+          `Time entries are unavailable for ${failedTimeEntryRequests} employee${failedTimeEntryRequests === 1 ? '' : 's'}.`
+        );
+      }
+
       return {
-        attendance: attendanceResponse.data,
-        overall: overallResponse.data,
-        insights: insightsResponse.data,
-        websiteActivity: websiteActivityResponse.data?.data || [],
-        timeEntries: organizationTimeEntryResponses.flatMap((response) => response.data?.data || []),
-        pendingLeaves: leaveResponse.data?.data || [],
-        pendingTimeEdits: timeEditResponse.data?.data || [],
-        payrollRecords: payrollResponse.data?.data || [],
-        notifications: notificationsResponse.data?.data || [],
-        groups: groupsResponse.data?.data || [],
-        completedTasks: tasksResponse.data || [],
+        attendance: attendanceResult.value,
+        overall: overallResult.value,
+        insights: insightsResult.value,
+        websiteActivity: websiteActivityResult.value,
+        timeEntries: organizationTimeEntryResults.flatMap((result) => result.value),
+        pendingLeaves: leaveResult.value,
+        pendingTimeEdits: timeEditResult.value,
+        payrollRecords: payrollResult.value,
+        notifications: notificationsResult.value,
+        groups: groupsResult.value,
+        completedTasks: tasksResult.value,
+        requestWarnings,
       };
     },
   });
@@ -442,29 +507,77 @@ export default function AdminDashboard() {
       const userId = Number(filters.selectedEmployeeId);
       const month = filters.endDate.slice(0, 7);
       const [
-        profileResponse,
-        insightsResponse,
-        overallResponse,
-        attendanceCalendarResponse,
-        timeEntriesResponse,
-        screenshotsResponse,
+        profileResult,
+        insightsResult,
+        overallResult,
+        attendanceCalendarResult,
+        timeEntriesResult,
+        screenshotsResult,
       ] = await Promise.all([
-        userApi.getProfile360(userId, { start_date: filters.startDate, end_date: filters.endDate }),
-        reportApi.employeeInsights({ start_date: filters.startDate, end_date: filters.endDate, user_id: userId }),
-        reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate, user_ids: [userId] }),
-        attendanceApi.calendar({ month, user_id: userId }),
-        timeEntryApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1 }),
-        screenshotApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1, per_page: 8 }),
+        withDashboardFallback(
+          'Employee profile',
+          userApi.getProfile360(userId, { start_date: filters.startDate, end_date: filters.endDate }),
+          { summary: {}, status: {} },
+          (response) => response.data || { summary: {}, status: {} }
+        ),
+        withDashboardFallback(
+          'Employee insights',
+          reportApi.employeeInsights({ start_date: filters.startDate, end_date: filters.endDate, user_id: userId }),
+          {
+            stats: {},
+            selected_user_tools: { productive: [], unproductive: [], neutral: [] },
+            live_monitoring: { selected_user: null },
+          },
+          (response) => response.data || {
+            stats: {},
+            selected_user_tools: { productive: [], unproductive: [], neutral: [] },
+            live_monitoring: { selected_user: null },
+          }
+        ),
+        withDashboardFallback(
+          'Employee overall report',
+          reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate, user_ids: [userId] }),
+          { summary: {}, by_user: [], by_day: [] },
+          (response) => response.data || { summary: {}, by_user: [], by_day: [] }
+        ),
+        withDashboardFallback(
+          'Attendance calendar',
+          attendanceApi.calendar({ month, user_id: userId }),
+          { summary: {} },
+          (response) => response.data || { summary: {} }
+        ),
+        withDashboardFallback(
+          'Employee time entries',
+          timeEntryApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1 }),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Employee screenshots',
+          screenshotApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1, per_page: 8 }),
+          { data: [], total: 0 },
+          (response) => response.data || { data: [], total: 0 }
+        ),
       ]);
 
+      const requestWarnings = [
+        profileResult.warning,
+        insightsResult.warning,
+        overallResult.warning,
+        attendanceCalendarResult.warning,
+        timeEntriesResult.warning,
+        screenshotsResult.warning,
+      ].filter(Boolean) as string[];
+
       return {
-        profile: profileResponse.data,
-        insights: insightsResponse.data,
-        overall: overallResponse.data,
-        calendar: attendanceCalendarResponse.data,
-        timeEntries: timeEntriesResponse.data?.data || [],
-        screenshots: screenshotsResponse.data?.data || [],
-        screenshotsTotal: Number(screenshotsResponse.data?.total || screenshotsResponse.data?.data?.length || 0),
+        profile: profileResult.value,
+        insights: insightsResult.value,
+        overall: overallResult.value,
+        calendar: attendanceCalendarResult.value,
+        timeEntries: timeEntriesResult.value,
+        screenshots: screenshotsResult.value?.data || [],
+        screenshotsTotal: Number(screenshotsResult.value?.total || screenshotsResult.value?.data?.length || 0),
+        requestWarnings,
       };
     },
   });
@@ -614,6 +727,12 @@ export default function AdminDashboard() {
   const selectedEmployee = selectableUsers.find((employee: any) => employee.id === filters.selectedEmployeeId) || null;
   const organizationData: any = organizationQuery.data;
   const employeeData: any = employeeQuery.data;
+  const dashboardWarnings = filters.scope === 'organization'
+    ? organizationData?.requestWarnings || []
+    : employeeData?.requestWarnings || [];
+  const dashboardWarningMessage = dashboardWarnings.length === 0
+    ? null
+    : `${dashboardWarnings.slice(0, 2).join(' ')}${dashboardWarnings.length > 2 ? ' Additional sections may still be unavailable.' : ''}`;
 
   const attendanceRows = organizationData?.attendance?.data || [];
   const overallSummary = organizationData?.overall?.summary || {};
@@ -855,9 +974,9 @@ export default function AdminDashboard() {
     }
   };
   const websiteUsageByEmployee = organizationWebsiteActivity.reduce((rows: any[], item: any) => {
-    const website = normalizeToolLabel(item.name || '', item.type || 'url');
+    const website = normalizeActivityToolLabel(item.name || '', item.type || 'url');
     const employeeName = item.user?.name || 'Unknown';
-    const classification = classifyProductivity(website, item.type || 'url');
+    const classification = classifyActivityProductivity(website, item.type || 'url');
     const existing = rows.find((row) => row.employeeName === employeeName && row.website === website && row.classification === classification);
 
     if (existing) {
@@ -927,6 +1046,7 @@ export default function AdminDashboard() {
         />
       </DashboardHeader>
 
+      {dashboardWarningMessage ? <FeedbackBanner tone="error" message={dashboardWarningMessage} /> : null}
       {exportFeedback ? <FeedbackBanner tone={exportFeedback.tone} message={exportFeedback.message} /> : null}
 
       {filters.scope === 'organization' ? (

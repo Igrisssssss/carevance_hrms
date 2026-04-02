@@ -10,7 +10,7 @@ import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput } from '@/components/ui/FormField';
 import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
-import { buildEmployeeSearchSuggestions } from '@/lib/searchSuggestions';
+import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue } from '@/lib/searchSuggestions';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Activity, Camera, Search, Users } from 'lucide-react';
 
@@ -44,6 +44,7 @@ export default function Monitoring() {
   const [startDate, setStartDate] = useState(() => deriveDateRangeFromPreset('30d').startDate);
   const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
   const [selectedUserId, setSelectedUserId] = useState<number | undefined>(undefined);
+  const [selectedUserSource, setSelectedUserSource] = useState<'picker' | 'search' | null>(null);
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -96,6 +97,9 @@ export default function Monitoring() {
     () => buildEmployeeSearchSuggestions(data?.matched_users?.length ? data.matched_users : liveMonitoring?.all_users || []),
     [data?.matched_users, liveMonitoring?.all_users]
   );
+  const selectedSearchEmployeeLabel = selectedUserId
+    ? String((data?.matched_users || liveMonitoring?.all_users || []).find((item: any) => Number(item?.id) === Number(selectedUserId))?.name || '').trim()
+    : '';
   const selectedUserLive = liveMonitoring?.selected_user;
   const employeesActive = liveMonitoring?.employees_active || [];
   const employeesInactive = liveMonitoring?.employees_inactive || [];
@@ -134,7 +138,23 @@ export default function Monitoring() {
           <SearchSuggestInput
             type="text"
             value={query}
-            onValueChange={setQuery}
+            onValueChange={(value) => {
+              setQuery(value);
+
+              if (selectedUserSource === 'search' && normalizeSearchValue(value) !== normalizeSearchValue(selectedSearchEmployeeLabel)) {
+                setSelectedUserId(undefined);
+                setSelectedUserSource(null);
+              }
+            }}
+            onSuggestionSelect={(suggestion) => {
+              const nextUserId = Number((suggestion.payload as any)?.id || 0);
+              const nextValue = getSuggestionDisplayValue(suggestion);
+              setQuery(nextValue);
+              if (Number.isFinite(nextUserId) && nextUserId > 0) {
+                setSelectedUserId(nextUserId);
+                setSelectedUserSource('search');
+              }
+            }}
             suggestions={employeeSearchSuggestions}
             placeholder="Search employee name..."
             className="py-2.5 pl-9 pr-3"
@@ -171,6 +191,7 @@ export default function Monitoring() {
           onChange={(e) => {
             const nextId = e.target.value ? Number(e.target.value) : undefined;
             setSelectedUserId(nextId);
+            setSelectedUserSource(nextId ? 'picker' : null);
             fetchData({ userId: nextId });
           }}
           className="md:w-96"

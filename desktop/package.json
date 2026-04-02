@@ -7,7 +7,7 @@
   "main": "main.cjs",
   "scripts": {
     "prepare:app-config": "node scripts/write-app-config.cjs",
-    "start": "npm run prepare:app-config && electron .",
+    "start": "npm run prepare:app-config && node scripts/run-electron.cjs .",
     "pack": "npm run prepare:app-config && electron-builder --dir",
     "dist:win": "npm run prepare:app-config && electron-builder --win nsis --config.win.artifactName=\"${productName}-Setup-${version}-${arch}.${ext}\"",
     "dist:portable": "npm run prepare:app-config && electron-builder --win portable --config.win.artifactName=\"${productName}-Portable-${version}-${arch}.${ext}\""
@@ -57,7 +57,7 @@
     }
   },
   "devDependencies": {
-    "electron": "^33.2.1",
+    "electron": "^33.4.11",
     "electron-builder": "^25.1.8"
   },
   "dependencies": {

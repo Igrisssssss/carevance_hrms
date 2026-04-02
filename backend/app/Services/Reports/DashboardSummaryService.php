@@ -11,6 +11,7 @@ use Carbon\Carbon;
 class DashboardSummaryService
 {
     public function __construct(
+        private readonly ActivityDurationNormalizer $activityDurationNormalizer,
         private readonly TimeBreakdownService $timeBreakdownService,
     ) {
     }
@@ -93,10 +94,11 @@ class DashboardSummaryService
             ->whereBetween('start_time', [$weekStart, $weekEnd])
             ->get(['id', 'start_time', 'end_time', 'duration', 'billable']);
         $weekTotal = (int) $weekEntries->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now));
-        $weekIdle = (int) Activity::where('user_id', $user->id)
+        $weekIdleActivities = Activity::where('user_id', $user->id)
             ->where('type', 'idle')
             ->whereBetween('recorded_at', [$weekStart, $weekEnd])
-            ->sum('duration');
+            ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+        $weekIdle = $this->activityDurationNormalizer->sumIdleDuration($weekIdleActivities);
         $productivityScore = $this->timeBreakdownService->productivityScore($weekTotal, $weekIdle);
 
         return [
