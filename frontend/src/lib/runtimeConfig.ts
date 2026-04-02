@@ -3,6 +3,9 @@ type AppRuntimeConfig = {
   VITE_WEB_APP_URL?: string;
   VITE_DESKTOP_DOWNLOAD_URL?: string;
   VITE_DESKTOP_DOWNLOAD_LABEL?: string;
+  VITE_IDLE_TRACK_THRESHOLD_SECONDS?: string;
+  VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS?: string;
+  VITE_IDLE_GUARD_INTERVAL_MS?: string;
 };
 
 const runtimeConfig: AppRuntimeConfig =
@@ -20,6 +23,26 @@ const resolveConfigValue = (runtimeValue?: string, buildValue?: string) => {
   }
 
   return '';
+};
+
+const resolveNumericConfigValue = (
+  runtimeValue: string | undefined,
+  buildValue: string | undefined,
+  fallback: number,
+  minimum: number
+) => {
+  const candidate = resolveConfigValue(runtimeValue, buildValue);
+  if (candidate === '') {
+    return fallback;
+  }
+
+  const parsed = Number(candidate);
+
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(minimum, Math.floor(parsed));
 };
 
 const resolveDefaultApiUrl = () => {
@@ -48,3 +71,24 @@ export const desktopDownloadUrl =
 export const desktopDownloadLabel =
   resolveConfigValue(runtimeConfig.VITE_DESKTOP_DOWNLOAD_LABEL, import.meta.env.VITE_DESKTOP_DOWNLOAD_LABEL) ||
   'Download for Windows';
+
+export const idleTrackThresholdSeconds = resolveNumericConfigValue(
+  runtimeConfig.VITE_IDLE_TRACK_THRESHOLD_SECONDS,
+  import.meta.env.VITE_IDLE_TRACK_THRESHOLD_SECONDS,
+  3 * 60,
+  30
+);
+
+export const idleAutoStopThresholdSeconds = resolveNumericConfigValue(
+  runtimeConfig.VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS,
+  import.meta.env.VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS,
+  5 * 60,
+  60
+);
+
+export const idleGuardIntervalMs = resolveNumericConfigValue(
+  runtimeConfig.VITE_IDLE_GUARD_INTERVAL_MS,
+  import.meta.env.VITE_IDLE_GUARD_INTERVAL_MS,
+  1000,
+  250
+);

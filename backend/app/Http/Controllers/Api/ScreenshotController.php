@@ -290,7 +290,7 @@ class ScreenshotController extends Controller
     {
         $path = basename((string) $screenshot->filename);
 
-        if ($path === '' || !$request->hasValidSignature() || !Storage::disk('screenshots')->exists($path)) {
+        if ($path === '' || !Storage::disk('screenshots')->exists($path)) {
             return response()->json(['message' => 'Screenshot not found'], 404);
         }
 

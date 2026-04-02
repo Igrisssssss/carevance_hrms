@@ -245,17 +245,69 @@ class AttendanceAndTimerFlowTest extends TestCase
             'recorded_at' => now(),
         ]);
 
-        $this->postJson('/api/time-entries/stop', [
+        $response = $this->postJson('/api/time-entries/stop', [
             'timer_slot' => 'primary',
             'auto_stopped_for_idle' => true,
             'idle_seconds' => 300,
         ], $headers)
             ->assertStatus(409)
-            ->assertJsonPath('message', 'Idle auto-stop validation failed because recent activity was detected.');
+            ->assertJsonPath('message', 'Idle auto-stop validation failed because recent activity was detected.')
+            ->assertJsonPath('error_code', 'IDLE_VALIDATION_FAILED');
+
+        $this->assertGreaterThanOrEqual(1, (int) $response->json('retry_after_seconds'));
+        $this->assertLessThanOrEqual(300, (int) $response->json('retry_after_seconds'));
 
         $timeEntry = TimeEntry::findOrFail($timeEntryId);
         $this->assertNull($timeEntry->end_time);
         Mail::assertNothingQueued();
+    }
+
+    public function test_idle_auto_stop_threshold_respects_configuration_value(): void
+    {
+        Mail::fake();
+        config()->set('time_tracking.idle_auto_stop_threshold_seconds', 240);
+
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $user = User::create([
+            'name' => 'Employee',
+            'email' => 'threshold@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $headers = $this->apiHeadersFor($user);
+
+        $startResponse = $this->postJson('/api/time-entries/start', [
+            'description' => 'Primary timer',
+            'timer_slot' => 'primary',
+        ], $headers)->assertCreated();
+
+        $timeEntryId = (int) $startResponse->json('id');
+        TimeEntry::query()->whereKey($timeEntryId)->update([
+            'start_time' => now()->subMinutes(10),
+        ]);
+
+        Activity::create([
+            'user_id' => $user->id,
+            'time_entry_id' => $timeEntryId,
+            'type' => 'idle',
+            'name' => 'System Idle - Visual Studio Code',
+            'duration' => 240,
+            'recorded_at' => now(),
+        ]);
+
+        $this->postJson('/api/time-entries/stop', [
+            'timer_slot' => 'primary',
+            'auto_stopped_for_idle' => true,
+            'idle_seconds' => 240,
+        ], $headers)->assertOk();
+
+        Mail::assertQueued(IdleTimerStoppedMail::class, function (IdleTimerStoppedMail $mail) use ($user) {
+            return $mail->hasTo($user->email)
+                && $mail->idleSeconds === 240
+                && $mail->idleDurationLabel === '4 minutes';
+        });
     }
 
     public function test_idle_auto_stop_email_duration_does_not_round_up_to_the_next_minute(): void

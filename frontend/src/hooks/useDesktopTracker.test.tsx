@@ -217,6 +217,41 @@ describe('useDesktopTracker', () => {
     });
   });
 
+  it('backs off idle auto-stop retries when backend returns 409 with retry_after_seconds', async () => {
+    const idleSince = Date.now();
+    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
+    mocks.stopMock
+      .mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: {
+            retry_after_seconds: 20,
+          },
+        },
+      })
+      .mockResolvedValue({ data: null });
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    });
+
+    expect(mocks.stopMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 1000);
+    });
+
+    expect(mocks.stopMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 1000);
+    });
+
+    expect(mocks.stopMock).toHaveBeenCalledTimes(2);
+  });
+
   it('captures screenshots on the single 3 minute interval while the timer is running', async () => {
     mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
 

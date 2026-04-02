@@ -42,6 +42,9 @@ DB_PASSWORD=your_password
 QUEUE_CONNECTION=database
 FILESYSTEM_DISK=local
 API_TOKEN_TTL_MINUTES=10080
+SCREENSHOT_URL_TTL_MINUTES=30
+IDLE_TRACK_THRESHOLD_SECONDS=180
+IDLE_AUTO_STOP_THRESHOLD_SECONDS=300
 DESKTOP_WINDOWS_DOWNLOAD_URL=https://github.com/<owner>/<repo>/releases/latest/download/TimeTrack%20Pro-Setup-1.0.0-x64.exe
 ATTENDANCE_LATE_AFTER=09:30:00
 ATTENDANCE_SHIFT_SECONDS=28800
@@ -53,6 +56,7 @@ ATTENDANCE_SHIFT_SECONDS=28800
 - The codebase uses the `personal_access_tokens` table but does not rely on Sanctum middleware wiring.
 - There is no separate broadcasting server configuration in this repo.
 - Screenshots are exposed through short-lived signed URLs, and chat attachments stream through authenticated endpoints.
+- Run `php artisan screenshots:health-check` and `php artisan idle:health-check` after deploys.
 
 ## Workspace Signup And SMTP Notes
 

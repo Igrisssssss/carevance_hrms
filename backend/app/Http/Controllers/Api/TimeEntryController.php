@@ -23,8 +23,6 @@ use Illuminate\Support\Facades\Log;
 
 class TimeEntryController extends Controller
 {
-    private const IDLE_AUTO_STOP_SECONDS = 300;
-
     public function __construct(
         private readonly GroupAccessService $groupAccessService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
@@ -281,6 +279,8 @@ class TimeEntryController extends Controller
 
                 return response()->json([
                     'message' => 'Idle auto-stop validation failed because recent activity was detected.',
+                    'error_code' => 'IDLE_VALIDATION_FAILED',
+                    'retry_after_seconds' => (int) ($idleContext['retry_after_seconds'] ?? 1),
                 ], 409);
             }
 
@@ -575,6 +575,7 @@ class TimeEntryController extends Controller
         int $reportedIdleSeconds,
         ?Carbon $reportedLastActivityAt = null,
     ): array {
+        $idleAutoStopThresholdSeconds = $this->idleAutoStopThresholdSeconds();
         $entry = $runningEntries->sortByDesc('start_time')->first();
         $sessionStartAt = $entry?->start_time ? Carbon::parse($entry->start_time) : $stoppedAt;
 
@@ -613,6 +614,7 @@ class TimeEntryController extends Controller
         $continuousIdleSeconds = max(0, $idleStartAt->diffInSeconds($stoppedAt));
         $trackedIdleSeconds = max($reportedIdleSeconds, (int) ($lastIdleActivity?->duration ?? 0));
         $resolvedIdleSeconds = min($continuousIdleSeconds, $trackedIdleSeconds);
+        $retryAfterSeconds = max(1, $idleAutoStopThresholdSeconds - $resolvedIdleSeconds);
         $totalIdleSeconds = (clone $activityQuery)
             ->where('type', 'idle')
             ->sum('duration');
@@ -632,15 +634,18 @@ class TimeEntryController extends Controller
             'tracked_idle_duration' => (int) ($lastIdleActivity?->duration ?? 0),
             'total_idle_duration' => (int) $totalIdleSeconds,
             'resolved_idle_duration' => $resolvedIdleSeconds,
+            'idle_auto_stop_threshold_seconds' => $idleAutoStopThresholdSeconds,
+            'retry_after_seconds' => $retryAfterSeconds,
             'timer_stop_reason' => 'continuous_idle_threshold',
             'email_sent' => false,
         ];
 
         return [
-            'eligible' => $trackedIdleSeconds >= self::IDLE_AUTO_STOP_SECONDS
-                && $continuousIdleSeconds >= self::IDLE_AUTO_STOP_SECONDS
-                && $resolvedIdleSeconds >= self::IDLE_AUTO_STOP_SECONDS,
+            'eligible' => $trackedIdleSeconds >= $idleAutoStopThresholdSeconds
+                && $continuousIdleSeconds >= $idleAutoStopThresholdSeconds
+                && $resolvedIdleSeconds >= $idleAutoStopThresholdSeconds,
             'resolved_idle_seconds' => $resolvedIdleSeconds,
+            'retry_after_seconds' => $retryAfterSeconds,
             'dedupe_key' => sprintf(
                 'idle-auto-stop:%d:%d:%s',
                 $userId,
@@ -649,5 +654,10 @@ class TimeEntryController extends Controller
             ),
             'log' => $log,
         ];
+    }
+
+    private function idleAutoStopThresholdSeconds(): int
+    {
+        return max(60, (int) config('time_tracking.idle_auto_stop_threshold_seconds', 300));
     }
 }

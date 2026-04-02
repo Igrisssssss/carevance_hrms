@@ -23,11 +23,24 @@ class Screenshot extends Model
 
     public function getPathAttribute(): string
     {
-        return URL::temporarySignedRoute(
+        $ttlMinutes = (int) config('screenshots.url_ttl_minutes', 30);
+        $ttlMinutes = max(1, $ttlMinutes);
+
+        $relativeSignedPath = URL::temporarySignedRoute(
             'screenshots.file',
-            now()->addMinutes((int) env('SCREENSHOT_URL_TTL_MINUTES', 5)),
-            ['screenshot' => $this->getKey()]
+            now()->addMinutes($ttlMinutes),
+            ['screenshot' => $this->getKey()],
+            absolute: false
         );
+
+        $request = request();
+        if ($request) {
+            return rtrim($request->getSchemeAndHttpHost(), '/').$relativeSignedPath;
+        }
+
+        $fallbackBaseUrl = rtrim((string) config('app.url', ''), '/');
+
+        return $fallbackBaseUrl !== '' ? $fallbackBaseUrl.$relativeSignedPath : $relativeSignedPath;
     }
 
     public function getRecordedAtAttribute(): string

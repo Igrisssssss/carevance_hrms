@@ -16,6 +16,132 @@ class ScreenshotSecurityTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_screenshot_path_uses_configured_ttl_minutes(): void
+    {
+        try {
+            Carbon::setTestNow(Carbon::parse('2026-04-02 11:00:00'));
+            config()->set('screenshots.url_ttl_minutes', 12);
+
+            $organization = Organization::create([
+                'name' => 'CareVance',
+                'slug' => 'carevance',
+            ]);
+
+            $user = User::create([
+                'name' => 'Employee User',
+                'email' => 'employee-ttl@example.com',
+                'password' => 'password123',
+                'role' => 'employee',
+                'organization_id' => $organization->id,
+            ]);
+
+            $timeEntry = TimeEntry::create([
+                'user_id' => $user->id,
+                'start_time' => now()->subHour(),
+                'end_time' => now(),
+                'duration' => 3600,
+                'billable' => true,
+            ]);
+
+            $screenshot = Screenshot::create([
+                'time_entry_id' => $timeEntry->id,
+                'filename' => 'ttl-check.png',
+            ]);
+
+            $query = [];
+            parse_str((string) parse_url($screenshot->path, PHP_URL_QUERY), $query);
+
+            $this->assertSame(now()->addMinutes(12)->timestamp, (int) ($query['expires'] ?? 0));
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_screenshot_path_uses_current_request_host_even_when_app_url_is_different(): void
+    {
+        Storage::fake('screenshots');
+        config()->set('app.url', 'https://wrong-host.invalid');
+
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $user = User::create([
+            'name' => 'Employee User',
+            'email' => 'employee-host@example.com',
+            'password' => 'password123',
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $timeEntry = TimeEntry::create([
+            'user_id' => $user->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'duration' => 3600,
+            'billable' => true,
+        ]);
+
+        $response = $this->post('/api/screenshots', [
+            'time_entry_id' => $timeEntry->id,
+            'image' => UploadedFile::fake()->create('capture.png', 64, 'image/png'),
+        ], $this->apiHeadersFor($user));
+
+        $response->assertCreated();
+        $this->assertStringContainsString('http://localhost:8000/api/screenshots/', (string) $response->json('path'));
+        $this->assertStringNotContainsString('wrong-host.invalid', (string) $response->json('path'));
+    }
+
+    public function test_expired_signed_screenshot_url_returns_helpful_forbidden_message(): void
+    {
+        Storage::fake('screenshots');
+
+        try {
+            Carbon::setTestNow(Carbon::parse('2026-04-02 11:00:00'));
+            config()->set('screenshots.url_ttl_minutes', 1);
+
+            $organization = Organization::create([
+                'name' => 'CareVance',
+                'slug' => 'carevance',
+            ]);
+
+            $user = User::create([
+                'name' => 'Employee User',
+                'email' => 'employee-expired-link@example.com',
+                'password' => 'password123',
+                'role' => 'employee',
+                'organization_id' => $organization->id,
+            ]);
+
+            $timeEntry = TimeEntry::create([
+                'user_id' => $user->id,
+                'start_time' => now()->subHour(),
+                'end_time' => now(),
+                'duration' => 3600,
+                'billable' => true,
+            ]);
+
+            $screenshot = Screenshot::create([
+                'time_entry_id' => $timeEntry->id,
+                'filename' => 'expired-link.png',
+            ]);
+
+            Storage::disk('screenshots')->put('expired-link.png', 'fake-image-content');
+
+            $signedUrl = $screenshot->path;
+
+            Carbon::setTestNow(now()->addMinutes(2));
+
+            $this->get($signedUrl)
+                ->assertForbidden()
+                ->assertJsonPath('message', 'Screenshot link expired. Refresh screenshots and try again.')
+                ->assertJsonPath('error_code', 'FORBIDDEN');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_screenshot_paths_are_signed_and_files_are_not_written_to_public_disk(): void
     {
         Storage::fake('screenshots');
@@ -131,6 +257,44 @@ class ScreenshotSecurityTest extends TestCase
 
         $screenshot = Screenshot::query()->latest('id')->firstOrFail();
         Storage::disk('screenshots')->assertExists($screenshot->filename);
+    }
+
+    public function test_desktop_screenshot_jpeg_data_url_upload_is_accepted(): void
+    {
+        Storage::fake('screenshots');
+
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $user = User::create([
+            'name' => 'Employee User',
+            'email' => 'employee-data-url-jpeg@example.com',
+            'password' => 'password123',
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $timeEntry = TimeEntry::create([
+            'user_id' => $user->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'duration' => 3600,
+            'billable' => true,
+        ]);
+
+        $response = $this->postJson('/api/screenshots', [
+            'time_entry_id' => $timeEntry->id,
+            'filename' => 'capture.jpg',
+            'image_data_url' => 'data:image/jpeg;base64,'.base64_encode('fake-jpeg-content'),
+        ], $this->apiHeadersFor($user));
+
+        $response->assertCreated();
+
+        $screenshot = Screenshot::query()->latest('id')->firstOrFail();
+        Storage::disk('screenshots')->assertExists($screenshot->filename);
+        $this->assertStringEndsWith('.jpg', (string) $screenshot->filename);
     }
 
     public function test_admin_screenshot_index_filters_by_employee_and_date_range(): void

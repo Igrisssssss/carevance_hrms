@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { idleAutoStopThresholdSeconds, idleGuardIntervalMs, idleTrackThresholdSeconds } from '@/lib/runtimeConfig';
 import { isTrackedTimerUser } from '@/lib/permissions';
 import {
   DESKTOP_TIMER_STARTED_EVENT,
@@ -13,12 +14,28 @@ import { activityApi, screenshotApi, timeEntryApi } from '@/services/api';
 import type { TimeEntry } from '@/types';
 
 const ACTIVITY_TRACK_INTERVAL_MS = 5000;
-const IDLE_GUARD_INTERVAL_MS = 1000;
 const SCREENSHOT_INTERVAL_MS = 3 * 60 * 1000;
-const IDLE_THRESHOLD_SECONDS = 3 * 60;
-const IDLE_AUTO_STOP_THRESHOLD_SECONDS = 5 * 60;
+const IDLE_THRESHOLD_SECONDS = idleTrackThresholdSeconds;
+const IDLE_AUTO_STOP_THRESHOLD_SECONDS = Math.max(idleAutoStopThresholdSeconds, IDLE_THRESHOLD_SECONDS);
+const IDLE_GUARD_INTERVAL_MS = idleGuardIntervalMs;
 const BROWSER_APP_KEYWORDS = ['chrome', 'edge', 'firefox', 'brave', 'opera', 'safari', 'vivaldi'];
-const IDLE_AUTO_STOP_MESSAGE = 'You were idle for 5 minutes, so your timer was stopped.';
+
+const formatIdleDurationLabel = (seconds: number) => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  if (minutes <= 0) {
+    return `${seconds} second${seconds === 1 ? '' : 's'}`;
+  }
+
+  if (remainingSeconds === 0) {
+    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+
+  return `${minutes} minute${minutes === 1 ? '' : 's'} ${remainingSeconds} second${remainingSeconds === 1 ? '' : 's'}`;
+};
+
+const IDLE_AUTO_STOP_MESSAGE = `You were idle for ${formatIdleDurationLabel(IDLE_AUTO_STOP_THRESHOLD_SECONDS)}, so your timer was stopped.`;
 const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
   'mousemove',
   'mousedown',
@@ -59,6 +76,7 @@ export const useDesktopTracker = () => {
   const lastAutoStoppedEntryIdRef = useRef<number | null>(null);
   const activeScreenshotEntryIdRef = useRef<number | null>(null);
   const idleStopInFlightRef = useRef(false);
+  const idleStopBlockedUntilMsRef = useRef(0);
 
   const clearTrackerIntervals = () => {
     if (activityIntervalRef.current !== null) {
@@ -113,6 +131,7 @@ export const useDesktopTracker = () => {
       lastAutoStoppedEntryIdRef.current = null;
       activeScreenshotEntryIdRef.current = null;
       idleStopInFlightRef.current = false;
+      idleStopBlockedUntilMsRef.current = 0;
       return;
     }
 
@@ -129,6 +148,7 @@ export const useDesktopTracker = () => {
     lastAutoStoppedEntryIdRef.current = null;
     activeScreenshotEntryIdRef.current = null;
     idleStopInFlightRef.current = false;
+    idleStopBlockedUntilMsRef.current = 0;
 
     const syncScreenshotInterval = (timeEntryId: number | null) => {
       if (activeScreenshotEntryIdRef.current === timeEntryId) {
@@ -198,10 +218,12 @@ export const useDesktopTracker = () => {
       lastActivityAtMs: number,
       recordedAt: string,
     ) => {
+      const now = Date.now();
       if (
         idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS
         || lastAutoStoppedEntryIdRef.current === activeEntry.id
         || idleStopInFlightRef.current
+        || now < idleStopBlockedUntilMsRef.current
       ) {
         return false;
       }
@@ -232,10 +254,17 @@ export const useDesktopTracker = () => {
           activeEntryRef.current = null;
           pendingIdleRewindRef.current.clear();
           syncScreenshotInterval(null);
+          idleStopBlockedUntilMsRef.current = 0;
           return true;
         }
 
         if (status === 409) {
+          const retryAfterSecondsRaw = Number(error?.response?.data?.retry_after_seconds);
+          const retryAfterSeconds = Number.isFinite(retryAfterSecondsRaw)
+            ? Math.max(1, Math.floor(retryAfterSecondsRaw))
+            : 15;
+          idleStopBlockedUntilMsRef.current = Date.now() + (retryAfterSeconds * 1000);
+
           if (activeSegmentRef.current?.kind === 'idle') {
             try {
               await activityApi.delete(activeSegmentRef.current.activityId);
@@ -251,6 +280,7 @@ export const useDesktopTracker = () => {
             employee_id: userId,
             timer_start_time: activeEntry.start_time,
             last_activity_time: new Date(lastInputRef.current).toISOString(),
+            retry_after_seconds: retryAfterSeconds,
           });
           return true;
         }
@@ -266,6 +296,7 @@ export const useDesktopTracker = () => {
       activeEntryRef.current = null;
       pendingIdleRewindRef.current.clear();
       syncScreenshotInterval(null);
+      idleStopBlockedUntilMsRef.current = 0;
 
       if (userId) {
         suppressAutoStart(userId);
@@ -307,6 +338,9 @@ export const useDesktopTracker = () => {
         syncScreenshotInterval(activeEntry.id);
 
         const { idleSeconds, lastActivityAtMs } = await getIdleState(now);
+        if (idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
+          idleStopBlockedUntilMsRef.current = 0;
+        }
         const trackedWindowEnd = Math.min(now, Math.max(lastInputRef.current, previousTickAt));
         const trackedSecondsThisTick = Math.max(
           0,
@@ -418,6 +452,7 @@ export const useDesktopTracker = () => {
       const now = Date.now();
       const { idleSeconds, lastActivityAtMs } = await getIdleState(now);
       if (idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
+        idleStopBlockedUntilMsRef.current = 0;
         return;
       }
 
@@ -496,6 +531,7 @@ export const useDesktopTracker = () => {
       activeEntryRef.current = null;
       activeScreenshotEntryIdRef.current = null;
       idleStopInFlightRef.current = false;
+      idleStopBlockedUntilMsRef.current = 0;
       window.removeEventListener(DESKTOP_TIMER_STARTED_EVENT, handleTimerStarted as EventListener);
       window.removeEventListener(DESKTOP_TIMER_STOPPED_EVENT, handleTimerStopped as EventListener);
       if (desktopTrackerRunSequence === runId) {

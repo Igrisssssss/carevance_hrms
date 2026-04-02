@@ -17,15 +17,32 @@ class IdleAutoStopMailService
             return false;
         }
 
-        if ($dedupeKey && ! Cache::add($dedupeKey, true, now()->addDay())) {
-            Log::info('Idle auto-stop email skipped because it was already dispatched.', [
-                'user_id' => $user->id,
-                'email' => $user->email,
-                'idle_seconds' => $idleSeconds,
-                'dedupe_key' => $dedupeKey,
-            ]);
+        $dedupeReserved = false;
 
-            return false;
+        if ($dedupeKey) {
+            try {
+                if (! Cache::add($dedupeKey, true, now()->addDay())) {
+                    Log::info('Idle auto-stop email skipped because it was already dispatched.', [
+                        'user_id' => $user->id,
+                        'email' => $user->email,
+                        'idle_seconds' => $idleSeconds,
+                        'dedupe_key' => $dedupeKey,
+                    ]);
+
+                    return false;
+                }
+
+                $dedupeReserved = true;
+            } catch (\Throwable $exception) {
+                Log::warning('Idle auto-stop email dedupe check failed. Continuing without dedupe.', [
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                    'idle_seconds' => $idleSeconds,
+                    'dedupe_key' => $dedupeKey,
+                    'exception' => $exception::class,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
         }
 
         $displayTimezone = $this->resolveDisplayTimezone($user);
@@ -62,8 +79,19 @@ class IdleAutoStopMailService
                 'message' => $exception->getMessage(),
             ]);
 
-            if ($dedupeKey) {
-                Cache::forget($dedupeKey);
+            if ($dedupeKey && $dedupeReserved) {
+                try {
+                    Cache::forget($dedupeKey);
+                } catch (\Throwable $cacheException) {
+                    Log::warning('Idle auto-stop email dedupe key cleanup failed.', [
+                        'user_id' => $user->id,
+                        'email' => $user->email,
+                        'idle_seconds' => $idleSeconds,
+                        'dedupe_key' => $dedupeKey,
+                        'exception' => $cacheException::class,
+                        'message' => $cacheException->getMessage(),
+                    ]);
+                }
             }
         }
 

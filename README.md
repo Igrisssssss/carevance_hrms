@@ -233,6 +233,8 @@ Installer download behavior:
 - `FILESYSTEM_DISK`
 - `API_TOKEN_TTL_MINUTES`
 - `SCREENSHOT_URL_TTL_MINUTES`
+- `IDLE_TRACK_THRESHOLD_SECONDS`
+- `IDLE_AUTO_STOP_THRESHOLD_SECONDS`
 - `RATE_LIMIT_*`
 - `DESKTOP_WINDOWS_DOWNLOAD_URL`
 - `ATTENDANCE_LATE_AFTER`
@@ -246,6 +248,9 @@ Installer download behavior:
 - `VITE_WEB_APP_URL`
 - `VITE_DESKTOP_DOWNLOAD_URL`
 - `VITE_DESKTOP_DOWNLOAD_LABEL`
+- `VITE_IDLE_TRACK_THRESHOLD_SECONDS`
+- `VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS`
+- `VITE_IDLE_GUARD_INTERVAL_MS`
 
 ### Desktop
 - `APP_URL`
@@ -262,6 +267,8 @@ Installer download behavior:
 ```bash
 cd backend
 php artisan test
+php artisan screenshots:health-check
+php artisan idle:health-check
 composer test:coverage
 composer route:test-matrix
 ```

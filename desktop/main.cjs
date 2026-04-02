@@ -1,4 +1,4 @@
-const { app, BrowserWindow, desktopCapturer, ipcMain, powerMonitor, shell } = require('electron');
+const { app, BrowserWindow, desktopCapturer, ipcMain, powerMonitor, screen, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { NsisUpdater } = require('electron-updater');
@@ -31,6 +31,9 @@ const APP_ICON = process.platform === 'win32'
   ? path.join(__dirname, 'assets', 'icon.ico')
   : path.join(__dirname, 'assets', 'icon.png');
 const APP_ID = 'com.carevance.tracker';
+const DEFAULT_SCREENSHOT_MAX_WIDTH = 1920;
+const DEFAULT_SCREENSHOT_MAX_HEIGHT = 1080;
+const DEFAULT_SCREENSHOT_JPEG_QUALITY = 82;
 let mainWindow = null;
 let allowWindowClose = false;
 let closePreparationInProgress = false;
@@ -54,6 +57,112 @@ app.setName('CareVance Tracker');
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_ID);
 }
+
+const parseIntEnv = (key, fallback, min, max) => {
+  const parsed = Number.parseInt(String(process.env[key] || ''), 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, parsed));
+};
+
+const SCREENSHOT_MAX_WIDTH = parseIntEnv('DESKTOP_SCREENSHOT_MAX_WIDTH', DEFAULT_SCREENSHOT_MAX_WIDTH, 640, 4096);
+const SCREENSHOT_MAX_HEIGHT = parseIntEnv('DESKTOP_SCREENSHOT_MAX_HEIGHT', DEFAULT_SCREENSHOT_MAX_HEIGHT, 360, 2160);
+const SCREENSHOT_JPEG_QUALITY = parseIntEnv('DESKTOP_SCREENSHOT_JPEG_QUALITY', DEFAULT_SCREENSHOT_JPEG_QUALITY, 60, 95);
+
+const buildScreenshotCaptureAttempts = () => {
+  const primaryDisplaySize = screen.getPrimaryDisplay()?.size || { width: SCREENSHOT_MAX_WIDTH, height: SCREENSHOT_MAX_HEIGHT };
+  const cappedWidth = Math.max(640, Math.min(primaryDisplaySize.width, SCREENSHOT_MAX_WIDTH));
+  const cappedHeight = Math.max(360, Math.min(primaryDisplaySize.height, SCREENSHOT_MAX_HEIGHT));
+  const attempts = [
+    { width: cappedWidth, height: cappedHeight },
+    { width: Math.max(1280, Math.floor(cappedWidth * 0.85)), height: Math.max(720, Math.floor(cappedHeight * 0.85)) },
+    { width: 1280, height: 720 },
+  ];
+
+  const uniqueBySize = new Map();
+  for (const attempt of attempts) {
+    uniqueBySize.set(`${attempt.width}x${attempt.height}`, attempt);
+  }
+
+  return Array.from(uniqueBySize.values());
+};
+
+const resolvePreferredDisplayId = () => {
+  try {
+    const cursorPoint = screen.getCursorScreenPoint();
+    const nearestDisplay = screen.getDisplayNearestPoint(cursorPoint);
+    if (nearestDisplay?.id !== undefined && nearestDisplay?.id !== null) {
+      return String(nearestDisplay.id);
+    }
+  } catch {
+    // Best-effort only.
+  }
+
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    if (primaryDisplay?.id !== undefined && primaryDisplay?.id !== null) {
+      return String(primaryDisplay.id);
+    }
+  } catch {
+    // Best-effort only.
+  }
+
+  return null;
+};
+
+const pickBestScreenSource = (sources, preferredDisplayId) => {
+  const nonEmptySources = sources.filter((source) => source?.thumbnail && !source.thumbnail.isEmpty());
+  if (!nonEmptySources.length) {
+    return null;
+  }
+
+  if (preferredDisplayId) {
+    const preferredSource = nonEmptySources.find((source) => String(source.display_id || '') === preferredDisplayId);
+    if (preferredSource) {
+      return preferredSource;
+    }
+  }
+
+  const primaryDisplayId = String(screen.getPrimaryDisplay()?.id ?? '');
+  if (primaryDisplayId !== '') {
+    const primarySource = nonEmptySources.find((source) => String(source.display_id || '') === primaryDisplayId);
+    if (primarySource) {
+      return primarySource;
+    }
+  }
+
+  return nonEmptySources
+    .slice()
+    .sort((left, right) => {
+      const leftSize = left.thumbnail.getSize();
+      const rightSize = right.thumbnail.getSize();
+
+      return (rightSize.width * rightSize.height) - (leftSize.width * leftSize.height);
+    })[0];
+};
+
+const thumbnailToDataUrl = (thumbnail) => {
+  if (!thumbnail || thumbnail.isEmpty()) {
+    return null;
+  }
+
+  try {
+    const jpegBuffer = thumbnail.toJPEG(SCREENSHOT_JPEG_QUALITY);
+    if (jpegBuffer?.length) {
+      return `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
+    }
+  } catch {
+    // Fall through to PNG encoding if JPEG conversion fails.
+  }
+
+  try {
+    return thumbnail.toDataURL();
+  } catch {
+    return null;
+  }
+};
 
 const resolveUpdateConfig = () => {
   const configuredUpdate = APP_CONFIG.update && typeof APP_CONFIG.update === 'object'
@@ -392,12 +501,32 @@ const initializeAutoUpdater = () => {
 };
 
 ipcMain.handle('desktop:capture-screenshot', async () => {
-  const sources = await desktopCapturer.getSources({
-    types: ['screen'],
-    thumbnailSize: { width: 1920, height: 1080 },
+  const preferredDisplayId = resolvePreferredDisplayId();
+  const attempts = buildScreenshotCaptureAttempts();
+
+  for (const attempt of attempts) {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: attempt.width, height: attempt.height },
+    });
+
+    if (!sources.length) {
+      continue;
+    }
+
+    const bestSource = pickBestScreenSource(sources, preferredDisplayId);
+    const dataUrl = thumbnailToDataUrl(bestSource?.thumbnail || null);
+    if (dataUrl) {
+      return dataUrl;
+    }
+  }
+
+  console.warn('[desktop-tracker] screenshot capture returned no usable source', {
+    preferredDisplayId,
+    attempts,
   });
-  if (!sources.length) return null;
-  return sources[0].thumbnail.toDataURL();
+
+  return null;
 });
 
 ipcMain.handle('desktop:get-system-idle-seconds', async () => {

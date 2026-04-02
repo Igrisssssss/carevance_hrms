@@ -17,6 +17,6 @@ Route::get('/invites/validate', [InviteController::class, 'validateInvite']);
 Route::post('/invites/accept', [InviteController::class, 'acceptInvite']);
 Route::get('/downloads/desktop/windows', [DesktopDownloadController::class, 'windows'])->middleware('throttle:desktop.download');
 Route::get('/screenshots/{screenshot}/file', [ScreenshotController::class, 'file'])
-    ->middleware('signed')
+    ->middleware('signed:relative')
     ->name('screenshots.file');
 Route::post('/payroll/webhooks/stripe', [PayrollController::class, 'stripeWebhook']);

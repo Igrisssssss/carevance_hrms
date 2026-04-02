@@ -48,6 +48,9 @@ This repo now includes `frontend/vercel.json` so React routes like `/dashboard`,
    - `VITE_WEB_APP_URL=https://YOUR_FRONTEND_DOMAIN`
    - `VITE_DESKTOP_DOWNLOAD_LABEL=Download for Windows`
    - Optional: `VITE_DESKTOP_DOWNLOAD_URL=https://YOUR_BACKEND_DOMAIN/api/downloads/desktop/windows`
+   - Optional: `VITE_IDLE_TRACK_THRESHOLD_SECONDS=180`
+   - Optional: `VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS=300`
+   - Optional: `VITE_IDLE_GUARD_INTERVAL_MS=1000`
 6. Deploy.
 
 ### What to test after Vercel deploy
@@ -194,7 +197,9 @@ QUEUE_CONNECTION=database
 FILESYSTEM_DISK=local
 
 API_TOKEN_TTL_MINUTES=10080
-SCREENSHOT_URL_TTL_MINUTES=5
+SCREENSHOT_URL_TTL_MINUTES=30
+IDLE_TRACK_THRESHOLD_SECONDS=180
+IDLE_AUTO_STOP_THRESHOLD_SECONDS=300
 
 DESKTOP_WINDOWS_DOWNLOAD_URL=https://github.com/YOUR_USERNAME/YOUR_REPO/releases/download/v1.0.1/CareVance-Tracker-Setup-1.0.1-x64.exe
 
@@ -221,7 +226,14 @@ php artisan config:clear
 php artisan cache:clear
 php artisan migrate --force
 php artisan optimize
+php artisan screenshots:health-check
+php artisan idle:health-check
 ```
+
+Important:
+
+- Do not run `php artisan key:generate` again after first production setup. Rotating `APP_KEY` invalidates existing signed screenshot URLs.
+- Keep `APP_URL` pointed to the real backend domain (for example `https://api.yourdomain.com`) before running `php artisan optimize`.
 
 ## 9. Configure Nginx for Laravel
 
@@ -413,6 +425,8 @@ Run these checks in order:
 11. Check Monitoring screenshots
 12. Check Reports timeline
 13. Send an invitation email and confirm queue delivery
+14. Run `php artisan screenshots:health-check` and confirm it prints `OK`
+15. Run `php artisan idle:health-check` and confirm it prints `OK`
 
 ## 16. Important risk to know now
 

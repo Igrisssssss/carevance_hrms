@@ -37,6 +37,9 @@ interface AppRuntimeConfig {
   VITE_WEB_APP_URL?: string;
   VITE_DESKTOP_DOWNLOAD_URL?: string;
   VITE_DESKTOP_DOWNLOAD_LABEL?: string;
+  VITE_IDLE_TRACK_THRESHOLD_SECONDS?: string;
+  VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS?: string;
+  VITE_IDLE_GUARD_INTERVAL_MS?: string;
 }
 
 interface Window {

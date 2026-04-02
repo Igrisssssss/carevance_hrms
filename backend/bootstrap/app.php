@@ -7,6 +7,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Exceptions\InvalidSignatureException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -73,6 +74,19 @@ return Application::configure(basePath: dirname(__DIR__))
                 'message' => 'Resource not found.',
                 'error_code' => 'NOT_FOUND',
             ], 404);
+        });
+
+        $exceptions->render(function (InvalidSignatureException $e, Request $request) {
+            if (!$request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Screenshot link expired. Refresh screenshots and try again.',
+                'error_code' => 'FORBIDDEN',
+                'request_id' => null,
+            ], 403);
         });
 
         $exceptions->render(function (\Throwable $e, Request $request) {

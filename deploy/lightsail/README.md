@@ -69,6 +69,8 @@ Edit `.env` and set at least:
 - `CORS_ALLOWED_ORIGINS`
 - `CORS_ALLOWED_ORIGIN_PATTERNS`
 - `DB_PASSWORD`
+- `IDLE_TRACK_THRESHOLD_SECONDS`
+- `IDLE_AUTO_STOP_THRESHOLD_SECONDS`
 - `MAIL_*` if you want invitations and mail
 - `STRIPE_*` if payouts will use Stripe
 
@@ -118,7 +120,14 @@ cd ~/carevance_hrms
 git pull
 cd deploy/lightsail
 docker compose up -d --build
+docker compose exec -T backend php artisan screenshots:health-check
+docker compose exec -T backend php artisan idle:health-check
 ```
+
+Important:
+
+- Do not regenerate `APP_KEY` on updates. Keep the same key from first deployment.
+- Keep `APP_URL` and `VITE_API_URL` aligned with the deployed backend URL on every update.
 
 ## Notes
 

@@ -40,6 +40,24 @@ $env:APP_URL="https://your-frontend-domain.com"
 npm start
 ```
 
+## Screenshot Capture Notes
+
+The desktop app captures the active display and now auto-falls back when the first screen source is empty (which can happen on some Windows maximize/fullscreen states).
+
+Optional capture tuning environment variables:
+
+```powershell
+$env:DESKTOP_SCREENSHOT_MAX_WIDTH="1920"
+$env:DESKTOP_SCREENSHOT_MAX_HEIGHT="1080"
+$env:DESKTOP_SCREENSHOT_JPEG_QUALITY="82"
+```
+
+If unset, these defaults are used:
+
+- max width: `1920`
+- max height: `1080`
+- JPEG quality: `82`
+
 When building the installer, set `APP_URL` before the build command so the packaged app opens your deployed frontend by default:
 
 ```powershell
