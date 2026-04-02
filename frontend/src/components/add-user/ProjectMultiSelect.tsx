@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { FolderKanban, Search } from 'lucide-react';
 import { FieldLabel } from '@/components/ui/FormField';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
-import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
+import { buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
 import { InviteOption } from '@/services/addUser';
 import { PageEmptyState } from '@/components/ui/PageState';
 
@@ -22,6 +22,7 @@ export default function ProjectMultiSelect({
   errorMessage,
 }: ProjectMultiSelectProps) {
   const [query, setQuery] = useState('');
+  const [selectedSearchProjectId, setSelectedSearchProjectId] = useState<number | null>(null);
   const projectSearchSuggestions = useMemo(
     () =>
       buildSearchSuggestions(options, (option) => ({
@@ -29,13 +30,21 @@ export default function ProjectMultiSelect({
         label: option.name,
         description: option.description,
         keywords: [option.isDefault ? 'default' : 'custom'],
+        payload: option,
       })),
     [options]
   );
 
   const filteredOptions = useMemo(
-    () => options.filter((option) => matchesSearchFilter(query, [option.name, option.description, option.isDefault ? 'default' : 'custom'])),
-    [options, query]
+    () =>
+      options.filter((option) => {
+        if (selectedSearchProjectId) {
+          return Number(option.id) === Number(selectedSearchProjectId);
+        }
+
+        return matchesSearchFilter(query, [option.name, option.description, option.isDefault ? 'default' : 'custom']);
+      }),
+    [options, query, selectedSearchProjectId]
   );
 
   return (
@@ -44,7 +53,19 @@ export default function ProjectMultiSelect({
       <div className="rounded-[24px] border border-slate-200/90 bg-white/90 p-4 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.2)]">
         <SearchSuggestInput
           value={query}
-          onValueChange={setQuery}
+          onValueChange={(value) => {
+            setQuery(value);
+
+            const selectedProjectName = options.find((option) => Number(option.id) === Number(selectedSearchProjectId))?.name || '';
+            if (!value.trim() || normalizeSearchValue(value) !== normalizeSearchValue(selectedProjectName)) {
+              setSelectedSearchProjectId(null);
+            }
+          }}
+          onSuggestionSelect={(suggestion) => {
+            const nextProjectId = Number((suggestion.payload as InviteOption | undefined)?.id || suggestion.id || 0);
+            setQuery(getSuggestionDisplayValue(suggestion));
+            setSelectedSearchProjectId(Number.isFinite(nextProjectId) && nextProjectId > 0 ? nextProjectId : null);
+          }}
           suggestions={projectSearchSuggestions}
           placeholder="Search projects"
           className="border-slate-200 bg-slate-50 shadow-none focus:bg-white"

@@ -15,6 +15,7 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Authorization\OrganizationRoleService;
 use App\Services\Audit\AuditLogService;
+use App\Services\Reports\ActivityDurationNormalizer;
 use App\Services\Reports\TimeBreakdownService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
@@ -26,6 +27,7 @@ class UserController extends Controller
 {
     public function __construct(
         private readonly AuditLogService $auditLogService,
+        private readonly ActivityDurationNormalizer $activityDurationNormalizer,
         private readonly TimeBreakdownService $timeBreakdownService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
         private readonly OrganizationRoleService $organizationRoleService,
@@ -294,9 +296,10 @@ class UserController extends Controller
             $idleQuery->whereDate('recorded_at', '<=', $request->end_date);
         }
 
+        $idleActivities = $idleQuery->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
-            (int) $idleQuery->sum('duration')
+            $this->activityDurationNormalizer->sumIdleDuration($idleActivities)
         );
 
         return response()->json([
@@ -376,14 +379,14 @@ class UserController extends Controller
             ->latest('created_at')
             ->first(['id', 'type', 'title', 'message', 'created_at', 'is_read']);
 
-        $idleDuration = (int) Activity::query()
+        $idleActivities = Activity::query()
             ->where('user_id', $user->id)
             ->where('type', 'idle')
             ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->sum('duration');
+            ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
-            $idleDuration
+            $this->activityDurationNormalizer->sumIdleDuration($idleActivities)
         );
         $approvedLeaveDays = (int) $leaveRequests
             ->where('status', 'approved')

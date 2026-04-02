@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Search, Users } from 'lucide-react';
 import { FieldLabel } from '@/components/ui/FormField';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
-import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
+import { buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
 import { InviteOption } from '@/services/addUser';
 import { PageEmptyState } from '@/components/ui/PageState';
 import Button from '@/components/ui/Button';
@@ -25,6 +25,7 @@ export default function GroupMultiSelect({
   onCreateNew,
 }: GroupMultiSelectProps) {
   const [query, setQuery] = useState('');
+  const [selectedSearchGroupId, setSelectedSearchGroupId] = useState<number | null>(null);
   const groupSearchSuggestions = useMemo(
     () =>
       buildSearchSuggestions(options, (option) => ({
@@ -32,13 +33,21 @@ export default function GroupMultiSelect({
         label: option.name,
         description: option.description,
         keywords: [option.isDefault ? 'default' : 'custom'],
+        payload: option,
       })),
     [options]
   );
 
   const filteredOptions = useMemo(
-    () => options.filter((option) => matchesSearchFilter(query, [option.name, option.description, option.isDefault ? 'default' : 'custom'])),
-    [options, query]
+    () =>
+      options.filter((option) => {
+        if (selectedSearchGroupId) {
+          return Number(option.id) === Number(selectedSearchGroupId);
+        }
+
+        return matchesSearchFilter(query, [option.name, option.description, option.isDefault ? 'default' : 'custom']);
+      }),
+    [options, query, selectedSearchGroupId]
   );
 
   return (
@@ -54,7 +63,19 @@ export default function GroupMultiSelect({
       <div className="rounded-[24px] border border-slate-200/90 bg-white/90 p-4 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.2)]">
         <SearchSuggestInput
           value={query}
-          onValueChange={setQuery}
+          onValueChange={(value) => {
+            setQuery(value);
+
+            const selectedGroupName = options.find((option) => Number(option.id) === Number(selectedSearchGroupId))?.name || '';
+            if (!value.trim() || normalizeSearchValue(value) !== normalizeSearchValue(selectedGroupName)) {
+              setSelectedSearchGroupId(null);
+            }
+          }}
+          onSuggestionSelect={(suggestion) => {
+            const nextGroupId = Number((suggestion.payload as InviteOption | undefined)?.id || suggestion.id || 0);
+            setQuery(getSuggestionDisplayValue(suggestion));
+            setSelectedSearchGroupId(Number.isFinite(nextGroupId) && nextGroupId > 0 ? nextGroupId : null);
+          }}
           suggestions={groupSearchSuggestions}
           placeholder="Search groups"
           className="border-slate-200 bg-slate-50 shadow-none focus:bg-white"

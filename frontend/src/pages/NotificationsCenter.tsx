@@ -9,7 +9,7 @@ import Button from '@/components/ui/Button';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
-import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
+import { buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
 import { BellRing, Send } from 'lucide-react';
 
 export default function NotificationsCenter() {
@@ -22,6 +22,7 @@ export default function NotificationsCenter() {
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'read'>('all');
   const [query, setQuery] = useState('');
+  const [selectedNotificationId, setSelectedNotificationId] = useState<number | null>(null);
   const [publishType, setPublishType] = useState<'announcement' | 'news'>('announcement');
   const [publishTitle, setPublishTitle] = useState('');
   const [publishMessage, setPublishMessage] = useState('');
@@ -58,8 +59,15 @@ export default function NotificationsCenter() {
   }, [typeFilter, statusFilter]);
 
   const filteredNotifications = useMemo(
-    () => notifications.filter((item) => matchesSearchFilter(query, [item.title, item.message, item.type])),
-    [notifications, query]
+    () =>
+      notifications.filter((item) => {
+        if (selectedNotificationId) {
+          return Number(item.id) === Number(selectedNotificationId);
+        }
+
+        return matchesSearchFilter(query, [item.title, item.message, item.type]);
+      }),
+    [notifications, query, selectedNotificationId]
   );
   const unreadCount = useMemo(() => filteredNotifications.filter((item) => !item.is_read).length, [filteredNotifications]);
   const notificationSearchSuggestions = useMemo(
@@ -69,6 +77,7 @@ export default function NotificationsCenter() {
         label: item.title,
         description: item.message,
         keywords: [item.type],
+        payload: item,
       })),
     [notifications]
   );
@@ -160,7 +169,21 @@ export default function NotificationsCenter() {
             <FieldLabel>Search</FieldLabel>
             <SearchSuggestInput
               value={query}
-              onValueChange={setQuery}
+              onValueChange={(value) => {
+                setQuery(value);
+
+                const selectedNotificationTitle =
+                  notifications.find((item) => Number(item.id) === Number(selectedNotificationId))?.title || '';
+
+                if (!value.trim() || normalizeSearchValue(value) !== normalizeSearchValue(selectedNotificationTitle)) {
+                  setSelectedNotificationId(null);
+                }
+              }}
+              onSuggestionSelect={(suggestion) => {
+                const nextNotificationId = Number((suggestion.payload as AppNotificationItem | undefined)?.id || suggestion.id || 0);
+                setQuery(getSuggestionDisplayValue(suggestion));
+                setSelectedNotificationId(Number.isFinite(nextNotificationId) && nextNotificationId > 0 ? nextNotificationId : null);
+              }}
               suggestions={notificationSearchSuggestions}
               placeholder="Search title or message"
               emptyMessage="No notification titles match this search."
