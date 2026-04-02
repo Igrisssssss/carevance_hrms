@@ -114,6 +114,7 @@ const modeCopy: Record<MonitoringWorkspaceMode, { title: string; description: st
     description: 'Track website usage frequency and duration from recorded browsing activity events.',
   },
 };
+const SCREENSHOT_REFRESH_INTERVAL_MS = 60_000;
 
 export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspaceMode }) {
   const { user } = useAuth();
@@ -130,6 +131,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const [screenshotFeedback, setScreenshotFeedback] = useState<SectionFeedback>(null);
   const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
   const [isDeletingScreenshots, setIsDeletingScreenshots] = useState(false);
+  const [refreshedScreenshotPaths, setRefreshedScreenshotPaths] = useState<Record<number, string>>({});
   const employeeMenuRef = useRef<HTMLDivElement | null>(null);
   const hasExplicitEmployeeSelection = selectedUserId !== '';
   const screenshotTotalQueryEnabled =
@@ -191,6 +193,8 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const dataQuery = useQuery({
     queryKey: ['monitoring-workspace-data', mode, startDate, endDate, query, selectedUserId, screenshotPage],
     placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: mode === 'screenshots',
+    refetchInterval: mode === 'screenshots' ? SCREENSHOT_REFRESH_INTERVAL_MS : false,
     queryFn: async () => {
       if (mode === 'productive-time' || mode === 'unproductive-time') {
         const response = await reportApi.employeeInsights({
@@ -305,6 +309,34 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     const resolvedUserId = Number(shot?.user_id || shot?.time_entry?.user_id || 0);
     return resolvedUserId > 0 ? usersById.get(resolvedUserId) || null : null;
   };
+  const resolveScreenshotPath = (shot: any) => {
+    const screenshotId = Number(shot?.id || 0);
+    const refreshedPath = screenshotId > 0 ? refreshedScreenshotPaths[screenshotId] : '';
+
+    return refreshedPath || String(shot?.path || '');
+  };
+  const refreshScreenshotPath = async (screenshotId: number) => {
+    if (!Number.isFinite(screenshotId) || screenshotId <= 0) {
+      return;
+    }
+
+    try {
+      const response = await screenshotApi.get(screenshotId);
+      const nextPath = String(response.data?.path || '').trim();
+
+      if (!nextPath) {
+        return;
+      }
+
+      setRefreshedScreenshotPaths((current) => (
+        current[screenshotId] === nextPath
+          ? current
+          : { ...current, [screenshotId]: nextPath }
+      ));
+    } catch (error) {
+      console.warn('Failed to refresh screenshot link:', error);
+    }
+  };
 
   const aggregatedActivity = useMemo(() => {
     if (mode !== 'app-usage' && mode !== 'website-usage') return [];
@@ -381,6 +413,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     setSelectedScreenshotIds([]);
     setIsDeletingScreenshots(false);
     setScreenshotPage(1);
+    setRefreshedScreenshotPaths({});
   }, [endDate, mode, query, selectedUserId, startDate]);
 
   const refreshWorkspaceData = async () => {
@@ -737,21 +770,37 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   </div>
                 ) : (
                   <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {recentEmployeeScreenshots.slice(0, 4).map((shot: any) => (
-                      <a
-                        key={shot.id}
-                        href={shot.path}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="overflow-hidden rounded-[20px] border border-slate-200 bg-white transition hover:border-sky-200"
-                      >
-                        <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-36 w-full object-cover" />
-                        <div className="space-y-2 p-3">
-                          <p className="text-sm font-medium text-slate-950">{formatDateTime(shot.recorded_at || shot.created_at)}</p>
-                          <p className="text-xs text-slate-500">{shot.filename || 'Captured screenshot'}</p>
-                        </div>
-                      </a>
-                    ))}
+                    {recentEmployeeScreenshots.slice(0, 4).map((shot: any) => {
+                      const shotPath = resolveScreenshotPath(shot);
+
+                      return (
+                        <a
+                          key={shot.id}
+                          href={shotPath}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="overflow-hidden rounded-[20px] border border-slate-200 bg-white transition hover:border-sky-200"
+                        >
+                          <img
+                            src={shotPath}
+                            alt={shot.filename || `Screenshot ${shot.id}`}
+                            className="h-36 w-full object-cover"
+                            onError={(event) => {
+                              if (event.currentTarget.dataset.retrying === 'true') {
+                                return;
+                              }
+
+                              event.currentTarget.dataset.retrying = 'true';
+                              void refreshScreenshotPath(Number(shot.id));
+                            }}
+                          />
+                          <div className="space-y-2 p-3">
+                            <p className="text-sm font-medium text-slate-950">{formatDateTime(shot.recorded_at || shot.created_at)}</p>
+                            <p className="text-xs text-slate-500">{shot.filename || 'Captured screenshot'}</p>
+                          </div>
+                        </a>
+                      );
+                    })}
                   </div>
                 )}
               </SurfaceCard>
@@ -922,6 +971,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                 {screenshots.map((shot: any) => {
                   const isSelected = selectedScreenshotIds.includes(Number(shot.id));
                   const screenshotUser = resolveScreenshotUser(shot);
+                  const shotPath = resolveScreenshotPath(shot);
 
                   return (
                     <div
@@ -931,7 +981,19 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                       }`}
                     >
                       <div className="relative">
-                        <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-44 w-full object-cover" />
+                        <img
+                          src={shotPath}
+                          alt={shot.filename || `Screenshot ${shot.id}`}
+                          className="h-44 w-full object-cover"
+                          onError={(event) => {
+                            if (event.currentTarget.dataset.retrying === 'true') {
+                              return;
+                            }
+
+                            event.currentTarget.dataset.retrying = 'true';
+                            void refreshScreenshotPath(Number(shot.id));
+                          }}
+                        />
                         <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
                           <input
                             type="checkbox"
@@ -942,7 +1004,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                           Select
                         </label>
                         <a
-                          href={shot.path}
+                          href={shotPath}
                           target="_blank"
                           rel="noreferrer"
                           className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-slate-950/80 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-950"
