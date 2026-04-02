@@ -15,6 +15,7 @@ import type { TimeEntry } from '@/types';
 
 const ACTIVITY_TRACK_INTERVAL_MS = 5000;
 const SCREENSHOT_INTERVAL_MS = 3 * 60 * 1000;
+const SCREENSHOT_INITIAL_CAPTURE_DELAY_MS = 1500;
 const IDLE_THRESHOLD_SECONDS = idleTrackThresholdSeconds;
 const IDLE_AUTO_STOP_THRESHOLD_SECONDS = Math.max(idleAutoStopThresholdSeconds, IDLE_THRESHOLD_SECONDS);
 const IDLE_GUARD_INTERVAL_MS = idleGuardIntervalMs;
@@ -72,6 +73,7 @@ export const useDesktopTracker = () => {
   const activityIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const idleGuardIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const screenshotIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const screenshotInitialTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingIdleRewindRef = useRef<Map<number, number>>(new Map());
   const lastAutoStoppedEntryIdRef = useRef<number | null>(null);
   const activeScreenshotEntryIdRef = useRef<number | null>(null);
@@ -92,6 +94,11 @@ export const useDesktopTracker = () => {
     if (screenshotIntervalRef.current !== null) {
       clearInterval(screenshotIntervalRef.current);
       screenshotIntervalRef.current = null;
+    }
+
+    if (screenshotInitialTimeoutRef.current !== null) {
+      clearTimeout(screenshotInitialTimeoutRef.current);
+      screenshotInitialTimeoutRef.current = null;
     }
   };
 
@@ -150,6 +157,17 @@ export const useDesktopTracker = () => {
     idleStopInFlightRef.current = false;
     idleStopBlockedUntilMsRef.current = 0;
 
+    const scheduleInitialScreenshotCapture = () => {
+      if (screenshotInitialTimeoutRef.current !== null) {
+        clearTimeout(screenshotInitialTimeoutRef.current);
+      }
+
+      screenshotInitialTimeoutRef.current = setTimeout(() => {
+        screenshotInitialTimeoutRef.current = null;
+        void captureScreenshotOnInterval();
+      }, SCREENSHOT_INITIAL_CAPTURE_DELAY_MS);
+    };
+
     const syncScreenshotInterval = (timeEntryId: number | null) => {
       if (activeScreenshotEntryIdRef.current === timeEntryId) {
         return;
@@ -165,6 +183,8 @@ export const useDesktopTracker = () => {
       if (timeEntryId === null) {
         return;
       }
+
+      scheduleInitialScreenshotCapture();
 
       screenshotIntervalRef.current = setInterval(() => {
         void captureScreenshotOnInterval();
