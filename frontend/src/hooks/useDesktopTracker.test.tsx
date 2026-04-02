@@ -305,4 +305,25 @@ describe('useDesktopTracker', () => {
     expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
     expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
   });
+
+  it('tracks browser activity duration from system-wide input even when the app window is not focused', async () => {
+    mocks.getActiveWindowContextMock.mockResolvedValue({
+      app: 'Google Chrome',
+      title: 'Instagram - Google Chrome',
+      url: null,
+    });
+    mocks.getSystemIdleSecondsMock.mockResolvedValue(0);
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 1000);
+    });
+
+    expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'url',
+      name: 'Instagram',
+      duration: 5,
+    }));
+  });
 });

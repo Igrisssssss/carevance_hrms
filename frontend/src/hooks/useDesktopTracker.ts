@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { buildTrackedContextName } from '@/lib/activityProductivity';
 import { idleAutoStopThresholdSeconds, idleGuardIntervalMs, idleTrackThresholdSeconds } from '@/lib/runtimeConfig';
 import { isTrackedTimerUser } from '@/lib/permissions';
 import {
@@ -368,7 +369,7 @@ export const useDesktopTracker = () => {
         if (idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
           idleStopBlockedUntilMsRef.current = 0;
         }
-        const trackedWindowEnd = Math.min(now, Math.max(lastInputRef.current, previousTickAt));
+        const trackedWindowEnd = Math.min(now, Math.max(lastActivityAtMs, previousTickAt));
         const trackedSecondsThisTick = Math.max(
           0,
           Math.round((trackedWindowEnd - previousTickAt) / 1000)
@@ -377,12 +378,10 @@ export const useDesktopTracker = () => {
           ? await desktopApi.getActiveWindowContext()
           : null;
         const appName = String(activeContext?.app || '').trim();
-        const title = String(activeContext?.title || '').trim();
         const url = String(activeContext?.url || '').trim();
         const isBrowserApp = BROWSER_APP_KEYWORDS.some((keyword) => appName.toLowerCase().includes(keyword));
         const fallbackTitle = typeof document !== 'undefined' ? document.title : '';
-        const contextNameBase = url || [appName, title].filter(Boolean).join(' - ') || fallbackTitle || 'Active Input';
-        const contextName = contextNameBase.slice(0, 255);
+        const contextName = buildTrackedContextName(activeContext || {}) || fallbackTitle || 'Active Input';
         const recordedAt = new Date(now).toISOString();
         const activityType: 'app' | 'url' = url || isBrowserApp ? 'url' : 'app';
 
@@ -454,7 +453,7 @@ export const useDesktopTracker = () => {
             const response = await activityApi.create(payload);
             activeSegmentRef.current = {
               activityId: response.data.id,
-              durationSeconds: elapsedSeconds,
+              durationSeconds: trackedSecondsThisTick,
               signature,
               kind: 'tracked',
             };
