@@ -4,6 +4,8 @@ import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, taskA
 import {
   ACTIVE_TIMER_KEY,
   canUseDesktopAutoStart,
+  clearDesktopScreenshotCaptureLock,
+  completeDesktopScreenshotCapture,
   clearAutoStartArm,
   clearAutoStartSuppression,
   clearIdleAutoStopNotice,
@@ -19,6 +21,7 @@ import {
   isAutoStartSuppressed,
   seedDesktopLaunchAutoStart,
   suppressAutoStart,
+  tryBeginDesktopScreenshotCapture,
 } from '@/lib/desktopTimerSession';
 import { isTrackedTimerUser } from '@/lib/permissions';
 import PageHeader from '@/components/dashboard/PageHeader';
@@ -40,6 +43,7 @@ import {
 } from 'lucide-react';
 import type { TimeEntry } from '@/types';
 import type { Task } from '@/types';
+import { screenshotApi } from '@/services/api';
 
 const getStartTimeMs = (startTime?: string) => {
   if (!startTime) return NaN;
@@ -54,6 +58,9 @@ const getLocalDateString = () => {
   const timezoneOffsetMs = now.getTimezoneOffset() * 60000;
   return new Date(now.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
 };
+const SCREENSHOT_INTERVAL_MS = 3 * 60 * 1000;
+const SCREENSHOT_FALLBACK_BOOT_DELAY_MS = 4000;
+const SCREENSHOT_FALLBACK_INITIAL_DELAY_MS = 1500;
 
 const restoreTimerSnapshot = (
   userId: number | null,
@@ -133,6 +140,56 @@ export default function DesktopTimerDashboard() {
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const hasRestoredSnapshotRef = useRef(false);
   const hasAttemptedAutoStartRef = useRef(false);
+  const screenshotFallbackBootTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const screenshotFallbackInitialTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const screenshotFallbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const screenshotFallbackInFlightRef = useRef(false);
+
+  const clearScreenshotFallbackTimers = () => {
+    if (screenshotFallbackBootTimeoutRef.current !== null) {
+      clearTimeout(screenshotFallbackBootTimeoutRef.current);
+      screenshotFallbackBootTimeoutRef.current = null;
+    }
+
+    if (screenshotFallbackInitialTimeoutRef.current !== null) {
+      clearTimeout(screenshotFallbackInitialTimeoutRef.current);
+      screenshotFallbackInitialTimeoutRef.current = null;
+    }
+
+    if (screenshotFallbackIntervalRef.current !== null) {
+      clearInterval(screenshotFallbackIntervalRef.current);
+      screenshotFallbackIntervalRef.current = null;
+    }
+  };
+
+  const captureFallbackScreenshot = async (entryId: number) => {
+    if (
+      screenshotFallbackInFlightRef.current
+      || !window.desktopTracker?.captureScreenshot
+      || !tryBeginDesktopScreenshotCapture(entryId)
+    ) {
+      return;
+    }
+
+    screenshotFallbackInFlightRef.current = true;
+
+    try {
+      const screenshotDataUrl = await window.desktopTracker.captureScreenshot();
+
+      if (!screenshotDataUrl) {
+        clearDesktopScreenshotCaptureLock(entryId);
+        return;
+      }
+
+      await screenshotApi.upload(entryId, screenshotDataUrl, `capture-${Date.now()}.png`);
+      completeDesktopScreenshotCapture(entryId);
+    } catch (error) {
+      clearDesktopScreenshotCaptureLock(entryId);
+      console.error('Desktop timer fallback screenshot capture failed:', error);
+    } finally {
+      screenshotFallbackInFlightRef.current = false;
+    }
+  };
 
   useEffect(() => {
     if (!activeTimer) {
@@ -171,6 +228,35 @@ export default function DesktopTimerDashboard() {
 
     return () => clearInterval(interval);
   }, [activeTimer?.id, activeTimer?.duration, activeTimer?.start_time]);
+
+  useEffect(() => {
+    clearScreenshotFallbackTimers();
+
+    if (!activeTimer?.id || !window.desktopTracker) {
+      return () => {
+        clearScreenshotFallbackTimers();
+        screenshotFallbackInFlightRef.current = false;
+      };
+    }
+
+    const entryId = Number(activeTimer.id);
+
+    screenshotFallbackBootTimeoutRef.current = setTimeout(() => {
+      screenshotFallbackInitialTimeoutRef.current = setTimeout(() => {
+        void captureFallbackScreenshot(entryId);
+      }, SCREENSHOT_FALLBACK_INITIAL_DELAY_MS);
+
+      screenshotFallbackIntervalRef.current = setInterval(() => {
+        void captureFallbackScreenshot(entryId);
+      }, SCREENSHOT_INTERVAL_MS);
+    }, SCREENSHOT_FALLBACK_BOOT_DELAY_MS);
+
+    return () => {
+      clearScreenshotFallbackTimers();
+      screenshotFallbackInFlightRef.current = false;
+      clearDesktopScreenshotCaptureLock(entryId);
+    };
+  }, [activeTimer?.id]);
 
   const syncTimerEntryLocally = (entry: TimeEntry | null) => {
     setActiveTimer(entry);

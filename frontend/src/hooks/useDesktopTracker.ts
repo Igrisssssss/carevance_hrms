@@ -3,12 +3,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { idleAutoStopThresholdSeconds, idleGuardIntervalMs, idleTrackThresholdSeconds } from '@/lib/runtimeConfig';
 import { isTrackedTimerUser } from '@/lib/permissions';
 import {
+  clearDesktopScreenshotCaptureLock,
+  completeDesktopScreenshotCapture,
+  DESKTOP_SCREENSHOT_SCHEDULER_KEY,
   DESKTOP_TIMER_STARTED_EVENT,
   DESKTOP_TIMER_STOPPED_EVENT,
   type DesktopTimerSessionDetail,
   emitDesktopTimerIdleStop,
   setIdleAutoStopNotice,
   suppressAutoStart,
+  tryBeginDesktopScreenshotCapture,
 } from '@/lib/desktopTimerSession';
 import { activityApi, screenshotApi, timeEntryApi } from '@/services/api';
 import type { TimeEntry } from '@/types';
@@ -181,9 +185,12 @@ export const useDesktopTracker = () => {
       activeScreenshotEntryIdRef.current = timeEntryId;
 
       if (timeEntryId === null) {
+        sessionStorage.removeItem(DESKTOP_SCREENSHOT_SCHEDULER_KEY);
+        clearDesktopScreenshotCaptureLock();
         return;
       }
 
+      sessionStorage.setItem(DESKTOP_SCREENSHOT_SCHEDULER_KEY, String(timeEntryId));
       scheduleInitialScreenshotCapture();
 
       screenshotIntervalRef.current = setInterval(() => {
@@ -503,14 +510,21 @@ export const useDesktopTracker = () => {
           return;
         }
 
+        if (!tryBeginDesktopScreenshotCapture(activeEntry.id)) {
+          return;
+        }
+
         const now = Date.now();
         const screenshotDataUrl = await desktopApi.captureScreenshot();
         if (!screenshotDataUrl) {
+          clearDesktopScreenshotCaptureLock(activeEntry.id);
           return;
         }
 
         await screenshotApi.upload(activeEntry.id, screenshotDataUrl, `capture-${now}.png`);
+        completeDesktopScreenshotCapture(activeEntry.id);
       } catch (error) {
+        clearDesktopScreenshotCaptureLock(activeScreenshotEntryIdRef.current);
         console.error('Desktop tracker screenshot capture failed:', error);
       } finally {
         screenshotInFlight = false;
@@ -552,6 +566,8 @@ export const useDesktopTracker = () => {
       activeScreenshotEntryIdRef.current = null;
       idleStopInFlightRef.current = false;
       idleStopBlockedUntilMsRef.current = 0;
+      sessionStorage.removeItem(DESKTOP_SCREENSHOT_SCHEDULER_KEY);
+      clearDesktopScreenshotCaptureLock();
       window.removeEventListener(DESKTOP_TIMER_STARTED_EVENT, handleTimerStarted as EventListener);
       window.removeEventListener(DESKTOP_TIMER_STOPPED_EVENT, handleTimerStopped as EventListener);
       if (desktopTrackerRunSequence === runId) {
