@@ -239,6 +239,15 @@ class ReportWorkingTimeTest extends TestCase
             Activity::create([
                 'user_id' => $employee->id,
                 'time_entry_id' => $entry->id,
+                'type' => 'app',
+                'name' => 'Visual Studio Code',
+                'duration' => 1800,
+                'recorded_at' => '2026-03-16 11:15:00',
+            ]);
+
+            Activity::create([
+                'user_id' => $employee->id,
+                'time_entry_id' => $entry->id,
                 'type' => 'idle',
                 'name' => 'System Idle - Insights',
                 'duration' => 300,
@@ -247,7 +256,7 @@ class ReportWorkingTimeTest extends TestCase
 
             $this->getJson("/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}", $headers)
                 ->assertOk()
-                ->assertJsonPath('stats.total_duration', 1800)
+                ->assertJsonPath('stats.total_duration', 1500)
                 ->assertJsonPath('stats.working_duration', 1500)
                 ->assertJsonPath('stats.idle_total_duration', 300)
                 ->assertJsonPath('live_monitoring.selected_user.is_working', true);
@@ -321,6 +330,86 @@ class ReportWorkingTimeTest extends TestCase
             ->assertJsonPath('selected_user_tools.unproductive.0.total_duration', 125)
             ->assertJsonPath('organization_summary.unproductive_duration', 125)
             ->assertJsonPath('employee_rankings.by_unproductive_duration.0.unproductive_duration', 125);
+    }
+
+    public function test_employee_insights_counts_idle_time_inside_focused_unproductive_tool_duration(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        $entry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-03-16 10:00:00',
+            'end_time' => '2026-03-16 10:03:00',
+            'duration' => 180,
+            'billable' => true,
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'time_entry_id' => $entry->id,
+            'type' => 'url',
+            'name' => 'https://instagram.com/reel/1',
+            'duration' => 135,
+            'recorded_at' => '2026-03-16 10:02:15',
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'time_entry_id' => $entry->id,
+            'type' => 'idle',
+            'name' => 'System Idle - Chrome',
+            'duration' => 120,
+            'recorded_at' => '2026-03-16 10:02:15',
+        ]);
+
+        $this->getJson("/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}", $headers)
+            ->assertOk()
+            ->assertJsonPath('stats.total_duration', 135)
+            ->assertJsonPath('stats.idle_total_duration', 120)
+            ->assertJsonPath('selected_user_tools.unproductive.0.label', 'instagram.com')
+            ->assertJsonPath('selected_user_tools.unproductive.0.total_duration', 135)
+            ->assertJsonPath('organization_summary.unproductive_duration', 135)
+            ->assertJsonPath('employee_rankings.by_unproductive_duration.0.unproductive_duration', 135);
+    }
+
+    public function test_employee_insights_recovers_full_unproductive_duration_from_idle_context_when_tracked_segment_is_shorter(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        $entry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-03-16 10:00:00',
+            'end_time' => '2026-03-16 10:03:00',
+            'duration' => 180,
+            'billable' => true,
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'time_entry_id' => $entry->id,
+            'type' => 'url',
+            'name' => 'Instagram',
+            'duration' => 120,
+            'recorded_at' => '2026-03-16 10:02:00',
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'time_entry_id' => $entry->id,
+            'type' => 'idle',
+            'name' => 'System Idle - Instagram',
+            'duration' => 180,
+            'recorded_at' => '2026-03-16 10:03:00',
+        ]);
+
+        $this->getJson("/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}", $headers)
+            ->assertOk()
+            ->assertJsonPath('stats.total_duration', 180)
+            ->assertJsonPath('stats.idle_total_duration', 180)
+            ->assertJsonPath('selected_user_tools.unproductive.0.label', 'instagram.com')
+            ->assertJsonPath('selected_user_tools.unproductive.0.total_duration', 180)
+            ->assertJsonPath('organization_summary.unproductive_duration', 180)
+            ->assertJsonPath('employee_rankings.by_unproductive_duration.0.unproductive_duration', 180);
     }
 
     public function test_admin_time_entries_index_returns_selected_employee_live_duration(): void
