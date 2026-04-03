@@ -13,9 +13,14 @@ import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasStrictAdminAccess } from '@/lib/permissions';
+import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { KeyRound, MailPlus, ShieldCheck, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
+
+type PersistedEmployeeWorkspaceFilters = {
+  selectedUserId: number | null;
+};
 
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
@@ -47,10 +52,27 @@ const modeCopy: Record<EmployeeWorkspaceMode, { title: string; description: stri
   },
 };
 
+const EMPLOYEE_WORKSPACE_FILTER_STORAGE_KEY = 'employee-workspace-filters';
+const getEmployeeWorkspaceFilterStorageKey = (mode: EmployeeWorkspaceMode) => `${EMPLOYEE_WORKSPACE_FILTER_STORAGE_KEY}:${mode}`;
+
+const readPersistedEmployeeWorkspaceFilters = (mode: EmployeeWorkspaceMode): PersistedEmployeeWorkspaceFilters => {
+  const parsed = readSessionStorageJson<PersistedEmployeeWorkspaceFilters>(getEmployeeWorkspaceFilterStorageKey(mode));
+
+  if (!parsed) {
+    return {
+      selectedUserId: null,
+    };
+  }
+
+  return {
+    selectedUserId: typeof parsed.selectedUserId === 'number' && parsed.selectedUserId > 0 ? parsed.selectedUserId : null,
+  };
+};
+
 export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWorkspaceMode }) {
   const { organization, user } = useAuth();
   const queryClient = useQueryClient();
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(() => readPersistedEmployeeWorkspaceFilters(mode).selectedUserId);
   const [groupName, setGroupName] = useState('');
   const [groupMembers, setGroupMembers] = useState<number[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -59,6 +81,17 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const isStrictAdmin = hasStrictAdminAccess(user);
   const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
   const employeeRoleOptions = useMemo(() => allowedRoles, [allowedRoles]);
+
+  useEffect(() => {
+    const persistedFilters = readPersistedEmployeeWorkspaceFilters(mode);
+    setSelectedUserId(persistedFilters.selectedUserId);
+  }, [mode]);
+
+  useEffect(() => {
+    writeSessionStorageJson(getEmployeeWorkspaceFilterStorageKey(mode), {
+      selectedUserId,
+    } satisfies PersistedEmployeeWorkspaceFilters);
+  }, [mode, selectedUserId]);
 
   const usersQuery = useQuery({
     queryKey: ['employee-workspace-users'],
@@ -103,6 +136,17 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   useEffect(() => {
     if (!selectedUserId && (usersQuery.data || []).length > 0) {
       setSelectedUserId(usersQuery.data![0].id);
+    }
+  }, [selectedUserId, usersQuery.data]);
+
+  useEffect(() => {
+    if (!selectedUserId || !(usersQuery.data || []).length) {
+      return;
+    }
+
+    const hasSelectedUser = (usersQuery.data || []).some((item: any) => Number(item.id) === Number(selectedUserId));
+    if (!hasSelectedUser) {
+      setSelectedUserId(usersQuery.data?.[0]?.id || null);
     }
   }, [selectedUserId, usersQuery.data]);
 

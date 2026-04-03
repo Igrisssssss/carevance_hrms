@@ -29,6 +29,7 @@ import { FeedbackBanner, PageErrorState } from '@/components/ui/PageState';
 import { useAuth } from '@/contexts/AuthContext';
 import { classifyActivityProductivity, normalizeActivityToolLabel } from '@/lib/activityProductivity';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
+import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import {
   Activity,
   CalendarClock,
@@ -56,6 +57,8 @@ interface PersistedFilterState {
   datePreset: DatePreset;
   startDate: string;
   endDate: string;
+  attendanceSearchQuery: string;
+  attendanceGroupFilter: number | '';
 }
 
 interface RequestResult<T> {
@@ -141,6 +144,8 @@ const defaultFilters = (): PersistedFilterState => {
     datePreset: 'today',
     startDate: dates.startDate,
     endDate: dates.endDate,
+    attendanceSearchQuery: '',
+    attendanceGroupFilter: '',
   };
 };
 
@@ -275,26 +280,26 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const [filters, setFilters] = useState<PersistedFilterState>(() => {
     const fallback = defaultFilters();
-    const raw = sessionStorage.getItem(FILTER_STORAGE_KEY);
-    if (!raw) return fallback;
+    const parsed = readSessionStorageJson<PersistedFilterState>(FILTER_STORAGE_KEY);
+    if (!parsed) return fallback;
 
-    try {
-      const parsed = JSON.parse(raw) as Partial<PersistedFilterState>;
-      return {
-        scope: parsed.scope === 'employee' ? 'employee' : 'organization',
-        selectedEmployeeId:
-          typeof parsed.selectedEmployeeId === 'number' && parsed.selectedEmployeeId > 0
-            ? parsed.selectedEmployeeId
-            : '',
-        datePreset: ['today', '7d', '30d', 'custom'].includes(String(parsed.datePreset))
-          ? (parsed.datePreset as DatePreset)
-          : fallback.datePreset,
-        startDate: parsed.startDate || fallback.startDate,
-        endDate: parsed.endDate || fallback.endDate,
-      };
-    } catch {
-      return fallback;
-    }
+    return {
+      scope: parsed.scope === 'employee' ? 'employee' : 'organization',
+      selectedEmployeeId:
+        typeof parsed.selectedEmployeeId === 'number' && parsed.selectedEmployeeId > 0
+          ? parsed.selectedEmployeeId
+          : '',
+      datePreset: ['today', '7d', '30d', 'custom'].includes(String(parsed.datePreset))
+        ? (parsed.datePreset as DatePreset)
+        : fallback.datePreset,
+      startDate: parsed.startDate || fallback.startDate,
+      endDate: parsed.endDate || fallback.endDate,
+      attendanceSearchQuery: typeof parsed.attendanceSearchQuery === 'string' ? parsed.attendanceSearchQuery : fallback.attendanceSearchQuery,
+      attendanceGroupFilter:
+        typeof parsed.attendanceGroupFilter === 'number' && parsed.attendanceGroupFilter > 0
+          ? parsed.attendanceGroupFilter
+          : '',
+    };
   });
   const [exportFeedback, setExportFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -303,12 +308,16 @@ export default function AdminDashboard() {
   const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
   const [screenshotActionFeedback, setScreenshotActionFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isDeletingScreenshots, setIsDeletingScreenshots] = useState(false);
-  const [attendanceSearchQuery, setAttendanceSearchQuery] = useState('');
-  const [attendanceGroupFilter, setAttendanceGroupFilter] = useState<number | ''>('');
+  const [attendanceSearchQuery, setAttendanceSearchQuery] = useState(filters.attendanceSearchQuery);
+  const [attendanceGroupFilter, setAttendanceGroupFilter] = useState<number | ''>(filters.attendanceGroupFilter);
 
   useEffect(() => {
-    sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
-  }, [filters]);
+    writeSessionStorageJson(FILTER_STORAGE_KEY, {
+      ...filters,
+      attendanceSearchQuery,
+      attendanceGroupFilter,
+    } satisfies PersistedFilterState);
+  }, [attendanceGroupFilter, attendanceSearchQuery, filters]);
 
   useEffect(() => {
     setIsScreenshotManagerOpen(false);

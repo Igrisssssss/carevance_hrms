@@ -23,6 +23,7 @@ import { deriveDateRangeFromPreset, isDateRangePreset, type DateRangePreset } fr
 import { buildEmployeeSearchSuggestions, buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
+import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import {
   Activity,
   CalendarDays,
@@ -58,6 +59,11 @@ type PersistedReportWorkspaceFilters = {
   endDate: string;
   selectedUserId: number | '';
   selectedGroupId: number | '';
+  query: string;
+  appliedQuery: string;
+  projectTaskSearchQuery: string;
+  projectEmployeeSearchQuery: string;
+  selectedProjectId: number | '';
 };
 
 const getReportWorkspaceFilterStorageKey = (mode: ReportsWorkspaceMode) => `${REPORT_WORKSPACE_FILTER_STORAGE_KEY}:${mode}`;
@@ -68,6 +74,11 @@ const getDefaultReportWorkspaceFilters = (): PersistedReportWorkspaceFilters => 
   endDate: defaultDateRange.endDate,
   selectedUserId: '',
   selectedGroupId: '',
+  query: '',
+  appliedQuery: '',
+  projectTaskSearchQuery: '',
+  projectEmployeeSearchQuery: '',
+  selectedProjectId: '',
 });
 
 const readPersistedReportWorkspaceFilters = (mode: ReportsWorkspaceMode): PersistedReportWorkspaceFilters => {
@@ -77,24 +88,23 @@ const readPersistedReportWorkspaceFilters = (mode: ReportsWorkspaceMode): Persis
     return fallback;
   }
 
-  const raw = sessionStorage.getItem(getReportWorkspaceFilterStorageKey(mode));
-  if (!raw) {
+  const parsed = readSessionStorageJson<PersistedReportWorkspaceFilters>(getReportWorkspaceFilterStorageKey(mode));
+  if (!parsed) {
     return fallback;
   }
 
-  try {
-    const parsed = JSON.parse(raw) as Partial<PersistedReportWorkspaceFilters>;
-
-    return {
-      datePreset: isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset,
-      startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
-      endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
-      selectedUserId: typeof parsed.selectedUserId === 'number' && parsed.selectedUserId > 0 ? parsed.selectedUserId : '',
-      selectedGroupId: typeof parsed.selectedGroupId === 'number' && parsed.selectedGroupId > 0 ? parsed.selectedGroupId : '',
-    };
-  } catch {
-    return fallback;
-  }
+  return {
+    datePreset: isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset,
+    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
+    selectedUserId: typeof parsed.selectedUserId === 'number' && parsed.selectedUserId > 0 ? parsed.selectedUserId : '',
+    selectedGroupId: typeof parsed.selectedGroupId === 'number' && parsed.selectedGroupId > 0 ? parsed.selectedGroupId : '',
+    query: typeof parsed.query === 'string' ? parsed.query : fallback.query,
+    appliedQuery: typeof parsed.appliedQuery === 'string' ? parsed.appliedQuery : fallback.appliedQuery,
+    projectTaskSearchQuery: typeof parsed.projectTaskSearchQuery === 'string' ? parsed.projectTaskSearchQuery : fallback.projectTaskSearchQuery,
+    projectEmployeeSearchQuery: typeof parsed.projectEmployeeSearchQuery === 'string' ? parsed.projectEmployeeSearchQuery : fallback.projectEmployeeSearchQuery,
+    selectedProjectId: typeof parsed.selectedProjectId === 'number' && parsed.selectedProjectId > 0 ? parsed.selectedProjectId : '',
+  };
 };
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
@@ -207,11 +217,11 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedReportWorkspaceFilters(mode).datePreset);
   const [startDate, setStartDate] = useState(() => readPersistedReportWorkspaceFilters(mode).startDate);
   const [endDate, setEndDate] = useState(() => readPersistedReportWorkspaceFilters(mode).endDate);
-  const [query, setQuery] = useState('');
-  const [appliedQuery, setAppliedQuery] = useState('');
-  const [projectTaskSearchQuery, setProjectTaskSearchQuery] = useState('');
-  const [projectEmployeeSearchQuery, setProjectEmployeeSearchQuery] = useState('');
-  const [selectedProjectId, setSelectedProjectId] = useState<number | ''>('');
+  const [query, setQuery] = useState(() => readPersistedReportWorkspaceFilters(mode).query);
+  const [appliedQuery, setAppliedQuery] = useState(() => readPersistedReportWorkspaceFilters(mode).appliedQuery);
+  const [projectTaskSearchQuery, setProjectTaskSearchQuery] = useState(() => readPersistedReportWorkspaceFilters(mode).projectTaskSearchQuery);
+  const [projectEmployeeSearchQuery, setProjectEmployeeSearchQuery] = useState(() => readPersistedReportWorkspaceFilters(mode).projectEmployeeSearchQuery);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | ''>(() => readPersistedReportWorkspaceFilters(mode).selectedProjectId);
   const [selectedUserId, setSelectedUserId] = useState<number | ''>(() => readPersistedReportWorkspaceFilters(mode).selectedUserId);
   const [selectedUserSource, setSelectedUserSource] = useState<'picker' | 'search' | null>(null);
   const [selectedProjectSource, setSelectedProjectSource] = useState<'picker' | 'search' | null>(null);
@@ -228,11 +238,11 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     setSelectedUserId(persistedFilters.selectedUserId);
     setSelectedUserSource(null);
     setSelectedGroupId(persistedFilters.selectedGroupId);
-    setQuery('');
-    setAppliedQuery('');
-    setProjectTaskSearchQuery('');
-    setProjectEmployeeSearchQuery('');
-    setSelectedProjectId('');
+    setQuery(persistedFilters.query);
+    setAppliedQuery(persistedFilters.appliedQuery);
+    setProjectTaskSearchQuery(persistedFilters.projectTaskSearchQuery);
+    setProjectEmployeeSearchQuery(persistedFilters.projectEmployeeSearchQuery);
+    setSelectedProjectId(persistedFilters.selectedProjectId);
     setSelectedProjectSource(null);
     setSelectedTaskSearchId(null);
   }, [mode]);
@@ -242,17 +252,22 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       return;
     }
 
-    sessionStorage.setItem(
+    writeSessionStorageJson(
       getReportWorkspaceFilterStorageKey(mode),
-      JSON.stringify({
+      {
         datePreset,
         startDate,
         endDate,
         selectedUserId,
         selectedGroupId,
-      } satisfies PersistedReportWorkspaceFilters)
+        query,
+        appliedQuery,
+        projectTaskSearchQuery,
+        projectEmployeeSearchQuery,
+        selectedProjectId,
+      } satisfies PersistedReportWorkspaceFilters
     );
-  }, [datePreset, endDate, mode, selectedGroupId, selectedUserId, startDate]);
+  }, [appliedQuery, datePreset, endDate, mode, projectEmployeeSearchQuery, projectTaskSearchQuery, query, selectedGroupId, selectedProjectId, selectedUserId, startDate]);
 
   const handleDatePresetChange = (preset: DateRangePreset) => {
     setDatePreset(preset);
@@ -424,6 +439,18 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const projects = projectsData?.projects || [];
   const tasks = projectsData?.tasks || [];
   const projectTimeEntries = projectsData?.timeEntries || [];
+  useEffect(() => {
+    if (mode !== 'projects-tasks' || !projects.length || selectedProjectId === '') {
+      return;
+    }
+
+    const hasSelectedProject = projects.some((project: any) => Number(project.id) === Number(selectedProjectId));
+    if (!hasSelectedProject) {
+      setSelectedProjectId('');
+      setSelectedProjectSource(null);
+      setSelectedTaskSearchId(null);
+    }
+  }, [mode, projects, selectedProjectId]);
   const hasProjectsTasksScope = selectedUserId !== '' || selectedGroupId !== '';
   const scopedUserIdSet = useMemo(() => new Set(scopedUserIds), [scopedUserIds]);
   const projectsById = useMemo(() => new Map<number, any>(projects.map((project: any) => [Number(project.id), project])), [projects]);
