@@ -13,7 +13,8 @@ import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/u
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { classifyActivityProductivity, normalizeActivityToolLabel } from '@/lib/activityProductivity';
-import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
+import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue } from '@/lib/searchSuggestions';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Briefcase, CalendarDays, Clock, Eye, FolderKanban, Layers3, Users } from 'lucide-react';
@@ -117,18 +118,63 @@ type SectionFeedback = {
   message: string;
 } | null;
 
+type PersistedAttendanceFilters = {
+  query: string;
+  countryFilter: string;
+  calendarScope: 'selected' | 'overall';
+  datePreset: DateRangePreset;
+  startDate: string;
+  endDate: string;
+  selectedUserId: number | null;
+  selectedSearchUserId: number | null;
+};
+
+const ATTENDANCE_FILTER_STORAGE_KEY = 'attendance-page-filters';
+const attendanceDefaultDateRange = deriveDateRangeFromPreset('30d');
+
+const getDefaultAttendanceFilters = (): PersistedAttendanceFilters => ({
+  query: '',
+  countryFilter: 'ALL',
+  calendarScope: 'selected',
+  datePreset: '30d',
+  startDate: attendanceDefaultDateRange.startDate,
+  endDate: attendanceDefaultDateRange.endDate,
+  selectedUserId: null,
+  selectedSearchUserId: null,
+});
+
+const readPersistedAttendanceFilters = (): PersistedAttendanceFilters => {
+  const fallback = getDefaultAttendanceFilters();
+  const parsed = readSessionStorageJson<PersistedAttendanceFilters>(ATTENDANCE_FILTER_STORAGE_KEY);
+
+  if (!parsed) {
+    return fallback;
+  }
+
+  return {
+    query: typeof parsed.query === 'string' ? parsed.query : fallback.query,
+    countryFilter: typeof parsed.countryFilter === 'string' && parsed.countryFilter ? normalizeCountryValue(parsed.countryFilter) : fallback.countryFilter,
+    calendarScope: parsed.calendarScope === 'overall' ? 'overall' : fallback.calendarScope,
+    datePreset: isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset,
+    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
+    selectedUserId: typeof parsed.selectedUserId === 'number' && parsed.selectedUserId > 0 ? parsed.selectedUserId : null,
+    selectedSearchUserId: typeof parsed.selectedSearchUserId === 'number' && parsed.selectedSearchUserId > 0 ? parsed.selectedSearchUserId : null,
+  };
+};
+
 export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const navigate = useNavigate();
   const { user, organization } = useAuth();
-  const [query, setQuery] = useState('');
-  const [countryFilter, setCountryFilter] = useState('ALL');
-  const [calendarScope, setCalendarScope] = useState<'selected' | 'overall'>('selected');
-  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
-  const [startDate, setStartDate] = useState(() => deriveDateRangeFromPreset('30d').startDate);
-  const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
+  const [query, setQuery] = useState(() => readPersistedAttendanceFilters().query);
+  const [countryFilter, setCountryFilter] = useState(() => readPersistedAttendanceFilters().countryFilter);
+  const [calendarScope, setCalendarScope] = useState<'selected' | 'overall'>(() => readPersistedAttendanceFilters().calendarScope);
+  const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedAttendanceFilters().datePreset);
+  const [startDate, setStartDate] = useState(() => readPersistedAttendanceFilters().startDate);
+  const [endDate, setEndDate] = useState(() => readPersistedAttendanceFilters().endDate);
   const [rows, setRows] = useState<any[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
-  const [selectedSearchUserId, setSelectedSearchUserId] = useState<number | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(() => readPersistedAttendanceFilters().selectedUserId);
+  const [selectedSearchUserId, setSelectedSearchUserId] = useState<number | null>(() => readPersistedAttendanceFilters().selectedSearchUserId);
   const [workingDays, setWorkingDays] = useState(0);
   const [weekendDays, setWeekendDays] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -204,6 +250,19 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const selectedSearchEmployeeLabel = selectedSearchUserId
     ? String(rows.find((row) => Number(row?.user?.id) === Number(selectedSearchUserId))?.user?.name || '').trim()
     : '';
+
+  useEffect(() => {
+    writeSessionStorageJson(ATTENDANCE_FILTER_STORAGE_KEY, {
+      query,
+      countryFilter,
+      calendarScope,
+      datePreset,
+      startDate,
+      endDate,
+      selectedUserId,
+      selectedSearchUserId,
+    } satisfies PersistedAttendanceFilters);
+  }, [calendarScope, countryFilter, datePreset, endDate, query, selectedSearchUserId, selectedUserId, startDate]);
   const handleDatePresetChange = (preset: DateRangePreset) => {
     setDatePreset(preset);
     if (preset === 'custom') {
@@ -669,6 +728,17 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       setSelectedUserId(rows[0].user.id);
     }
   }, [isAdmin, rows, selectedUserId]);
+
+  useEffect(() => {
+    if (!isAdmin || !selectedSearchUserId) {
+      return;
+    }
+
+    const hasSelectedSearchUser = rows.some((row) => Number(row?.user?.id) === Number(selectedSearchUserId));
+    if (!hasSelectedSearchUser) {
+      setSelectedSearchUserId(null);
+    }
+  }, [isAdmin, rows, selectedSearchUserId]);
 
   useEffect(() => {
     if (!user?.id) return;

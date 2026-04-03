@@ -4,7 +4,8 @@ import { reportApi, reportGroupApi, userApi } from '@/services/api';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess } from '@/lib/permissions';
-import { deriveDateRangeFromPreset, getDateRangePresetLabel, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, getDateRangePresetLabel, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
+import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import DataTable from '@/components/dashboard/DataTable';
@@ -32,16 +33,58 @@ const formatLastActivity = (value?: string | null) => {
   return parsed.toLocaleString();
 };
 
+type PersistedReportsPageFilters = {
+  datePreset: DateRangePreset;
+  startDate: string;
+  endDate: string;
+  reportType: 'daily' | 'weekly' | 'monthly';
+  filterMode: 'team' | 'user' | 'group';
+  selectedUserIds: number[];
+  selectedGroupIds: number[];
+};
+
+const REPORTS_PAGE_FILTER_STORAGE_KEY = 'reports-page-filters';
+const reportsDefaultDateRange = deriveDateRangeFromPreset('30d');
+
+const getDefaultReportsPageFilters = (isAdmin: boolean): PersistedReportsPageFilters => ({
+  datePreset: '30d',
+  startDate: reportsDefaultDateRange.startDate,
+  endDate: reportsDefaultDateRange.endDate,
+  reportType: 'monthly',
+  filterMode: isAdmin ? 'team' : 'user',
+  selectedUserIds: [],
+  selectedGroupIds: [],
+});
+
+const readPersistedReportsPageFilters = (isAdmin: boolean): PersistedReportsPageFilters => {
+  const fallback = getDefaultReportsPageFilters(isAdmin);
+  const parsed = readSessionStorageJson<PersistedReportsPageFilters>(REPORTS_PAGE_FILTER_STORAGE_KEY);
+
+  if (!parsed) {
+    return fallback;
+  }
+
+  return {
+    datePreset: isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset,
+    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
+    reportType: parsed.reportType === 'daily' || parsed.reportType === 'weekly' ? parsed.reportType : fallback.reportType,
+    filterMode: parsed.filterMode === 'group' || parsed.filterMode === 'user' ? parsed.filterMode : fallback.filterMode,
+    selectedUserIds: Array.isArray(parsed.selectedUserIds) ? parsed.selectedUserIds.map(Number).filter((id) => Number.isFinite(id) && id > 0) : fallback.selectedUserIds,
+    selectedGroupIds: Array.isArray(parsed.selectedGroupIds) ? parsed.selectedGroupIds.map(Number).filter((id) => Number.isFinite(id) && id > 0) : fallback.selectedGroupIds,
+  };
+};
+
 export default function Reports() {
   const { user } = useAuth();
   const isAdmin = hasAdminAccess(user);
-  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
-  const [startDate, setStartDate] = useState(() => deriveDateRangeFromPreset('30d').startDate);
-  const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
-  const [reportType, setReportType] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
-  const [filterMode, setFilterMode] = useState<'team' | 'user' | 'group'>(isAdmin ? 'team' : 'user');
-  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([]);
+  const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedReportsPageFilters(isAdmin).datePreset);
+  const [startDate, setStartDate] = useState(() => readPersistedReportsPageFilters(isAdmin).startDate);
+  const [endDate, setEndDate] = useState(() => readPersistedReportsPageFilters(isAdmin).endDate);
+  const [reportType, setReportType] = useState<'daily' | 'weekly' | 'monthly'>(() => readPersistedReportsPageFilters(isAdmin).reportType);
+  const [filterMode, setFilterMode] = useState<'team' | 'user' | 'group'>(() => readPersistedReportsPageFilters(isAdmin).filterMode);
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>(() => readPersistedReportsPageFilters(isAdmin).selectedUserIds);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>(() => readPersistedReportsPageFilters(isAdmin).selectedGroupIds);
   const [exportError, setExportError] = useState('');
 
   const handleDatePresetChange = (preset: DateRangePreset) => {
@@ -63,6 +106,18 @@ export default function Reports() {
       setSelectedGroupIds([]);
     }
   }, [isAdmin]);
+
+  useEffect(() => {
+    writeSessionStorageJson(REPORTS_PAGE_FILTER_STORAGE_KEY, {
+      datePreset,
+      startDate,
+      endDate,
+      reportType,
+      filterMode,
+      selectedUserIds,
+      selectedGroupIds,
+    } satisfies PersistedReportsPageFilters);
+  }, [datePreset, endDate, filterMode, isAdmin, reportType, selectedGroupIds, selectedUserIds, startDate]);
 
   const usersQuery = useQuery({
     queryKey: queryKeys.users({ period: 'all' }),
@@ -151,6 +206,30 @@ export default function Reports() {
 
   const users = usersQuery.data || [];
   const groups = groupsQuery.data || [];
+
+  useEffect(() => {
+    if (!usersQuery.isSuccess || selectedUserIds.length === 0) {
+      return;
+    }
+
+    const validUserIds = new Set(users.map((item) => Number(item.id)));
+    const nextUserIds = selectedUserIds.filter((id) => validUserIds.has(Number(id)));
+    if (nextUserIds.length !== selectedUserIds.length) {
+      setSelectedUserIds(nextUserIds);
+    }
+  }, [selectedUserIds, users, usersQuery.isSuccess]);
+
+  useEffect(() => {
+    if (!groupsQuery.isSuccess || selectedGroupIds.length === 0) {
+      return;
+    }
+
+    const validGroupIds = new Set(groups.map((item) => Number(item.id)));
+    const nextGroupIds = selectedGroupIds.filter((id) => validGroupIds.has(Number(id)));
+    if (nextGroupIds.length !== selectedGroupIds.length) {
+      setSelectedGroupIds(nextGroupIds);
+    }
+  }, [groups, groupsQuery.isSuccess, selectedGroupIds]);
   const reportData = reportsQuery.data?.reportData || null;
   const overallData = reportsQuery.data?.overallData || null;
   const reportTotals = reportData as any;

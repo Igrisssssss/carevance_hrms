@@ -9,7 +9,8 @@ import Button from '@/components/ui/Button';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput } from '@/components/ui/FormField';
-import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
+import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue } from '@/lib/searchSuggestions';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Activity, Camera, Search, Users } from 'lucide-react';
@@ -38,15 +39,61 @@ const arcPath = (cx: number, cy: number, r: number, startAngle: number, endAngle
   return `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
 };
 
+type PersistedMonitoringFilters = {
+  query: string;
+  datePreset: DateRangePreset;
+  startDate: string;
+  endDate: string;
+  selectedUserId: number | null;
+};
+
+const MONITORING_FILTER_STORAGE_KEY = 'monitoring-page-filters';
+const monitoringDefaultDateRange = deriveDateRangeFromPreset('30d');
+
+const getDefaultMonitoringFilters = (): PersistedMonitoringFilters => ({
+  query: '',
+  datePreset: '30d',
+  startDate: monitoringDefaultDateRange.startDate,
+  endDate: monitoringDefaultDateRange.endDate,
+  selectedUserId: null,
+});
+
+const readPersistedMonitoringFilters = (): PersistedMonitoringFilters => {
+  const fallback = getDefaultMonitoringFilters();
+  const parsed = readSessionStorageJson<PersistedMonitoringFilters>(MONITORING_FILTER_STORAGE_KEY);
+
+  if (!parsed) {
+    return fallback;
+  }
+
+  return {
+    query: typeof parsed.query === 'string' ? parsed.query : fallback.query,
+    datePreset: isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset,
+    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
+    selectedUserId: typeof parsed.selectedUserId === 'number' && parsed.selectedUserId > 0 ? parsed.selectedUserId : null,
+  };
+};
+
 export default function Monitoring() {
-  const [query, setQuery] = useState('');
-  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
-  const [startDate, setStartDate] = useState(() => deriveDateRangeFromPreset('30d').startDate);
-  const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
-  const [selectedUserId, setSelectedUserId] = useState<number | undefined>(undefined);
+  const [query, setQuery] = useState(() => readPersistedMonitoringFilters().query);
+  const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedMonitoringFilters().datePreset);
+  const [startDate, setStartDate] = useState(() => readPersistedMonitoringFilters().startDate);
+  const [endDate, setEndDate] = useState(() => readPersistedMonitoringFilters().endDate);
+  const [selectedUserId, setSelectedUserId] = useState<number | undefined>(() => readPersistedMonitoringFilters().selectedUserId ?? undefined);
   const [selectedUserSource, setSelectedUserSource] = useState<'picker' | 'search' | null>(null);
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    writeSessionStorageJson(MONITORING_FILTER_STORAGE_KEY, {
+      query,
+      datePreset,
+      startDate,
+      endDate,
+      selectedUserId: selectedUserId ?? null,
+    } satisfies PersistedMonitoringFilters);
+  }, [datePreset, endDate, query, selectedUserId, startDate]);
 
   const handleDatePresetChange = (preset: DateRangePreset) => {
     setDatePreset(preset);
@@ -110,6 +157,20 @@ export default function Monitoring() {
   const maxTeamEfficiency = Math.max(1, ...teamEfficiencyRanking.map((item: any) => Number(item?.efficiency_score || 0)));
   const analyticsUsersCount = Number(data?.analytics_users_count || 0);
   const totalActivityDuration = activityBreakdown.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0);
+
+  useEffect(() => {
+    if (!selectedUserId) {
+      return;
+    }
+
+    const candidates = data?.matched_users?.length ? data.matched_users : liveMonitoring?.all_users || [];
+    const hasSelectedUser = candidates.some((item: any) => Number(item?.id) === Number(selectedUserId));
+
+    if (!hasSelectedUser) {
+      setSelectedUserId(undefined);
+      setSelectedUserSource(null);
+    }
+  }, [data?.matched_users, liveMonitoring?.all_users, selectedUserId]);
 
   const handleDeleteScreenshot = async (id: number) => {
     if (!confirm('Delete this screenshot?')) return;
