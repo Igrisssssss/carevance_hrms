@@ -17,6 +17,7 @@ use App\Services\Reports\ActivityDurationNormalizer;
 use App\Services\Reports\DashboardSummaryService;
 use App\Services\Reports\ReportPayloadBuilder;
 use App\Services\Reports\TimeBreakdownService;
+use App\Services\Reports\UsageProcessingService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
@@ -31,6 +32,7 @@ class ReportController extends Controller
         private readonly ReportPayloadBuilder $reportPayloadBuilder,
         private readonly TimeBreakdownService $timeBreakdownService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
+        private readonly UsageProcessingService $usageProcessingService,
     ) {
     }
 
@@ -879,27 +881,23 @@ class ReportController extends Controller
         $entries = TimeEntry::where('user_id', $selectedUser->id)
             ->whereBetween('start_time', [$startDate, $endDate])
             ->get(['id', 'start_time', 'end_time', 'duration']);
-        $totalDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries);
         $entriesCount = $entries->count();
 
         $activities = Activity::where('user_id', $selectedUser->id)
             ->whereBetween('recorded_at', [$startDate, $endDate])
             ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
-        $effectiveActivities = $this->activityProductivityService->collapseLogicalActivities($activities);
-        $effectiveIdleActivities = $this->activityDurationNormalizer->collapseIdle($activities);
-
-        $totalIdle = (int) $effectiveIdleActivities->sum('duration');
-        $idleCount = max(1, $effectiveIdleActivities->count());
+        $selectedUsageSummary = $this->usageProcessingService->buildWebAppUsageUserRangeSummary(
+            (int) $selectedUser->id,
+            $activities,
+            $startDate,
+            $endDate,
+        );
+        $selectedMetrics = (array) ($selectedUsageSummary['metrics'] ?? []);
+        $totalIdle = (int) ($selectedMetrics['idle_time'] ?? 0);
+        $idleCount = max(1, (int) ($selectedUsageSummary['idle_segments_count'] ?? 0));
         $avgIdle = (float) round($totalIdle / $idleCount, 2);
-        $timeBreakdown = $this->timeBreakdownService->build($totalDuration, $totalIdle);
-
-        $activityBreakdown = $effectiveActivities->groupBy('type')->map(function ($group, $type) {
-            return [
-                'type' => $type,
-                'count' => $group->count(),
-                'total_duration' => (int) $group->sum('duration'),
-            ];
-        })->values();
+        $activityBreakdown = collect($selectedUsageSummary['activity_breakdown'] ?? [])->values();
+        $selectedToolBreakdown = (array) ($selectedUsageSummary['tools'] ?? ['productive' => [], 'unproductive' => [], 'neutral' => []]);
 
         $recentScreenshots = Screenshot::query()
             ->whereHas('timeEntry', function ($query) use ($selectedUser, $startDate, $endDate) {
@@ -916,69 +914,56 @@ class ReportController extends Controller
             : Activity::whereIn('user_id', $analyticsUserIds)
                 ->whereBetween('recorded_at', [$startDate, $endDate])
                 ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
-        $effectiveOrganizationActivities = $this->activityProductivityService->collapseLogicalActivities($organizationActivities);
+        $organizationActivitiesByUser = collect($organizationActivities)->groupBy(fn ($activity) => (int) $activity->user_id);
 
         $toolTotalsByKey = [];
         $perUserScore = [];
-
         foreach ($analyticsUsers as $analyticsUser) {
-            $perUserScore[(int) $analyticsUser->id] = [
+            $userId = (int) $analyticsUser->id;
+            $userUsageSummary = $this->usageProcessingService->buildWebAppUsageUserRangeSummary(
+                $userId,
+                $organizationActivitiesByUser->get($userId, collect()),
+                $startDate,
+                $endDate,
+            );
+            $userMetrics = (array) ($userUsageSummary['metrics'] ?? []);
+
+            $perUserScore[$userId] = [
                 'user' => [
-                    'id' => (int) $analyticsUser->id,
+                    'id' => $userId,
                     'name' => $analyticsUser->name,
                     'email' => $analyticsUser->email,
                     'role' => $analyticsUser->role,
                 ],
-                'productive_duration' => 0,
-                'unproductive_duration' => 0,
-                'neutral_duration' => 0,
-                'total_duration' => 0,
+                'productive_duration' => (int) ($userMetrics['productive_time'] ?? 0),
+                'unproductive_duration' => (int) ($userMetrics['unproductive_time'] ?? 0),
+                'neutral_duration' => (int) ($userMetrics['neutral_time'] ?? 0),
+                'total_duration' => (int) ($userMetrics['total_time'] ?? 0),
             ];
-        }
 
-        foreach ($effectiveOrganizationActivities as $item) {
-            $duration = max(0, (int) ($item->duration ?? 0));
-            if ($duration <= 0) {
-                continue;
-            }
+            foreach (['productive', 'unproductive', 'neutral'] as $classification) {
+                foreach ((array) data_get($userUsageSummary, "tools.{$classification}", []) as $toolRow) {
+                    $toolKey = strtolower(implode('|', [
+                        (string) ($toolRow['classification'] ?? $classification),
+                        (string) ($toolRow['type'] ?? 'software'),
+                        (string) ($toolRow['label'] ?? 'unknown'),
+                    ]));
 
-            $label = $this->activityProductivityService->normalizeToolLabel((string) ($item->name ?? ''), (string) ($item->type ?? 'app'));
-            $classification = $this->activityProductivityService->classifyProductivity($label, (string) ($item->type ?? 'app'));
-            $toolType = $this->activityProductivityService->guessToolType((string) ($item->type ?? 'app'));
-            $toolKey = strtolower($toolType.'|'.$label);
+                    if (! isset($toolTotalsByKey[$toolKey])) {
+                        $toolTotalsByKey[$toolKey] = [
+                            'label' => (string) ($toolRow['label'] ?? 'unknown'),
+                            'type' => (string) ($toolRow['type'] ?? 'software'),
+                            'classification' => (string) ($toolRow['classification'] ?? $classification),
+                            'total_duration' => 0,
+                            'total_events' => 0,
+                            'users' => [],
+                        ];
+                    }
 
-            if (!isset($toolTotalsByKey[$toolKey])) {
-                $toolTotalsByKey[$toolKey] = [
-                    'label' => $label,
-                    'type' => $toolType,
-                    'classification' => $classification,
-                    'total_duration' => 0,
-                    'total_events' => 0,
-                    'users' => [],
-                ];
-            }
-
-            $toolTotalsByKey[$toolKey]['total_duration'] += $duration;
-            $toolTotalsByKey[$toolKey]['total_events'] += 1;
-            $toolTotalsByKey[$toolKey]['users'][(int) $item->user_id] = true;
-
-            if (!isset($perUserScore[(int) $item->user_id])) {
-                $perUserScore[(int) $item->user_id] = [
-                    'user' => ['id' => (int) $item->user_id, 'name' => 'Unknown', 'email' => '', 'role' => 'employee'],
-                    'productive_duration' => 0,
-                    'unproductive_duration' => 0,
-                    'neutral_duration' => 0,
-                    'total_duration' => 0,
-                ];
-            }
-
-            $perUserScore[(int) $item->user_id]['total_duration'] += $duration;
-            if ($classification === 'productive') {
-                $perUserScore[(int) $item->user_id]['productive_duration'] += $duration;
-            } elseif ($classification === 'unproductive') {
-                $perUserScore[(int) $item->user_id]['unproductive_duration'] += $duration;
-            } else {
-                $perUserScore[(int) $item->user_id]['neutral_duration'] += $duration;
+                    $toolTotalsByKey[$toolKey]['total_duration'] += (int) ($toolRow['total_duration'] ?? 0);
+                    $toolTotalsByKey[$toolKey]['total_events'] += (int) ($toolRow['total_events'] ?? 0);
+                    $toolTotalsByKey[$toolKey]['users'][$userId] = true;
+                }
             }
         }
 
@@ -1025,7 +1010,6 @@ class ReportController extends Controller
             ->sortByDesc('unproductive_duration')
             ->first(fn ($row) => (int) ($row['unproductive_duration'] ?? 0) > 0);
 
-        $selectedToolBreakdown = $this->activityProductivityService->buildToolBreakdown($activities);
         $orgProductiveDuration = (int) $productiveTools->sum('total_duration');
         $orgUnproductiveDuration = (int) $unproductiveTools->sum('total_duration');
         $orgNeutralDuration = (int) $toolAnalytics->where('classification', 'neutral')->sum('total_duration');
@@ -1116,9 +1100,10 @@ class ReportController extends Controller
             $activityType = null;
 
             if ($latest) {
-                $toolLabel = $this->activityProductivityService->normalizeToolLabel((string) ($latest->name ?? ''), (string) ($latest->type ?? 'app'));
-                $classification = $this->activityProductivityService->classifyProductivity($toolLabel, (string) ($latest->type ?? 'app'));
-                $toolType = $this->activityProductivityService->guessToolType((string) ($latest->type ?? 'app'));
+                $toolDescriptor = $this->usageProcessingService->describeTool((string) ($latest->name ?? ''), (string) ($latest->type ?? 'app'));
+                $toolLabel = $toolDescriptor['label'] ?? null;
+                $classification = $toolDescriptor['classification'] ?? 'neutral';
+                $toolType = $toolDescriptor['type'] ?? null;
                 $activityType = (string) ($latest->type ?? 'app');
             }
 
@@ -1161,12 +1146,12 @@ class ReportController extends Controller
             'selected_user' => $selectedUser,
             'stats' => [
                 'entries_count' => $entriesCount,
-                'total_duration' => $timeBreakdown['total_duration'],
-                'total_hours' => round($timeBreakdown['total_duration'] / 3600, 2),
-                'working_duration' => $timeBreakdown['working_duration'],
-                'working_hours' => $timeBreakdown['working_hours'],
-                'billable_duration' => $timeBreakdown['billable_duration'],
-                'idle_total_duration' => $timeBreakdown['idle_duration'],
+                'total_duration' => (int) ($selectedMetrics['total_time'] ?? 0),
+                'total_hours' => round(((int) ($selectedMetrics['total_time'] ?? 0)) / 3600, 2),
+                'working_duration' => (int) ($selectedMetrics['total_time'] ?? 0),
+                'working_hours' => round(((int) ($selectedMetrics['total_time'] ?? 0)) / 3600, 2),
+                'billable_duration' => (int) ($selectedMetrics['total_time'] ?? 0),
+                'idle_total_duration' => (int) ($selectedMetrics['idle_time'] ?? 0),
                 'idle_avg_duration' => $avgIdle,
                 'activity_events' => $activities->count(),
             ],
