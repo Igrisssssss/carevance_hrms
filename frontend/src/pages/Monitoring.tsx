@@ -6,13 +6,12 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
-import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
-import { FieldLabel, SelectInput } from '@/components/ui/FormField';
+import { FieldLabel } from '@/components/ui/FormField';
 import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
-import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue } from '@/lib/searchSuggestions';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { Activity, Camera, Search, Users } from 'lucide-react';
+import { Activity, Camera, Users } from 'lucide-react';
 
 const PIE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2'];
 
@@ -44,7 +43,6 @@ export default function Monitoring() {
   const [startDate, setStartDate] = useState(() => deriveDateRangeFromPreset('30d').startDate);
   const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
   const [selectedUserId, setSelectedUserId] = useState<number | undefined>(undefined);
-  const [selectedUserSource, setSelectedUserSource] = useState<'picker' | 'search' | null>(null);
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -93,13 +91,6 @@ export default function Monitoring() {
   const employeeRankings = data?.employee_rankings || null;
   const teamRankings = data?.team_rankings || { by_efficiency: [], top_productive: null, least_productive: null };
   const liveMonitoring = data?.live_monitoring || { selected_user: null, working_now: [], all_users: [] };
-  const employeeSearchSuggestions = useMemo(
-    () => buildEmployeeSearchSuggestions(data?.matched_users?.length ? data.matched_users : liveMonitoring?.all_users || []),
-    [data?.matched_users, liveMonitoring?.all_users]
-  );
-  const selectedSearchEmployeeLabel = selectedUserId
-    ? String((data?.matched_users || liveMonitoring?.all_users || []).find((item: any) => Number(item?.id) === Number(selectedUserId))?.name || '').trim()
-    : '';
   const selectedUserLive = liveMonitoring?.selected_user;
   const employeesActive = liveMonitoring?.employees_active || [];
   const employeesInactive = liveMonitoring?.employees_inactive || [];
@@ -123,6 +114,16 @@ export default function Monitoring() {
       console.error('Delete screenshot failed:', error);
     }
   };
+  const employeeOptions = useMemo(
+    () => (data?.matched_users?.length ? data.matched_users : liveMonitoring?.all_users || []),
+    [data?.matched_users, liveMonitoring?.all_users]
+  );
+  const handleEmployeeFilterChange = (value: number | '') => {
+    const nextId = value ? Number(value) : undefined;
+    setSelectedUserId(nextId);
+    setQuery('');
+    void fetchData({ userId: nextId });
+  };
 
   return (
     <div className="space-y-6">
@@ -132,35 +133,10 @@ export default function Monitoring() {
         description="Review live activity, productive vs unproductive tracking, screenshots, and team-wide efficiency signals."
       />
 
-      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <div className="md:col-span-2 xl:col-span-2">
-          <FieldLabel>Employee Name</FieldLabel>
-          <SearchSuggestInput
-            type="text"
-            value={query}
-            onValueChange={(value) => {
-              setQuery(value);
-
-              if (selectedUserSource === 'search' && normalizeSearchValue(value) !== normalizeSearchValue(selectedSearchEmployeeLabel)) {
-                setSelectedUserId(undefined);
-                setSelectedUserSource(null);
-              }
-            }}
-            onSuggestionSelect={(suggestion) => {
-              const nextUserId = Number((suggestion.payload as any)?.id || 0);
-              const nextValue = getSuggestionDisplayValue(suggestion);
-              setQuery(nextValue);
-              if (Number.isFinite(nextUserId) && nextUserId > 0) {
-                setSelectedUserId(nextUserId);
-                setSelectedUserSource('search');
-              }
-            }}
-            suggestions={employeeSearchSuggestions}
-            placeholder="Search employee name..."
-            className="py-2.5 pl-9 pr-3"
-            icon={<Search className="h-4 w-4" />}
-            emptyMessage="No employee names match this search."
-          />
+      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div>
+          <FieldLabel>Employee</FieldLabel>
+          <EmployeeSelect employees={employeeOptions} value={selectedUserId ?? ''} onChange={handleEmployeeFilterChange} includeAllOption />
         </div>
         <DateRangeFields
           datePreset={datePreset}
@@ -182,24 +158,6 @@ export default function Monitoring() {
             Apply
           </Button>
         </div>
-      </FilterPanel>
-
-      <FilterPanel>
-        <FieldLabel>Employee</FieldLabel>
-        <SelectInput
-          value={selectedUserId ?? ''}
-          onChange={(e) => {
-            const nextId = e.target.value ? Number(e.target.value) : undefined;
-            setSelectedUserId(nextId);
-            setSelectedUserSource(nextId ? 'picker' : null);
-            fetchData({ userId: nextId });
-          }}
-          className="md:w-96"
-        >
-          {(data?.matched_users || []).map((u: any) => (
-            <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
-          ))}
-        </SelectInput>
       </FilterPanel>
 
       {isLoading ? (

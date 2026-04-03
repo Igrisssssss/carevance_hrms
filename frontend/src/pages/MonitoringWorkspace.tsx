@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,13 +10,11 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel } from '@/components/ui/FormField';
-import { classifyActivityProductivity, normalizeActivityToolLabel } from '@/lib/activityProductivity';
 import { deriveDateRangeFromPreset, detectDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
-import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue } from '@/lib/searchSuggestions';
-import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
-import { Activity, AppWindow, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
+import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
 
 type MonitoringWorkspaceMode = 'productive-time' | 'unproductive-time' | 'screenshots' | 'app-usage' | 'website-usage';
 type SectionFeedback = {
@@ -32,6 +30,55 @@ const formatDuration = (seconds: number) => {
   return `${hours}h ${minutes}m`;
 };
 const formatDateTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : 'No recent activity');
+const normalizeToolLabel = (name: string, activityType: string) => {
+  const trimmed = String(name || '').trim();
+  const normalizedType = String(activityType || '').trim().toLowerCase();
+
+  if (!trimmed) {
+    return normalizedType === 'url' ? 'unknown-site' : 'unknown-app';
+  }
+
+  if (normalizedType === 'url') {
+    try {
+      const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
+      return parsed.hostname.replace(/^www\./, '').toLowerCase();
+    } catch {
+      const match = trimmed.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
+      if (match?.[0]) {
+        return match[0].replace(/^www\./, '').toLowerCase();
+      }
+    }
+  }
+
+  return trimmed.slice(0, 120);
+};
+const classifyProductivity = (toolLabel: string, activityType: string) => {
+  const text = String(toolLabel || '').toLowerCase();
+  const normalizedType = String(activityType || '').trim().toLowerCase();
+  const productiveKeywords = [
+    'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'notion', 'slack', 'teams', 'zoom',
+    'vscode', 'visual studio', 'intellij', 'pycharm', 'webstorm', 'phpstorm', 'terminal',
+    'powershell', 'cmd', 'postman', 'figma', 'miro', 'docs.google', 'sheets.google', 'drive.google',
+    'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
+    'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint', 'meet.google',
+    'chat.openai', 'chatgpt', 'claude.ai', 'gemini.google', 'code', 'cursor', 'android studio',
+    'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat',
+  ];
+  const unproductiveKeywords = [
+    'youtube', 'netflix', 'primevideo', 'hotstar', 'spotify', 'instagram', 'facebook', 'twitter',
+    'x.com', 'reddit', 'snapchat', 'tiktok', 'discord', 'twitch', 'pinterest', '9gag',
+    'telegram', 'whatsapp', 'web.whatsapp', 'wa.me', 'fb.com', 'reels', 'shorts', 'cricbuzz', 'espncricinfo',
+  ];
+
+  const isProductive = productiveKeywords.some((keyword) => text.includes(keyword));
+  const isUnproductive = unproductiveKeywords.some((keyword) => text.includes(keyword));
+
+  if (isUnproductive && !isProductive) return 'unproductive';
+  if (isProductive && !isUnproductive) return 'productive';
+  if (normalizedType === 'idle') return 'neutral';
+  if (normalizedType === 'url' || normalizedType === 'app') return 'productive';
+  return 'neutral';
+};
 const productivityTone = (classification?: string | null) =>
   classification === 'productive'
     ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
@@ -76,16 +123,12 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const [startDate, setStartDate] = useState(defaultDateRange.startDate);
   const [endDate, setEndDate] = useState(defaultDateRange.endDate);
   const [query, setQuery] = useState('');
-  const [searchInput, setSearchInput] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
-  const [selectedUserSource, setSelectedUserSource] = useState<'picker' | 'search' | null>(null);
   const [screenshotPage, setScreenshotPage] = useState(1);
-  const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
   const [screenshotFeedback, setScreenshotFeedback] = useState<SectionFeedback>(null);
   const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
   const [isDeletingScreenshots, setIsDeletingScreenshots] = useState(false);
   const [refreshedScreenshotPaths, setRefreshedScreenshotPaths] = useState<Record<number, string>>({});
-  const employeeMenuRef = useRef<HTMLDivElement | null>(null);
   const hasExplicitEmployeeSelection = selectedUserId !== '';
   const screenshotTotalQueryEnabled =
     hasExplicitEmployeeSelection && (mode === 'productive-time' || mode === 'unproductive-time');
@@ -115,14 +158,11 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
 
     if (nextQuery !== null) {
       setQuery(nextQuery);
-      setSearchInput(nextQuery);
     }
 
     if (nextUserId !== null) {
       const parsedUserId = Number(nextUserId);
-      const hasValidUserId = Number.isFinite(parsedUserId) && parsedUserId > 0;
-      setSelectedUserId(hasValidUserId ? parsedUserId : '');
-      setSelectedUserSource(hasValidUserId ? 'picker' : null);
+      setSelectedUserId(Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : '');
     }
   }, [location.search]);
 
@@ -231,15 +271,14 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     () => (usersQuery.data || []).filter((employee: any) => user?.role !== 'manager' || employee.role === 'employee'),
     [user?.role, usersQuery.data]
   );
-  const employeeSearchSuggestions = useMemo(() => buildEmployeeSearchSuggestions(users), [users]);
   const usersById = useMemo(
     () => new Map(users.map((employee: any) => [Number(employee.id), employee])),
     [users]
   );
-  const selectedSearchEmployeeLabel = selectedUserId ? String(usersById.get(Number(selectedUserId))?.name || '').trim() : '';
   const pageTitle = modeCopy[mode];
-  const selectedEmployeeLabel =
-    users.find((employee: any) => employee.id === selectedUserId)?.name || 'All employees';
+  const selectedEmployeeLabel = selectedUserId
+    ? users.find((employee: any) => Number(employee.id) === Number(selectedUserId))?.name || 'Selected employee'
+    : 'All employees';
 
   const insights =
     mode === 'productive-time' || mode === 'unproductive-time'
@@ -299,9 +338,9 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     const mapped = new Map<string, { label: string; duration: number; count: number; users: Set<string>; classification: string }>();
 
     activityRows.forEach((item: any) => {
-      const label = normalizeActivityToolLabel(item.name || 'Unknown', item.type || (mode === 'website-usage' ? 'url' : 'app'));
+      const label = normalizeToolLabel(item.name || 'Unknown', item.type || (mode === 'website-usage' ? 'url' : 'app'));
       const key = label || 'Unknown';
-      const classification = classifyActivityProductivity(label, item.type || (mode === 'website-usage' ? 'url' : 'app'));
+      const classification = classifyProductivity(label, item.type || (mode === 'website-usage' ? 'url' : 'app'));
       if (!mapped.has(key)) {
         mapped.set(key, { label: key, duration: 0, count: 0, users: new Set(), classification });
       }
@@ -325,8 +364,8 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
 
     activityRows.forEach((item: any) => {
       const employeeId = item.user?.id || 'unknown';
-      const website = normalizeActivityToolLabel(item.name || 'Unknown', item.type || 'url');
-      const classification = classifyActivityProductivity(website, item.type || 'url');
+      const website = normalizeToolLabel(item.name || 'Unknown', item.type || 'url');
+      const classification = classifyProductivity(website, item.type || 'url');
       const key = `${employeeId}:${website}:${classification}`;
 
       if (!mapped.has(key)) {
@@ -352,19 +391,6 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   }, [activityRows, mode]);
 
   useEffect(() => {
-    const handleOutsideClick = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (employeeMenuRef.current && !employeeMenuRef.current.contains(target)) {
-        setEmployeeMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, []);
-
-  useEffect(() => {
     setScreenshotFeedback(null);
     setSelectedScreenshotIds([]);
     setIsDeletingScreenshots(false);
@@ -387,6 +413,10 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
       Refresh
     </Button>
   );
+  const handleEmployeeFilterChange = (value: number | '') => {
+    setSelectedUserId(value);
+    setQuery('');
+  };
 
   if (isLoading) {
     return <PageLoadingState label={`Loading ${pageTitle.title.toLowerCase()}...`} />;
@@ -528,7 +558,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     <div className="space-y-6">
       <PageHeader eyebrow={pageTitle.eyebrow} title={pageTitle.title} description={pageTitle.description} />
 
-      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <DateRangeFields
           datePreset={datePreset}
           onDatePresetChange={handleDatePresetChange}
@@ -544,102 +574,8 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
           }}
         />
         <div>
-          <FieldLabel>Search</FieldLabel>
-          <SearchSuggestInput
-            value={searchInput}
-            onValueChange={(value) => {
-              setSearchInput(value);
-              const normalizedValue = normalizeSearchValue(value);
-              const normalizedSelectedLabel = normalizeSearchValue(selectedSearchEmployeeLabel);
-
-              if (!normalizedValue) {
-                setQuery('');
-                if (selectedUserSource === 'search') {
-                  setSelectedUserId('');
-                  setSelectedUserSource(null);
-                }
-                return;
-              }
-
-              if (selectedUserSource === 'search' && normalizedValue !== normalizedSelectedLabel) {
-                setSelectedUserId('');
-                setSelectedUserSource(null);
-              }
-            }}
-            onSuggestionSelect={(suggestion) => {
-              const nextValue = getSuggestionDisplayValue(suggestion);
-              const nextUserId = Number((suggestion.payload as any)?.id || 0);
-              setSearchInput(nextValue);
-              if (Number.isFinite(nextUserId) && nextUserId > 0) {
-                setSelectedUserId(nextUserId);
-                setSelectedUserSource('search');
-                setQuery('');
-                return;
-              }
-
-              setSelectedUserSource(null);
-              setQuery(nextValue);
-            }}
-            onCommit={(value) => {
-              if (selectedUserSource === 'search') {
-                setSelectedUserId('');
-                setSelectedUserSource(null);
-              }
-              setQuery(value);
-            }}
-            suggestions={employeeSearchSuggestions}
-            placeholder="Employee name"
-            emptyMessage="No employee names match this search."
-          />
-        </div>
-        <div>
           <FieldLabel>Employee</FieldLabel>
-          <div className="relative" ref={employeeMenuRef}>
-            <button
-              type="button"
-              onClick={() => setEmployeeMenuOpen((prev) => !prev)}
-              className="flex w-full items-center justify-between rounded-[20px] border border-slate-200/90 bg-white/85 px-3.5 py-2.5 text-left text-sm text-slate-900 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.25)] outline-none transition duration-300 focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-300/25"
-            >
-              <span className="truncate">{selectedEmployeeLabel}</span>
-              <ChevronDown className={`h-4 w-4 text-slate-500 transition ${employeeMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {employeeMenuOpen ? (
-              <div className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_24px_70px_-32px_rgba(15,23,42,0.32)]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedUserId('');
-                    setSelectedUserSource(null);
-                    setSearchInput('');
-                    setQuery('');
-                    setEmployeeMenuOpen(false);
-                  }}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-slate-700 transition hover:bg-sky-50"
-                >
-                  <span>All employees</span>
-                  {selectedUserId === '' ? <Check className="h-4 w-4 text-sky-600" /> : null}
-                </button>
-                <div className="border-t border-slate-100">
-                  {users.map((employee: any) => (
-                    <button
-                      key={employee.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedUserId(Number(employee.id));
-                        setSelectedUserSource('picker');
-                        setEmployeeMenuOpen(false);
-                      }}
-                      className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-slate-700 transition hover:bg-sky-50"
-                    >
-                      <span className="truncate">{employee.name}</span>
-                      {selectedUserId === employee.id ? <Check className="h-4 w-4 text-sky-600" /> : null}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
+          <EmployeeSelect employees={users} value={selectedUserId} onChange={handleEmployeeFilterChange} includeAllOption />
         </div>
       </FilterPanel>
 
@@ -1133,7 +1069,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
               { key: 'recorded_at', header: 'When', render: (row: any) => new Date(row.recorded_at).toLocaleString() },
               { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
               { key: 'name', header: 'Name', render: (row: any) => row.name },
-              { key: 'classification', header: 'Productivity', render: (row: any) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(classifyActivityProductivity(normalizeActivityToolLabel(row.name || '', row.type || 'app'), row.type || 'app'))}`}>{classifyActivityProductivity(normalizeActivityToolLabel(row.name || '', row.type || 'app'), row.type || 'app')}</span> },
+              { key: 'classification', header: 'Productivity', render: (row: any) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(classifyProductivity(normalizeToolLabel(row.name || '', row.type || 'app'), row.type || 'app'))}`}>{classifyProductivity(normalizeToolLabel(row.name || '', row.type || 'app'), row.type || 'app')}</span> },
               { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
             ]}
           />

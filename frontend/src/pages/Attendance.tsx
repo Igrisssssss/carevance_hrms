@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, reportGroupApi, screenshotApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,12 +10,10 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
 import Button from '@/components/ui/Button';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
-import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
-import { classifyActivityProductivity, normalizeActivityToolLabel } from '@/lib/activityProductivity';
 import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
-import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue } from '@/lib/searchSuggestions';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Briefcase, CalendarDays, Clock, Eye, FolderKanban, Layers3, Users } from 'lucide-react';
 import type { UserProfile360 } from '@/types';
@@ -26,6 +25,51 @@ const formatDuration = (seconds: number) => {
   return `${hours}h ${minutes}m`;
 };
 const formatDateTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : 'Not available');
+const normalizeToolLabel = (name: string, activityType: string) => {
+  const trimmed = String(name || '').trim();
+  const normalizedType = String(activityType || '').toLowerCase();
+
+  if (!trimmed) return normalizedType === 'url' ? 'unknown-site' : 'unknown-app';
+
+  if (normalizedType === 'url') {
+    try {
+      const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
+      return parsed.hostname.replace(/^www\./, '').toLowerCase();
+    } catch {
+      const match = trimmed.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
+      if (match?.[0]) return match[0].replace(/^www\./, '').toLowerCase();
+    }
+  }
+
+  return trimmed.slice(0, 120);
+};
+const classifyProductivity = (toolLabel: string, activityType: string) => {
+  const text = String(toolLabel || '').toLowerCase();
+  const normalizedType = String(activityType || '').toLowerCase();
+  const productiveKeywords = [
+    'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'notion', 'slack', 'teams', 'zoom',
+    'vscode', 'visual studio', 'intellij', 'pycharm', 'webstorm', 'phpstorm', 'terminal',
+    'powershell', 'cmd', 'postman', 'figma', 'miro', 'docs.google', 'sheets.google', 'drive.google',
+    'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
+    'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint', 'meet.google',
+    'chat.openai', 'chatgpt', 'claude.ai', 'gemini.google', 'code', 'cursor', 'android studio',
+    'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat',
+  ];
+  const unproductiveKeywords = [
+    'youtube', 'netflix', 'primevideo', 'hotstar', 'spotify', 'instagram', 'facebook', 'twitter',
+    'x.com', 'reddit', 'snapchat', 'tiktok', 'discord', 'twitch', 'pinterest', '9gag',
+    'telegram', 'whatsapp', 'web.whatsapp', 'wa.me', 'fb.com', 'reels', 'shorts', 'cricbuzz', 'espncricinfo',
+  ];
+
+  const isProductive = productiveKeywords.some((keyword) => text.includes(keyword));
+  const isUnproductive = unproductiveKeywords.some((keyword) => text.includes(keyword));
+
+  if (isUnproductive && !isProductive) return 'unproductive';
+  if (isProductive && !isUnproductive) return 'productive';
+  if (normalizedType === 'idle') return 'neutral';
+  if (normalizedType === 'url' || normalizedType === 'app') return 'productive';
+  return 'neutral';
+};
 const productivityTone = (classification?: string | null) =>
   classification === 'productive'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
@@ -120,7 +164,7 @@ type SectionFeedback = {
 export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const navigate = useNavigate();
   const { user, organization } = useAuth();
-  const [query, setQuery] = useState('');
+  const [selectedFilterUserId, setSelectedFilterUserId] = useState<number | ''>('');
   const [countryFilter, setCountryFilter] = useState('ALL');
   const [calendarScope, setCalendarScope] = useState<'selected' | 'overall'>('selected');
   const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
@@ -128,7 +172,6 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
   const [rows, setRows] = useState<any[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
-  const [selectedSearchUserId, setSelectedSearchUserId] = useState<number | null>(null);
   const [workingDays, setWorkingDays] = useState(0);
   const [weekendDays, setWeekendDays] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -197,13 +240,31 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const isAdmin = hasAdminAccess(user);
   const canSeeAttendanceMonitoring = isAdmin;
-  const employeeSearchSuggestions = useMemo(
-    () => buildEmployeeSearchSuggestions(rows.map((row) => row.user).filter(Boolean)),
-    [rows]
-  );
-  const selectedSearchEmployeeLabel = selectedSearchUserId
-    ? String(rows.find((row) => Number(row?.user?.id) === Number(selectedSearchUserId))?.user?.name || '').trim()
-    : '';
+  const adminUsersQuery = useQuery({
+    queryKey: ['attendance-admin-users'],
+    queryFn: async () => {
+      const response = await userApi.getAll({ period: 'all' });
+      return response.data || [];
+    },
+    enabled: isAdmin,
+  });
+  const employeeFilterOptions = useMemo(() => {
+    const fetchedUsers = Array.isArray(adminUsersQuery.data) ? adminUsersQuery.data : [];
+    if (fetchedUsers.length > 0) {
+      return fetchedUsers;
+    }
+
+    const dedupedUsers = new Map<number, any>();
+    rows.forEach((row) => {
+      const employee = row?.user;
+      const employeeId = Number(employee?.id || 0);
+      if (employeeId > 0 && !dedupedUsers.has(employeeId)) {
+        dedupedUsers.set(employeeId, employee);
+      }
+    });
+
+    return Array.from(dedupedUsers.values());
+  }, [adminUsersQuery.data, rows]);
   const handleDatePresetChange = (preset: DateRangePreset) => {
     setDatePreset(preset);
     if (preset === 'custom') {
@@ -273,8 +334,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       const response = await reportApi.attendance({
         start_date: startDate,
         end_date: endDate,
-        user_id: isAdmin && selectedSearchUserId ? selectedSearchUserId : undefined,
-        q: isAdmin ? query || undefined : undefined,
+        user_id: isAdmin && selectedFilterUserId ? Number(selectedFilterUserId) : undefined,
         country: isAdmin && countryFilter !== 'ALL' ? countryFilter : undefined,
       });
       const payload = response.data as any;
@@ -655,7 +715,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }, 30000);
 
     return () => window.clearInterval(interval);
-  }, [calendarMonth, calendarScope, countryFilter, endDate, isAdmin, mode, query, selectedSearchUserId, selectedUserId, startDate]);
+  }, [calendarMonth, calendarScope, countryFilter, endDate, isAdmin, mode, selectedFilterUserId, selectedUserId, startDate]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -752,8 +812,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         if (!active) return;
 
         const websiteRows = ((websiteResponse.data as any)?.data || []).reduce((rows: any[], item: any) => {
-          const website = normalizeActivityToolLabel(item.name || '', item.type || 'url');
-          const classification = classifyActivityProductivity(website, item.type || 'url');
+          const website = normalizeToolLabel(item.name || '', item.type || 'url');
+          const classification = classifyProductivity(website, item.type || 'url');
           const existing = rows.find((row) => row.website === website && row.classification === classification);
 
           if (existing) {
@@ -1010,30 +1070,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         />
         {isAdmin && (
           <div>
-            <FieldLabel>Employee Name</FieldLabel>
-            <SearchSuggestInput
-              type="text"
-              value={query}
-              onValueChange={(value) => {
-                setQuery(value);
-
-                if (!value.trim()) {
-                  setSelectedSearchUserId(null);
-                  return;
-                }
-
-                if (selectedSearchUserId && normalizeSearchValue(value) !== normalizeSearchValue(selectedSearchEmployeeLabel)) {
-                  setSelectedSearchUserId(null);
-                }
-              }}
-              onSuggestionSelect={(suggestion) => {
-                const nextUserId = Number((suggestion.payload as any)?.id || 0);
-                setQuery(getSuggestionDisplayValue(suggestion));
-                setSelectedSearchUserId(Number.isFinite(nextUserId) && nextUserId > 0 ? nextUserId : null);
-              }}
-              suggestions={employeeSearchSuggestions}
-              placeholder="Search employee name..."
-              emptyMessage="No employee names match this search."
+            <FieldLabel>Employee</FieldLabel>
+            <EmployeeSelect
+              employees={employeeFilterOptions}
+              value={selectedFilterUserId}
+              onChange={setSelectedFilterUserId}
+              includeAllOption
             />
           </div>
         )}

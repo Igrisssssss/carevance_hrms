@@ -16,10 +16,11 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput } from '@/components/ui/FormField';
 import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
-import { buildEmployeeSearchSuggestions, buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
+import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
@@ -43,10 +44,6 @@ type ReportsWorkspaceMode =
   | 'web-app-usage'
   | 'productivity'
   | 'custom-export';
-
-type ProjectTaskSearchPayload =
-  | { kind: 'project'; projectId: number }
-  | { kind: 'task'; taskId: number; projectId: number };
 
 const defaultDateRange = deriveDateRangeFromPreset('30d');
 const formatDuration = (seconds: number) => {
@@ -160,15 +157,9 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
   const [startDate, setStartDate] = useState(defaultDateRange.startDate);
   const [endDate, setEndDate] = useState(defaultDateRange.endDate);
-  const [query, setQuery] = useState('');
-  const [appliedQuery, setAppliedQuery] = useState('');
   const [projectTaskSearchQuery, setProjectTaskSearchQuery] = useState('');
-  const [projectEmployeeSearchQuery, setProjectEmployeeSearchQuery] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState<number | ''>('');
   const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
-  const [selectedUserSource, setSelectedUserSource] = useState<'picker' | 'search' | null>(null);
-  const [selectedProjectSource, setSelectedProjectSource] = useState<'picker' | 'search' | null>(null);
-  const [selectedTaskSearchId, setSelectedTaskSearchId] = useState<number | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<number | ''>('');
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
@@ -201,10 +192,13 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const users = usersQuery.data || [];
   const groups = groupsQuery.data || [];
   const projectsTaskTextSearch = projectTaskSearchQuery.trim().toLowerCase();
-  const projectsEmployeeNameSearch = projectEmployeeSearchQuery.trim();
+  const selectedEmployee = useMemo(
+    () => users.find((employee: any) => Number(employee.id) === Number(selectedUserId)) || null,
+    [selectedUserId, users]
+  );
+  const projectsEmployeeNameSearch = mode === 'projects-tasks' && selectedEmployee ? String(selectedEmployee.name || '').trim() : '';
   const hasSelectedProject = selectedProjectId !== '';
   const selectedProjectIdNumber = hasSelectedProject ? Number(selectedProjectId) : null;
-  const remoteSearch = mode === 'attendance' || mode === 'web-app-usage' ? appliedQuery : '';
   const selectedGroup = selectedGroupId ? groups.find((group: any) => Number(group.id) === Number(selectedGroupId)) : null;
   const scopedUserIds = useMemo(() => {
     let ids = users.map((user: any) => Number(user.id));
@@ -222,7 +216,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   }, [selectedGroup, selectedUserId, users]);
 
   const dataQuery = useQuery({
-    queryKey: ['report-workspace-data', mode, startDate, endDate, remoteSearch, selectedUserId, selectedGroupId],
+    queryKey: ['report-workspace-data', mode, startDate, endDate, selectedUserId, selectedGroupId],
     enabled: usersQuery.isSuccess && groupsQuery.isSuccess,
     placeholderData: (previousData) => previousData,
     refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 10000 : false,
@@ -233,8 +227,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           start_date: startDate,
           end_date: endDate,
           user_id: selectedUserId ? Number(selectedUserId) : undefined,
-          group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
-          q: remoteSearch || undefined,
         });
         return response.data;
       }
@@ -281,7 +273,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           end_date: endDate,
           user_id: selectedUserId ? Number(selectedUserId) : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
-          q: remoteSearch || undefined,
         });
         return response.data;
       }
@@ -324,13 +315,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const projectsById = useMemo(() => new Map<number, any>(projects.map((project: any) => [Number(project.id), project])), [projects]);
   const tasksById = useMemo(() => new Map<number, any>(tasks.map((task: any) => [Number(task.id), task])), [tasks]);
   const usersById = useMemo(() => new Map<number, any>(users.map((user: any) => [Number(user.id), user])), [users]);
-  const selectedSearchUserLabel = selectedUserId ? String(usersById.get(Number(selectedUserId))?.name || '').trim() : '';
-  const selectedProjectSearchLabel =
-    selectedProjectSource === 'search' && selectedProjectId
-      ? String(projectsById.get(Number(selectedProjectId))?.name || '').trim()
-      : '';
-  const selectedTaskSearchLabel = selectedTaskSearchId ? String(tasksById.get(Number(selectedTaskSearchId))?.title || '').trim() : '';
-  const selectedProjectTaskSearchLabel = selectedTaskSearchLabel || selectedProjectSearchLabel;
   const filteredTasks = useMemo(() => {
     if (mode !== 'projects-tasks') return [];
 
@@ -339,7 +323,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       const assignee = usersById.get(Number(task.assignee_id));
       const matchesScope = !hasProjectsTasksScope || (task.assignee_id ? scopedUserIdSet.has(Number(task.assignee_id)) : false);
       const matchesSelectedProject = !hasSelectedProject || Number(task.project_id) === selectedProjectIdNumber;
-      const matchesSelectedTask = !selectedTaskSearchId || Number(task.id) === Number(selectedTaskSearchId);
       const matchesTaskProjectSearch = matchesWorkspaceSearch(projectsTaskTextSearch, [
         task.title,
         task.description,
@@ -350,7 +333,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       ]);
       const matchesEmployeeSearch = matchesSearchFilter(projectsEmployeeNameSearch, [assignee?.name]);
 
-      return matchesScope && matchesSelectedProject && matchesSelectedTask && matchesTaskProjectSearch && matchesEmployeeSearch;
+      return matchesScope && matchesSelectedProject && matchesTaskProjectSearch && matchesEmployeeSearch;
     });
   }, [
     hasProjectsTasksScope,
@@ -361,7 +344,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     projectsTaskTextSearch,
     scopedUserIdSet,
     selectedProjectIdNumber,
-    selectedTaskSearchId,
     tasks,
     usersById,
   ]);
@@ -377,7 +359,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       const user = usersById.get(Number(entry.user_id));
       const matchesScope = !hasProjectsTasksScope || scopedUserIdSet.has(Number(entry.user_id));
       const matchesSelectedProject = !hasSelectedProject || projectId === selectedProjectIdNumber;
-      const matchesSelectedTask = !selectedTaskSearchId || Number(entry.task_id) === Number(selectedTaskSearchId);
       const matchesTaskProjectSearch = matchesWorkspaceSearch(projectsTaskTextSearch, [
         project?.name,
         project?.description,
@@ -387,7 +368,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       ]);
       const matchesEmployeeSearch = matchesSearchFilter(projectsEmployeeNameSearch, [user?.name]);
 
-      return matchesScope && matchesSelectedProject && matchesSelectedTask && matchesTaskProjectSearch && matchesEmployeeSearch;
+      return matchesScope && matchesSelectedProject && matchesTaskProjectSearch && matchesEmployeeSearch;
     });
   }, [
     hasProjectsTasksScope,
@@ -399,7 +380,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     projectsTaskTextSearch,
     scopedUserIdSet,
     selectedProjectIdNumber,
-    selectedTaskSearchId,
     tasksById,
     usersById,
   ]);
@@ -435,13 +415,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     projectsTaskTextSearch,
     selectedProjectIdNumber,
   ]);
-  const employeeSearchSuggestions = useMemo(() => {
-    if (mode === 'attendance' || mode === 'web-app-usage') {
-      return buildEmployeeSearchSuggestions(users);
-    }
-
-    return [];
-  }, [mode, users]);
   const projectTaskSearchSuggestions = useMemo(() => {
     if (mode !== 'projects-tasks') {
       return [];
@@ -454,30 +427,17 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           label: project.name,
           description: project.description || 'Project',
           keywords: [project.status].filter(Boolean),
-          payload: { kind: 'project', projectId: Number(project.id) } satisfies ProjectTaskSearchPayload,
         })),
         ...tasks.map((task: any) => ({
           id: `task:${task.id}`,
           label: task.title,
           description: projectsById.get(Number(task.project_id))?.name || 'Task',
           keywords: [task.description, task.priority, task.status].filter(Boolean),
-          payload: { kind: 'task', taskId: Number(task.id), projectId: Number(task.project_id) } satisfies ProjectTaskSearchPayload,
         })),
       ],
       (item) => item
     );
   }, [mode, projects, projectsById, tasks]);
-  const projectEmployeeSearchSuggestions = useMemo(() => {
-    if (mode !== 'projects-tasks') {
-      return [];
-    }
-
-    const visibleUsers = hasProjectsTasksScope
-      ? users.filter((employee: any) => scopedUserIdSet.has(Number(employee.id)))
-      : users;
-
-    return buildEmployeeSearchSuggestions(visibleUsers);
-  }, [hasProjectsTasksScope, mode, scopedUserIdSet, users]);
   const selectedProject = useMemo(() => {
     if (!hasSelectedProject || mode !== 'projects-tasks') {
       return null;
@@ -779,6 +739,9 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       Refresh
     </Button>
   );
+  const handleEmployeeFilterChange = (value: number | '') => {
+    setSelectedUserId(value);
+  };
 
   if (isLoading) {
     return <PageLoadingState label={`Loading ${pageTitle.title.toLowerCase()}...`} />;
@@ -819,7 +782,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       {exportMessage ? <FeedbackBanner tone="success" message={exportMessage} /> : null}
       {exportError ? <FeedbackBanner tone="error" message={exportError} /> : null}
 
-      <FilterPanel className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${mode === 'projects-tasks' ? 'xl:grid-cols-10' : 'xl:grid-cols-6'}`}>
+      <FilterPanel className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${mode === 'projects-tasks' ? 'xl:grid-cols-9' : 'xl:grid-cols-5'}`}>
         <DateRangeFields
           datePreset={datePreset}
           onDatePresetChange={handleDatePresetChange}
@@ -840,83 +803,24 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               <FieldLabel><span className="whitespace-nowrap">Task / Project</span></FieldLabel>
               <SearchSuggestInput
                 value={projectTaskSearchQuery}
-                onValueChange={(value) => {
-                  setProjectTaskSearchQuery(value);
-
-                  if (
-                    selectedProjectSource === 'search' &&
-                    normalizeSearchValue(value) !== normalizeSearchValue(selectedProjectTaskSearchLabel)
-                  ) {
-                    setSelectedProjectId('');
-                    setSelectedProjectSource(null);
-                    setSelectedTaskSearchId(null);
-                  }
-                }}
-                onSuggestionSelect={(suggestion) => {
-                  const nextValue = getSuggestionDisplayValue(suggestion);
-                  const payload = suggestion.payload as ProjectTaskSearchPayload | undefined;
-
-                  setProjectTaskSearchQuery(nextValue);
-
-                  if (!payload) {
-                    return;
-                  }
-
-                  if (payload.kind === 'project') {
-                    setSelectedProjectId(payload.projectId);
-                    setSelectedProjectSource('search');
-                    setSelectedTaskSearchId(null);
-                    return;
-                  }
-
-                  setSelectedProjectId(payload.projectId);
-                  setSelectedProjectSource('search');
-                  setSelectedTaskSearchId(payload.taskId);
-                }}
+                onValueChange={setProjectTaskSearchQuery}
                 suggestions={projectTaskSearchSuggestions}
                 placeholder="Search tasks or projects"
                 emptyMessage="No tasks or projects match this search."
               />
             </div>
             <div className="xl:col-span-2">
-              <FieldLabel><span className="whitespace-nowrap">Employee Search</span></FieldLabel>
-              <SearchSuggestInput
-                value={projectEmployeeSearchQuery}
-                onValueChange={(value) => {
-                  setProjectEmployeeSearchQuery(value);
-
-                  if (selectedUserSource === 'search' && normalizeSearchValue(value) !== normalizeSearchValue(selectedSearchUserLabel)) {
-                    setSelectedUserId('');
-                    setSelectedUserSource(null);
-                  }
-                }}
-                onSuggestionSelect={(suggestion) => {
-                  const nextUserId = Number((suggestion.payload as any)?.id || 0);
-                  const nextValue = getSuggestionDisplayValue(suggestion);
-
-                  setProjectEmployeeSearchQuery(nextValue);
-
-                  if (Number.isFinite(nextUserId) && nextUserId > 0) {
-                    setSelectedUserId(nextUserId);
-                    setSelectedUserSource('search');
-                  }
-                }}
-                suggestions={projectEmployeeSearchSuggestions}
-                placeholder="Search employee name"
-                emptyMessage="No employee names match this search."
+              <FieldLabel><span className="whitespace-nowrap">Employee</span></FieldLabel>
+              <EmployeeSelect
+                employees={users}
+                value={selectedUserId}
+                onChange={handleEmployeeFilterChange}
+                includeAllOption
               />
             </div>
             <div>
               <FieldLabel>Project</FieldLabel>
-              <SelectInput
-                value={selectedProjectId}
-                onChange={(event) => {
-                  const nextProjectId = event.target.value ? Number(event.target.value) : '';
-                  setSelectedProjectId(nextProjectId);
-                  setSelectedProjectSource(nextProjectId === '' ? null : 'picker');
-                  setSelectedTaskSearchId(null);
-                }}
-              >
+              <SelectInput value={selectedProjectId} onChange={(event) => setSelectedProjectId(event.target.value ? Number(event.target.value) : '')}>
                 <option value="">All projects</option>
                 {projects.map((project: any) => (
                   <option key={project.id} value={project.id}>
@@ -928,69 +832,15 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           </>
         ) : (
           <div>
-            <FieldLabel>Search</FieldLabel>
-            <SearchSuggestInput
-              value={query}
-              onValueChange={(value) => {
-                setQuery(value);
-
-                if (selectedUserSource === 'search' && normalizeSearchValue(value) !== normalizeSearchValue(selectedSearchUserLabel)) {
-                  setSelectedUserId('');
-                  setSelectedUserSource(null);
-                }
-
-                if ((mode === 'attendance' || mode === 'web-app-usage') && !value.trim()) {
-                  setAppliedQuery('');
-                }
-              }}
-              onSuggestionSelect={(suggestion) => {
-                const nextValue = getSuggestionDisplayValue(suggestion);
-                const nextUserId = Number((suggestion.payload as any)?.id || 0);
-                setQuery(nextValue);
-
-                if (Number.isFinite(nextUserId) && nextUserId > 0) {
-                  setSelectedUserId(nextUserId);
-                  setSelectedUserSource('search');
-                }
-
-                if (mode === 'attendance' || mode === 'web-app-usage') {
-                  setAppliedQuery('');
-                }
-              }}
-              onCommit={(value) => {
-                if (selectedUserSource === 'search') {
-                  setSelectedUserId('');
-                  setSelectedUserSource(null);
-                }
-
-                if (mode === 'attendance' || mode === 'web-app-usage') {
-                  setAppliedQuery(value);
-                }
-              }}
-              suggestions={employeeSearchSuggestions}
-              placeholder="Employee name"
-              emptyMessage="No employee names match this search."
+            <FieldLabel>Employee</FieldLabel>
+            <EmployeeSelect
+              employees={users}
+              value={selectedUserId}
+              onChange={handleEmployeeFilterChange}
+              includeAllOption
             />
           </div>
         )}
-        <div>
-          <FieldLabel>Employee</FieldLabel>
-          <SelectInput
-            value={selectedUserId}
-            onChange={(event) => {
-              const nextUserId = event.target.value ? Number(event.target.value) : '';
-              setSelectedUserId(nextUserId);
-              setSelectedUserSource(nextUserId === '' ? null : 'picker');
-            }}
-          >
-            <option value="">All employees</option>
-            {users.map((employee: any) => (
-              <option key={employee.id} value={employee.id}>
-                {employee.name}
-              </option>
-            ))}
-          </SelectInput>
-        </div>
         <div>
           <FieldLabel>Team</FieldLabel>
           <SelectInput value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value ? Number(event.target.value) : '')}>
