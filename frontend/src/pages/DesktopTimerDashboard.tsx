@@ -38,6 +38,7 @@ import {
   Calendar,
   Building2,
 } from 'lucide-react';
+import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
 import type { TimeEntry } from '@/types';
 import type { Task } from '@/types';
 
@@ -783,8 +784,8 @@ export default function DesktopTimerDashboard() {
                     <Clock className="h-5 w-5 text-slate-600" />
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-slate-950">{entry.task?.title || entry.project?.name || 'No task selected'}</p>
-                    <p className="truncate text-sm text-slate-500">{entry.task?.group?.name || entry.description || 'No description'}</p>
+                    <p className="truncate font-medium text-slate-950">{getTimeEntryTitle(entry)}</p>
+                    <p className="truncate text-sm text-slate-500">{getTimeEntrySubtitle(entry, 'No description')}</p>
                   </div>
                 </div>
                 <div className="text-right">
