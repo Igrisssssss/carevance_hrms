@@ -4,7 +4,7 @@ import { reportGroupApi, userApi } from '@/services/api';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import { useAuth } from '@/contexts/AuthContext';
 import { deriveDateRangeFromPreset, getDateRangePresetLabel, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
-import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
+import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
@@ -41,10 +41,10 @@ type PersistedUserManagementFilters = {
 };
 
 const USER_MANAGEMENT_FILTER_STORAGE_KEY = 'user-management-filters';
-const userManagementDefaultDateRange = deriveDateRangeFromPreset('30d');
+const userManagementDefaultDateRange = deriveDateRangeFromPreset('today');
 
 const getDefaultUserManagementFilters = (defaultTimezone: string): PersistedUserManagementFilters => ({
-  datePreset: '30d',
+  datePreset: 'today',
   country: 'India',
   timezone: defaultTimezone,
   startDate: userManagementDefaultDateRange.startDate,
@@ -69,7 +69,7 @@ const readPersistedUserManagementFilters = (defaultTimezone: string): PersistedU
     timezone: typeof parsed.timezone === 'string' && timezoneOptions.includes(parsed.timezone) ? parsed.timezone : timezoneOptions[0],
     startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
     endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
-    selectedProfileUserId: typeof parsed.selectedProfileUserId === 'number' && parsed.selectedProfileUserId > 0 ? parsed.selectedProfileUserId : null,
+    selectedProfileUserId: coercePositiveNumber(parsed.selectedProfileUserId),
   };
 };
 
@@ -404,8 +404,8 @@ export default function UserManagement() {
         <div className="flex items-end">
           <button
             onClick={() => {
-              const nextRange = deriveDateRangeFromPreset('30d');
-              setDatePreset('30d');
+              const nextRange = deriveDateRangeFromPreset('today');
+              setDatePreset('today');
               setStartDate(nextRange.startDate);
               setEndDate(nextRange.endDate);
             }}

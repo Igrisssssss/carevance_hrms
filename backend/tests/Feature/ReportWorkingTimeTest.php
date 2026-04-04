@@ -3,7 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\Activity;
+use App\Models\AttendanceRecord;
+use App\Models\AttendanceTimeEditRequest;
+use App\Models\LeaveRequest;
 use App\Models\Organization;
+use App\Models\Payslip;
 use App\Models\TimeEntry;
 use App\Models\User;
 use Carbon\Carbon;
@@ -226,6 +230,91 @@ class ReportWorkingTimeTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    public function test_profile360_summary_uses_full_selected_range_for_attendance_and_adjustments(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        foreach (range(1, 20) as $day) {
+            $date = Carbon::create(2026, 3, $day)->toDateString();
+            $isAbsent = in_array($day, [5, 6, 7, 18], true);
+
+            AttendanceRecord::create([
+                'organization_id' => $employee->organization_id,
+                'user_id' => $employee->id,
+                'attendance_date' => $date,
+                'check_in_at' => $isAbsent ? null : "{$date} 09:00:00",
+                'check_out_at' => $isAbsent ? null : "{$date} 18:00:00",
+                'worked_seconds' => $isAbsent ? 0 : 8 * 3600,
+                'manual_adjustment_seconds' => 0,
+                'late_minutes' => in_array($day, [2, 9, 16], true) ? 10 : 0,
+                'status' => $isAbsent ? 'absent' : 'present',
+            ]);
+        }
+
+        LeaveRequest::create([
+            'organization_id' => $employee->organization_id,
+            'user_id' => $employee->id,
+            'type' => 'annual',
+            'start_date' => '2026-03-05',
+            'end_date' => '2026-03-07',
+            'reason' => 'Approved leave',
+            'status' => 'approved',
+        ]);
+
+        AttendanceTimeEditRequest::create([
+            'organization_id' => $employee->organization_id,
+            'user_id' => $employee->id,
+            'attendance_date' => '2026-03-18',
+            'extra_seconds' => 900,
+            'message' => 'Range-scoped edit',
+            'status' => 'approved',
+        ]);
+
+        AttendanceTimeEditRequest::create([
+            'organization_id' => $employee->organization_id,
+            'user_id' => $employee->id,
+            'attendance_date' => '2026-03-25',
+            'extra_seconds' => 1200,
+            'message' => 'Outside range edit',
+            'status' => 'approved',
+        ]);
+
+        Payslip::create([
+            'organization_id' => $employee->organization_id,
+            'user_id' => $employee->id,
+            'period_month' => '2026-03',
+            'currency' => 'INR',
+            'basic_salary' => 1000,
+            'total_allowances' => 0,
+            'total_deductions' => 0,
+            'net_salary' => 1000,
+            'payment_status' => 'paid',
+        ]);
+
+        Payslip::create([
+            'organization_id' => $employee->organization_id,
+            'user_id' => $employee->id,
+            'period_month' => '2026-04',
+            'currency' => 'INR',
+            'basic_salary' => 1000,
+            'total_allowances' => 0,
+            'total_deductions' => 0,
+            'net_salary' => 1000,
+            'payment_status' => 'paid',
+        ]);
+
+        $this->getJson("/api/users/{$employee->id}/profile-360?start_date=2026-03-01&end_date=2026-03-20", $headers)
+            ->assertOk()
+            ->assertJsonPath('summary.attendance_days', 20)
+            ->assertJsonPath('summary.present_days', 16)
+            ->assertJsonPath('summary.absent_days', 4)
+            ->assertJsonPath('summary.late_days', 3)
+            ->assertJsonPath('summary.approved_leave_days', 3)
+            ->assertJsonPath('summary.approved_time_edit_seconds', 900)
+            ->assertJsonPath('summary.payslips_count', 1)
+            ->assertJsonCount(14, 'attendance_records');
     }
 
     public function test_employee_insights_counts_live_duration_for_open_time_entries(): void

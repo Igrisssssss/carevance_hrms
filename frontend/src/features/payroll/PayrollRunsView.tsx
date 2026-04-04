@@ -7,6 +7,7 @@ import FilterPanel from '@/components/dashboard/FilterPanel';
 import DataTable from '@/components/dashboard/DataTable';
 import EmptyStateCard from '@/components/dashboard/EmptyStateCard';
 import Button from '@/components/ui/Button';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { payrollApi, payrollWorkspaceApi } from '@/services/api';
@@ -373,10 +374,12 @@ export default function PayrollRunsView() {
         </div>
         <div>
           <FieldLabel>Generate For</FieldLabel>
-          <SelectInput value={generateEmployeeId} onChange={(event) => setGenerateEmployeeId(event.target.value ? Number(event.target.value) : '')}>
-            <option value="">All employees</option>
-            {(employeesQuery.data || []).map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-          </SelectInput>
+          <EmployeeSelect
+            employees={employeesQuery.data || []}
+            value={generateEmployeeId}
+            onChange={setGenerateEmployeeId}
+            includeAllOption
+          />
         </div>
         <div>
           <FieldLabel>Payout Method</FieldLabel>

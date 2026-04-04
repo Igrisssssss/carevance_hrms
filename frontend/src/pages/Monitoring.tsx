@@ -9,8 +9,8 @@ import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel } from '@/components/ui/FormField';
-import { deriveDateRangeFromPreset, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
-import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
+import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
+import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Activity, Camera, Users } from 'lucide-react';
 
@@ -47,11 +47,11 @@ type PersistedMonitoringFilters = {
 };
 
 const MONITORING_FILTER_STORAGE_KEY = 'monitoring-page-filters';
-const monitoringDefaultDateRange = deriveDateRangeFromPreset('30d');
+const monitoringDefaultDateRange = deriveDateRangeFromPreset('today');
 
 const getDefaultMonitoringFilters = (): PersistedMonitoringFilters => ({
   query: '',
-  datePreset: '30d',
+  datePreset: 'today',
   startDate: monitoringDefaultDateRange.startDate,
   endDate: monitoringDefaultDateRange.endDate,
   selectedUserId: null,
@@ -67,10 +67,18 @@ const readPersistedMonitoringFilters = (): PersistedMonitoringFilters => {
 
   return {
     query: typeof parsed.query === 'string' ? parsed.query : fallback.query,
-    datePreset: isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset,
+    datePreset:
+      parsed.datePreset === 'today'
+      || parsed.datePreset === '2d'
+      || parsed.datePreset === '7d'
+      || parsed.datePreset === '15d'
+      || parsed.datePreset === '30d'
+      || parsed.datePreset === 'custom'
+        ? parsed.datePreset
+        : fallback.datePreset,
     startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
     endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
-    selectedUserId: typeof parsed.selectedUserId === 'number' && parsed.selectedUserId > 0 ? parsed.selectedUserId : null,
+    selectedUserId: coercePositiveNumber(parsed.selectedUserId),
   };
 };
 
@@ -114,9 +122,6 @@ export default function Monitoring() {
         end_date: endDate,
       });
       setData(response.data);
-      if (!selectedUserId && response.data?.selected_user?.id) {
-        setSelectedUserId(response.data.selected_user.id);
-      }
     } catch (error) {
       console.error('Monitoring load failed:', error);
     } finally {
@@ -148,19 +153,6 @@ export default function Monitoring() {
   const maxTeamEfficiency = Math.max(1, ...teamEfficiencyRanking.map((item: any) => Number(item?.efficiency_score || 0)));
   const analyticsUsersCount = Number(data?.analytics_users_count || 0);
   const totalActivityDuration = activityBreakdown.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0);
-
-  useEffect(() => {
-    if (!selectedUserId) {
-      return;
-    }
-
-    const candidates = data?.matched_users?.length ? data.matched_users : liveMonitoring?.all_users || [];
-    const hasSelectedUser = candidates.some((item: any) => Number(item?.id) === Number(selectedUserId));
-
-    if (!hasSelectedUser) {
-      setSelectedUserId(undefined);
-    }
-  }, [data?.matched_users, liveMonitoring?.all_users, selectedUserId]);
 
   const handleDeleteScreenshot = async (id: number) => {
     if (!confirm('Delete this screenshot?')) return;

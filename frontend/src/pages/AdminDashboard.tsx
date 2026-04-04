@@ -28,8 +28,9 @@ import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState } from '@/components/ui/PageState';
 import { useAuth } from '@/contexts/AuthContext';
 import { classifyActivityProductivity, normalizeActivityToolLabel } from '@/lib/activityProductivity';
+import { deriveDateRangeFromPreset, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
-import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
+import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
 import {
   Activity,
@@ -50,16 +51,19 @@ import {
 } from 'lucide-react';
 
 type DashboardScope = 'organization' | 'employee';
-type DatePreset = 'today' | '7d' | '30d' | 'custom';
 
 interface PersistedFilterState {
   scope: DashboardScope;
   selectedEmployeeId: number | '';
-  datePreset: DatePreset;
+  datePreset: DateRangePreset;
   startDate: string;
   endDate: string;
   attendanceSearchQuery: string;
   attendanceGroupFilter: number | '';
+}
+
+interface LegacyPersistedFilterState extends Partial<PersistedFilterState> {
+  selectedUserId?: number | string | null;
 }
 
 interface RequestResult<T> {
@@ -69,37 +73,6 @@ interface RequestResult<T> {
 
 const FILTER_STORAGE_KEY = 'admin-dashboard-filters';
 const ATTENDANCE_TABLE_SCROLL_CLASS = 'max-h-[28rem] overflow-y-auto overscroll-contain';
-
-const toDate = (value: Date) =>
-  `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
-
-const startOfToday = () => {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  return date;
-};
-
-const endOfToday = () => {
-  const date = new Date();
-  date.setHours(23, 59, 59, 999);
-  return date;
-};
-
-const deriveDatesFromPreset = (preset: DatePreset) => {
-  const end = endOfToday();
-  const start = startOfToday();
-
-  if (preset === '7d') {
-    start.setDate(start.getDate() - 6);
-  } else if (preset === '30d') {
-    start.setDate(start.getDate() - 29);
-  }
-
-  return {
-    startDate: toDate(start),
-    endDate: toDate(end),
-  };
-};
 
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
@@ -138,7 +111,7 @@ const productivityTone = (classification?: string | null) =>
       : 'bg-slate-100 text-slate-600 border-slate-200';
 
 const defaultFilters = (): PersistedFilterState => {
-  const dates = deriveDatesFromPreset('today');
+  const dates = deriveDateRangeFromPreset('today');
   return {
     scope: 'organization',
     selectedEmployeeId: '',
@@ -147,6 +120,34 @@ const defaultFilters = (): PersistedFilterState => {
     endDate: dates.endDate,
     attendanceSearchQuery: '',
     attendanceGroupFilter: '',
+  };
+};
+
+const readPersistedAdminDashboardFilters = (): PersistedFilterState => {
+  const fallback = defaultFilters();
+  const parsed = readSessionStorageJson<LegacyPersistedFilterState>(FILTER_STORAGE_KEY);
+  if (!parsed) {
+    return fallback;
+  }
+
+  const datePreset: DateRangePreset = isDateRangePreset(String(parsed.datePreset))
+    ? (parsed.datePreset as DateRangePreset)
+    : fallback.datePreset;
+  const derivedDates = datePreset === 'custom' ? fallback : { ...fallback, ...deriveDateRangeFromPreset(datePreset) };
+  const selectedEmployeeId = coercePositiveNumber(parsed.selectedEmployeeId ?? parsed.selectedUserId) ?? '';
+  const scope: DashboardScope =
+    parsed.scope === 'employee' || (parsed.scope == null && selectedEmployeeId !== '')
+      ? 'employee'
+      : 'organization';
+
+  return {
+    scope,
+    selectedEmployeeId,
+    datePreset,
+    startDate: parsed.startDate || derivedDates.startDate,
+    endDate: parsed.endDate || derivedDates.endDate,
+    attendanceSearchQuery: typeof parsed.attendanceSearchQuery === 'string' ? parsed.attendanceSearchQuery : fallback.attendanceSearchQuery,
+    attendanceGroupFilter: coercePositiveNumber(parsed.attendanceGroupFilter) ?? '',
   };
 };
 
@@ -279,29 +280,7 @@ function CompactList({
 
 export default function AdminDashboard() {
   const { user } = useAuth();
-  const [filters, setFilters] = useState<PersistedFilterState>(() => {
-    const fallback = defaultFilters();
-    const parsed = readSessionStorageJson<PersistedFilterState>(FILTER_STORAGE_KEY);
-    if (!parsed) return fallback;
-
-    return {
-      scope: parsed.scope === 'employee' ? 'employee' : 'organization',
-      selectedEmployeeId:
-        typeof parsed.selectedEmployeeId === 'number' && parsed.selectedEmployeeId > 0
-          ? parsed.selectedEmployeeId
-          : '',
-      datePreset: ['today', '7d', '30d', 'custom'].includes(String(parsed.datePreset))
-        ? (parsed.datePreset as DatePreset)
-        : fallback.datePreset,
-      startDate: parsed.startDate || fallback.startDate,
-      endDate: parsed.endDate || fallback.endDate,
-      attendanceSearchQuery: typeof parsed.attendanceSearchQuery === 'string' ? parsed.attendanceSearchQuery : fallback.attendanceSearchQuery,
-      attendanceGroupFilter:
-        typeof parsed.attendanceGroupFilter === 'number' && parsed.attendanceGroupFilter > 0
-          ? parsed.attendanceGroupFilter
-          : '',
-    };
-  });
+  const [filters, setFilters] = useState<PersistedFilterState>(() => readPersistedAdminDashboardFilters());
   const [exportFeedback, setExportFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isScreenshotManagerOpen, setIsScreenshotManagerOpen] = useState(false);
@@ -315,9 +294,10 @@ export default function AdminDashboard() {
   useEffect(() => {
     writeSessionStorageJson(FILTER_STORAGE_KEY, {
       ...filters,
+      selectedUserId: filters.selectedEmployeeId,
       attendanceSearchQuery,
       attendanceGroupFilter,
-    } satisfies PersistedFilterState);
+    } satisfies PersistedFilterState & { selectedUserId: number | '' });
   }, [attendanceGroupFilter, attendanceSearchQuery, filters]);
 
   useEffect(() => {
@@ -357,16 +337,21 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (
+      !usersQuery.isSuccess ||
       filters.scope === 'employee' &&
       filters.selectedEmployeeId !== '' &&
-      !selectableUsers.some((item: any) => item.id === filters.selectedEmployeeId)
+      !selectableUsers.some((item: any) => Number(item.id) === Number(filters.selectedEmployeeId))
     ) {
+      if (!usersQuery.isSuccess) {
+        return;
+      }
+
       setFilters((current) => ({
         ...current,
         selectedEmployeeId: selectableUsers[0]?.id || '',
       }));
     }
-  }, [filters.scope, filters.selectedEmployeeId, selectableUsers]);
+  }, [filters.scope, filters.selectedEmployeeId, selectableUsers, usersQuery.isSuccess]);
 
   const organizationQuery = useQuery({
     queryKey: ['admin-dashboard-organization', filters.startDate, filters.endDate, organizationUsers.map((user: any) => user.id).join(',')],
@@ -515,12 +500,10 @@ export default function AdminDashboard() {
     enabled: filters.scope === 'employee' && Boolean(filters.selectedEmployeeId),
     queryFn: async () => {
       const userId = Number(filters.selectedEmployeeId);
-      const month = filters.endDate.slice(0, 7);
       const [
         profileResult,
         insightsResult,
         overallResult,
-        attendanceCalendarResult,
         timeEntriesResult,
         screenshotsResult,
       ] = await Promise.all([
@@ -551,12 +534,6 @@ export default function AdminDashboard() {
           (response) => response.data || { summary: {}, by_user: [], by_day: [] }
         ),
         withDashboardFallback(
-          'Attendance calendar',
-          attendanceApi.calendar({ month, user_id: userId }),
-          { summary: {} },
-          (response) => response.data || { summary: {} }
-        ),
-        withDashboardFallback(
           'Employee time entries',
           timeEntryApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1 }),
           [],
@@ -574,7 +551,6 @@ export default function AdminDashboard() {
         profileResult.warning,
         insightsResult.warning,
         overallResult.warning,
-        attendanceCalendarResult.warning,
         timeEntriesResult.warning,
         screenshotsResult.warning,
       ].filter(Boolean) as string[];
@@ -583,7 +559,6 @@ export default function AdminDashboard() {
         profile: profileResult.value,
         insights: insightsResult.value,
         overall: overallResult.value,
-        calendar: attendanceCalendarResult.value,
         timeEntries: timeEntriesResult.value,
         screenshots: screenshotsResult.value?.data || [],
         screenshotsTotal: Number(screenshotsResult.value?.total || screenshotsResult.value?.data?.length || 0),
@@ -623,14 +598,14 @@ export default function AdminDashboard() {
     }));
   };
 
-  const handleDatePresetChange = (preset: DatePreset) => {
+  const handleDatePresetChange = (preset: DateRangePreset) => {
     setExportFeedback(null);
     if (preset === 'custom') {
       setFilters((current) => ({ ...current, datePreset: preset }));
       return;
     }
 
-    const dates = deriveDatesFromPreset(preset);
+    const dates = deriveDateRangeFromPreset(preset);
     setFilters((current) => ({
       ...current,
       datePreset: preset,
@@ -721,8 +696,8 @@ export default function AdminDashboard() {
             onDatePresetChange={handleDatePresetChange}
             startDate={filters.startDate}
             endDate={filters.endDate}
-            onStartDateChange={(value) => setFilters((current) => ({ ...current, startDate: value }))}
-            onEndDateChange={(value) => setFilters((current) => ({ ...current, endDate: value }))}
+            onStartDateChange={(value) => setFilters((current) => ({ ...current, startDate: value, datePreset: 'custom' }))}
+            onEndDateChange={(value) => setFilters((current) => ({ ...current, endDate: value, datePreset: 'custom' }))}
             onRefresh={() => void usersQuery.refetch()}
             onExport={handleExport}
             isRefreshing={usersQuery.isFetching}
@@ -734,7 +709,7 @@ export default function AdminDashboard() {
     );
   }
 
-  const selectedEmployee = selectableUsers.find((employee: any) => employee.id === filters.selectedEmployeeId) || null;
+  const selectedEmployee = selectableUsers.find((employee: any) => Number(employee.id) === Number(filters.selectedEmployeeId)) || null;
   const organizationData: any = organizationQuery.data;
   const employeeData: any = employeeQuery.data;
   const dashboardWarnings = filters.scope === 'organization'
@@ -852,7 +827,6 @@ export default function AdminDashboard() {
   const profile: any = employeeData?.profile;
   const employeeInsights: any = employeeData?.insights;
   const employeeOverall: any = employeeData?.overall;
-  const employeeCalendar: any = employeeData?.calendar;
   const employeeEntries = employeeData?.timeEntries || [];
   const employeeScreenshots = employeeData?.screenshots || [];
   const employeeScreenshotTotal = Number(employeeData?.screenshotsTotal || employeeScreenshots.length || 0);
@@ -864,20 +838,20 @@ export default function AdminDashboard() {
   const visibleScreenshotIds = screenshotGalleryItems.map((shot: any) => Number(shot.id));
   const allVisibleScreenshotsSelected = visibleScreenshotIds.length > 0 && visibleScreenshotIds.every((id: number) => selectedScreenshotIds.includes(id));
   const employeeSummary: any = profile?.summary || {};
+  const employeeOverallSummary: any = employeeOverall?.summary || {};
   const employeeStatus: any = profile?.status || {};
   const employeeStats: any = employeeInsights?.stats || {};
   const selectedUserTools = employeeInsights?.selected_user_tools || { productive: [], unproductive: [], neutral: [] };
   const employeeTrend = employeeOverall?.by_day || [];
-  const calendarSummary: any = employeeCalendar?.summary || {};
   const latestAttendance: any = employeeStatus.latest_attendance;
   const employeeLiveMonitoring: any = employeeInsights?.live_monitoring?.selected_user || null;
-  const employeeTrackedDuration = Number(employeeSummary.total_duration || 0);
-  const employeeIdleDuration = Number(employeeStats.idle_total_duration || 0);
-  const employeeWorkingDuration = getWorkingDuration(employeeSummary);
-  const monthlyAttendancePercentage = percentage(
-    Number(calendarSummary.present_days || 0),
-    Number(calendarSummary.present_days || 0) + Number(calendarSummary.absent_days || 0)
-  );
+  const employeeTrackedDuration = Number(employeeOverallSummary.total_duration ?? employeeSummary.total_duration ?? employeeStats.total_duration ?? 0);
+  const employeeIdleDuration = Number(employeeOverallSummary.idle_duration ?? employeeSummary.idle_duration ?? employeeStats.idle_total_duration ?? 0);
+  const employeeWorkingDuration = Number(employeeOverallSummary.working_duration ?? employeeSummary.working_duration ?? getWorkingDuration(employeeOverallSummary.total_duration ? employeeOverallSummary : employeeSummary));
+  const employeePresentDays = Number(employeeSummary.present_days || 0);
+  const employeeAbsentDays = Number(employeeSummary.absent_days ?? Math.max(Number(employeeSummary.attendance_days || 0) - employeePresentDays, 0));
+  const employeeLateDays = Number(employeeSummary.late_days || 0);
+  const employeeAttendancePercentage = percentage(employeePresentDays, employeePresentDays + employeeAbsentDays);
   const employeeProductivity = percentage(
     employeeWorkingDuration,
     employeeTrackedDuration
@@ -1646,15 +1620,15 @@ export default function AdminDashboard() {
                   label: 'Productivity score',
                   value: `${employeeProductivity}%`,
                   caption: 'Working share in the selected range',
-                  meta: `${monthlyAttendancePercentage}% monthly attendance`,
+                  meta: `${employeeAttendancePercentage}% attendance in the selected range`,
                   icon: TrendingUp,
                   accent: 'amber',
                 },
               ]}
               secondaryItems={[
-                { id: 'present-days', label: 'Present days', value: calendarSummary.present_days || 0 },
-                { id: 'late-days', label: 'Late days', value: calendarSummary.late_days || 0 },
-                { id: 'approved-leaves', label: 'Approved leaves', value: profile?.leave_requests?.filter((row: any) => row.status === 'approved').length || 0 },
+                { id: 'present-days', label: 'Present days', value: employeePresentDays },
+                { id: 'late-days', label: 'Late days', value: employeeLateDays },
+                { id: 'approved-leaves', label: 'Approved leaves', value: employeeSummary.approved_leave_days || 0 },
                 { id: 'screenshots', label: 'Screenshots', value: employeeScreenshotTotal },
               ]}
             />
@@ -1681,29 +1655,29 @@ export default function AdminDashboard() {
               />
               <DashboardTrendCard
                 title="Attendance trend"
-                description="Current month attendance snapshot from the attendance calendar endpoint."
+                description="Attendance summary for the selected date range."
                 points={[
                   {
                     id: 'present-days',
                     label: 'Present days',
-                    value: Number(calendarSummary.present_days || 0),
-                    formattedValue: String(calendarSummary.present_days || 0),
+                    value: employeePresentDays,
+                    formattedValue: String(employeePresentDays),
                   },
                   {
                     id: 'absent-days',
                     label: 'Absent days',
-                    value: Number(calendarSummary.absent_days || 0),
-                    formattedValue: String(calendarSummary.absent_days || 0),
+                    value: employeeAbsentDays,
+                    formattedValue: String(employeeAbsentDays),
                   },
                   {
                     id: 'late-days',
                     label: 'Late days',
-                    value: Number(calendarSummary.late_days || 0),
-                    formattedValue: String(calendarSummary.late_days || 0),
+                    value: employeeLateDays,
+                    formattedValue: String(employeeLateDays),
                   },
                 ]}
                 colorClassName="bg-violet-500"
-                footer="This uses the month containing the selected end date because the current backend exposes attendance calendar data month by month."
+                footer="These counts are now taken from the selected range instead of the month-only attendance snapshot."
               />
             </div>
             <SurfaceCard className="p-5 sm:p-6">
@@ -1742,15 +1716,15 @@ export default function AdminDashboard() {
                     id: 'attendance-status',
                     title: latestAttendance?.status || 'No current attendance status',
                     subtitle: `Check in ${latestAttendance?.check_in_at ? new Date(latestAttendance.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'} / Check out ${latestAttendance?.check_out_at ? new Date(latestAttendance.check_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}`,
-                    value: `${monthlyAttendancePercentage}%`,
-                    tone: monthlyAttendancePercentage >= 85 ? 'good' : 'warning',
+                    value: `${employeeAttendancePercentage}%`,
+                    tone: employeeAttendancePercentage >= 85 ? 'good' : 'warning',
                   },
                   {
                     id: 'late-days',
-                    title: 'Late days this month',
-                    subtitle: 'Based on the attendance calendar summary',
-                    value: String(calendarSummary.late_days || 0),
-                    tone: Number(calendarSummary.late_days || 0) > 0 ? 'warning' : 'good',
+                    title: 'Late days in range',
+                    subtitle: `${filters.startDate} to ${filters.endDate}`,
+                    value: String(employeeLateDays),
+                    tone: employeeLateDays > 0 ? 'warning' : 'good',
                   },
                 ]}
               />

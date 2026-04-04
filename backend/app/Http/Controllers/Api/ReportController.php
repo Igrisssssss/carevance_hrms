@@ -686,7 +686,8 @@ class ReportController extends Controller
             $records = AttendanceRecord::query()
                 ->where('organization_id', $currentUser->organization_id)
                 ->where('user_id', $user->id)
-                ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
+                ->whereDate('attendance_date', '>=', $startDate->toDateString())
+                ->whereDate('attendance_date', '<=', $endDate->toDateString())
                 ->get(['attendance_date', 'check_in_at', 'check_out_at', 'worked_seconds', 'manual_adjustment_seconds']);
 
             $recordByDate = $records->keyBy(fn ($record) => Carbon::parse($record->attendance_date)->toDateString());

@@ -14,6 +14,7 @@ import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel } from '@/components/ui/FormField';
 import { deriveDateRangeFromPreset, detectDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
+import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
 
 type MonitoringWorkspaceMode = 'productive-time' | 'unproductive-time' | 'screenshots' | 'app-usage' | 'website-usage';
@@ -22,7 +23,51 @@ type SectionFeedback = {
   message: string;
 } | null;
 
-const defaultDateRange = deriveDateRangeFromPreset('30d');
+type PersistedMonitoringWorkspaceFilters = {
+  datePreset: DateRangePreset;
+  startDate: string;
+  endDate: string;
+  query: string;
+  selectedUserId: number | '';
+};
+
+const MONITORING_WORKSPACE_FILTER_STORAGE_KEY = 'monitoring-workspace-filters';
+const getMonitoringWorkspaceFilterStorageKey = (mode: MonitoringWorkspaceMode) => `${MONITORING_WORKSPACE_FILTER_STORAGE_KEY}:${mode}`;
+const defaultDateRange = deriveDateRangeFromPreset('today');
+
+const getDefaultMonitoringWorkspaceFilters = (): PersistedMonitoringWorkspaceFilters => ({
+  datePreset: 'today',
+  startDate: defaultDateRange.startDate,
+  endDate: defaultDateRange.endDate,
+  query: '',
+  selectedUserId: '',
+});
+
+const readPersistedMonitoringWorkspaceFilters = (mode: MonitoringWorkspaceMode): PersistedMonitoringWorkspaceFilters => {
+  const fallback = getDefaultMonitoringWorkspaceFilters();
+  const parsed = readSessionStorageJson<PersistedMonitoringWorkspaceFilters>(getMonitoringWorkspaceFilterStorageKey(mode));
+
+  if (!parsed) {
+    return fallback;
+  }
+
+  return {
+    datePreset:
+      parsed.datePreset === 'today'
+      || parsed.datePreset === '2d'
+      || parsed.datePreset === '7d'
+      || parsed.datePreset === '15d'
+      || parsed.datePreset === '30d'
+      || parsed.datePreset === 'custom'
+        ? parsed.datePreset
+        : fallback.datePreset,
+    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
+    query: typeof parsed.query === 'string' ? parsed.query : fallback.query,
+    selectedUserId: coercePositiveNumber(parsed.selectedUserId) ?? '',
+  };
+};
+
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
   const hours = Math.floor(safe / 3600);
@@ -119,11 +164,11 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
-  const [startDate, setStartDate] = useState(defaultDateRange.startDate);
-  const [endDate, setEndDate] = useState(defaultDateRange.endDate);
-  const [query, setQuery] = useState('');
-  const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
+  const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedMonitoringWorkspaceFilters(mode).datePreset);
+  const [startDate, setStartDate] = useState(() => readPersistedMonitoringWorkspaceFilters(mode).startDate);
+  const [endDate, setEndDate] = useState(() => readPersistedMonitoringWorkspaceFilters(mode).endDate);
+  const [query, setQuery] = useState(() => readPersistedMonitoringWorkspaceFilters(mode).query);
+  const [selectedUserId, setSelectedUserId] = useState<number | ''>(() => readPersistedMonitoringWorkspaceFilters(mode).selectedUserId);
   const [screenshotPage, setScreenshotPage] = useState(1);
   const [screenshotFeedback, setScreenshotFeedback] = useState<SectionFeedback>(null);
   const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
@@ -132,6 +177,28 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const hasExplicitEmployeeSelection = selectedUserId !== '';
   const screenshotTotalQueryEnabled =
     hasExplicitEmployeeSelection && (mode === 'productive-time' || mode === 'unproductive-time');
+
+  useEffect(() => {
+    const persisted = readPersistedMonitoringWorkspaceFilters(mode);
+    setDatePreset(persisted.datePreset);
+    setStartDate(persisted.startDate);
+    setEndDate(persisted.endDate);
+    setQuery(persisted.query);
+    setSelectedUserId(persisted.selectedUserId);
+  }, [mode]);
+
+  useEffect(() => {
+    writeSessionStorageJson(
+      getMonitoringWorkspaceFilterStorageKey(mode),
+      {
+        datePreset,
+        startDate,
+        endDate,
+        query,
+        selectedUserId,
+      } satisfies PersistedMonitoringWorkspaceFilters
+    );
+  }, [datePreset, endDate, mode, query, selectedUserId, startDate]);
 
   useEffect(() => {
     if (!location.search) return;
