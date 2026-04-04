@@ -30,6 +30,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { classifyActivityProductivity, normalizeActivityToolLabel } from '@/lib/activityProductivity';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
+import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
 import {
   Activity,
   CalendarClock,
@@ -1843,8 +1844,8 @@ export default function AdminDashboard() {
                           header: 'Project',
                           render: (row: any) => (
                             <div>
-                              <p className="font-medium text-slate-950">{row.project?.name || 'General work'}</p>
-                              <p className="text-xs text-slate-500">{row.description || 'No description provided'}</p>
+                              <p className="font-medium text-slate-950">{getTimeEntryTitle(row)}</p>
+                              <p className="text-xs text-slate-500">{getTimeEntrySubtitle(row)}</p>
                             </div>
                           ),
                         },

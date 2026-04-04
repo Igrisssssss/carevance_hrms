@@ -114,4 +114,45 @@ describe('Dashboard', () => {
 
     expect(await screen.findByText(/attendance worked 9h 27m/i)).toBeInTheDocument();
   });
+
+  it('shows task context in the work log and falls back when no task was selected', async () => {
+    mocks.summaryMock.mockResolvedValue({
+      data: {
+        today_entries: [
+          {
+            id: 5,
+            start_time: '2026-03-11T09:00:00Z',
+            end_time: '2026-03-11T10:00:00Z',
+            duration: 3600,
+            description: 'Fallback entry description',
+            project: { id: 7, name: 'Core Platform' },
+            task: { id: 22, title: 'Fix payroll export', description: 'Repair CSV column order' },
+          },
+          {
+            id: 6,
+            start_time: '2026-03-11T10:15:00Z',
+            end_time: '2026-03-11T11:00:00Z',
+            duration: 2700,
+            description: '',
+            project: null,
+            task: null,
+          },
+        ],
+        today_total_elapsed_duration: 6300,
+        all_time_total_elapsed_duration: 6300,
+        team_members_count: 4,
+        new_members_this_week: 1,
+        productivity_score: 82,
+        active_projects_count: 2,
+        total_projects_count: 3,
+      },
+    });
+
+    renderWithProviders(<Dashboard />);
+
+    expect(await screen.findByText('Fix payroll export')).toBeInTheDocument();
+    expect(screen.getByText('Repair CSV column order')).toBeInTheDocument();
+    expect(screen.getByText('No task selected')).toBeInTheDocument();
+    expect(screen.getByText('No description provided')).toBeInTheDocument();
+  });
 });
