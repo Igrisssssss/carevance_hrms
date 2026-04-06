@@ -13,6 +13,7 @@ import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
+import { classifyActivityProductivity as classifyProductivity, normalizeActivityToolLabel as normalizeToolLabel } from '@/lib/activityProductivity';
 import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -26,51 +27,6 @@ const formatDuration = (seconds: number) => {
   return `${hours}h ${minutes}m`;
 };
 const formatDateTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : 'Not available');
-const normalizeToolLabel = (name: string, activityType: string) => {
-  const trimmed = String(name || '').trim();
-  const normalizedType = String(activityType || '').toLowerCase();
-
-  if (!trimmed) return normalizedType === 'url' ? 'unknown-site' : 'unknown-app';
-
-  if (normalizedType === 'url') {
-    try {
-      const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
-      return parsed.hostname.replace(/^www\./, '').toLowerCase();
-    } catch {
-      const match = trimmed.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
-      if (match?.[0]) return match[0].replace(/^www\./, '').toLowerCase();
-    }
-  }
-
-  return trimmed.slice(0, 120);
-};
-const classifyProductivity = (toolLabel: string, activityType: string) => {
-  const text = String(toolLabel || '').toLowerCase();
-  const normalizedType = String(activityType || '').toLowerCase();
-  const productiveKeywords = [
-    'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'notion', 'slack', 'teams', 'zoom',
-    'vscode', 'visual studio', 'intellij', 'pycharm', 'webstorm', 'phpstorm', 'terminal',
-    'powershell', 'cmd', 'postman', 'figma', 'miro', 'docs.google', 'sheets.google', 'drive.google',
-    'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
-    'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint', 'meet.google',
-    'chat.openai', 'chatgpt', 'claude.ai', 'gemini.google', 'code', 'cursor', 'android studio',
-    'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat',
-  ];
-  const unproductiveKeywords = [
-    'youtube', 'netflix', 'primevideo', 'hotstar', 'spotify', 'instagram', 'facebook', 'twitter',
-    'x.com', 'reddit', 'snapchat', 'tiktok', 'discord', 'twitch', 'pinterest', '9gag',
-    'telegram', 'whatsapp', 'web.whatsapp', 'wa.me', 'fb.com', 'reels', 'shorts', 'cricbuzz', 'espncricinfo',
-  ];
-
-  const isProductive = productiveKeywords.some((keyword) => text.includes(keyword));
-  const isUnproductive = unproductiveKeywords.some((keyword) => text.includes(keyword));
-
-  if (isUnproductive && !isProductive) return 'unproductive';
-  if (isProductive && !isUnproductive) return 'productive';
-  if (normalizedType === 'idle') return 'neutral';
-  if (normalizedType === 'url' || normalizedType === 'app') return 'productive';
-  return 'neutral';
-};
 const productivityTone = (classification?: string | null) =>
   classification === 'productive'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'

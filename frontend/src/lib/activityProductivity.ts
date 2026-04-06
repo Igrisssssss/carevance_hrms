@@ -5,7 +5,7 @@ const PRODUCTIVE_KEYWORDS = [
   'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
   'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint', 'meet.google',
   'chat.openai', 'chatgpt', 'claude.ai', 'gemini.google', 'code', 'cursor', 'android studio',
-  'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat',
+  'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat', 'canva',
 ];
 
 const UNPRODUCTIVE_KEYWORDS = [
@@ -41,8 +41,22 @@ const KNOWN_SITE_LABELS: Array<{ label: string; keywords: string[] }> = [
   { label: 'espncricinfo.com', keywords: ['espncricinfo'] },
   { label: 'github.com', keywords: ['github'] },
   { label: 'gitlab.com', keywords: ['gitlab'] },
+  { label: 'bitbucket.org', keywords: ['bitbucket'] },
   { label: 'stackoverflow.com', keywords: ['stackoverflow'] },
+  { label: 'figma.com', keywords: ['figma'] },
+  { label: 'miro.com', keywords: ['miro'] },
+  { label: 'canva.com', keywords: ['canva'] },
+  { label: 'trello.com', keywords: ['trello'] },
+  { label: 'asana.com', keywords: ['asana'] },
+  { label: 'linear.app', keywords: ['linear'] },
+  { label: 'clickup.com', keywords: ['clickup'] },
+  { label: 'developer.mozilla.org', keywords: ['developer.mozilla'] },
+  { label: 'learn.microsoft.com', keywords: ['learn.microsoft'] },
   { label: 'chat.openai.com', keywords: ['chat.openai', 'chatgpt'] },
+  { label: 'claude.ai', keywords: ['claude.ai'] },
+  { label: 'gemini.google', keywords: ['gemini.google'] },
+  { label: 'snapchat.com', keywords: ['snapchat'] },
+  { label: '9gag.com', keywords: ['9gag'] },
 ];
 
 export const guessToolType = (activityType: string) =>
