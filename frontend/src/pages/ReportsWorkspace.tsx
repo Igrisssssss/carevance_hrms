@@ -268,7 +268,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       return response.data?.data || [];
     },
   });
-  const showEmployeeFilter = user?.role !== 'manager';
   const users = useMemo(
     () => (usersQuery.data || []).filter((employee: any) => user?.role !== 'manager' || employee.role === 'employee'),
     [user?.role, usersQuery.data]
@@ -306,14 +305,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
     return Array.from(new Set(ids));
   }, [effectiveSelectedUserId, selectedGroup, users]);
-
-  useEffect(() => {
-    if (user?.role !== 'manager' || selectedUserId === '') {
-      return;
-    }
-
-    setSelectedUserId('');
-  }, [selectedUserId, user?.role]);
 
   useEffect(() => {
     if (!usersQuery.isSuccess || selectedUserId === '') {
@@ -893,7 +884,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       {exportMessage ? <FeedbackBanner tone="success" message={exportMessage} /> : null}
       {exportError ? <FeedbackBanner tone="error" message={exportError} /> : null}
 
-      <FilterPanel className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${mode === 'projects-tasks' ? (showEmployeeFilter ? 'xl:grid-cols-9' : 'xl:grid-cols-7') : (showEmployeeFilter ? 'xl:grid-cols-5' : 'xl:grid-cols-4')}`}>
+      <FilterPanel className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${mode === 'projects-tasks' ? 'xl:grid-cols-9' : 'xl:grid-cols-5'}`}>
         <DateRangeFields
           datePreset={datePreset}
           onDatePresetChange={handleDatePresetChange}
@@ -920,17 +911,15 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                 emptyMessage="No tasks or projects match this search."
               />
             </div>
-            {showEmployeeFilter ? (
-              <div className="xl:col-span-2">
-                <FieldLabel><span className="whitespace-nowrap">Employee</span></FieldLabel>
-                <EmployeeSelect
-                  employees={users}
-                  value={effectiveSelectedUserId}
-                  onChange={handleEmployeeFilterChange}
-                  includeAllOption
-                />
-              </div>
-            ) : null}
+            <div className="xl:col-span-2">
+              <FieldLabel><span className="whitespace-nowrap">Employee</span></FieldLabel>
+              <EmployeeSelect
+                employees={users}
+                value={effectiveSelectedUserId}
+                onChange={handleEmployeeFilterChange}
+                includeAllOption
+              />
+            </div>
             <div>
               <FieldLabel>Project</FieldLabel>
               <SelectInput value={selectedProjectId} onChange={(event) => setSelectedProjectId(event.target.value ? Number(event.target.value) : '')}>
@@ -943,7 +932,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               </SelectInput>
             </div>
           </>
-        ) : showEmployeeFilter ? (
+        ) : (
           <div>
             <FieldLabel>Employee</FieldLabel>
             <EmployeeSelect
@@ -953,7 +942,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               includeAllOption
             />
           </div>
-        ) : null}
+        )}
         <div>
           <FieldLabel>Team</FieldLabel>
           <SelectInput value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value ? Number(event.target.value) : '')}>
