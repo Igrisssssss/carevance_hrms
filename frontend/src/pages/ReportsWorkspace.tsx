@@ -9,6 +9,7 @@ import {
   timeEntryApi,
   userApi,
 } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
 import FilterPanel from '@/components/dashboard/FilterPanel';
@@ -205,6 +206,7 @@ const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: strin
 };
 
 export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode }) {
+  const { user } = useAuth();
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedReportsWorkspaceFilters(mode).datePreset);
   const [startDate, setStartDate] = useState(() => readPersistedReportsWorkspaceFilters(mode).startDate);
   const [endDate, setEndDate] = useState(() => readPersistedReportsWorkspaceFilters(mode).endDate);
@@ -266,7 +268,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       return response.data?.data || [];
     },
   });
-  const users = usersQuery.data || [];
+  const users = useMemo(
+    () => (usersQuery.data || []).filter((employee: any) => user?.role !== 'manager' || employee.role === 'employee'),
+    [user?.role, usersQuery.data]
+  );
   const groups = groupsQuery.data || [];
   const projectsTaskTextSearch = projectTaskSearchQuery.trim().toLowerCase();
   const selectedEmployee = useMemo(
@@ -291,6 +296,17 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
     return Array.from(new Set(ids));
   }, [selectedGroup, selectedUserId, users]);
+
+  useEffect(() => {
+    if (!usersQuery.isSuccess || selectedUserId === '') {
+      return;
+    }
+
+    const hasSelectedUser = users.some((employee: any) => Number(employee.id) === Number(selectedUserId));
+    if (!hasSelectedUser) {
+      setSelectedUserId('');
+    }
+  }, [selectedUserId, users, usersQuery.isSuccess]);
 
   const dataQuery = useQuery({
     queryKey: ['report-workspace-data', mode, startDate, endDate, selectedUserId, selectedGroupId],
