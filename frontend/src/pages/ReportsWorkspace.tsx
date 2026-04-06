@@ -273,10 +273,19 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     [user?.role, usersQuery.data]
   );
   const groups = groupsQuery.data || [];
+  const effectiveSelectedUserId = useMemo<number | ''>(() => {
+    if (selectedUserId === '') {
+      return '';
+    }
+
+    return users.some((employee: any) => Number(employee.id) === Number(selectedUserId))
+      ? Number(selectedUserId)
+      : '';
+  }, [selectedUserId, users]);
   const projectsTaskTextSearch = projectTaskSearchQuery.trim().toLowerCase();
   const selectedEmployee = useMemo(
-    () => users.find((employee: any) => Number(employee.id) === Number(selectedUserId)) || null,
-    [selectedUserId, users]
+    () => users.find((employee: any) => Number(employee.id) === Number(effectiveSelectedUserId)) || null,
+    [effectiveSelectedUserId, users]
   );
   const projectsEmployeeNameSearch = mode === 'projects-tasks' && selectedEmployee ? String(selectedEmployee.name || '').trim() : '';
   const hasSelectedProject = selectedProjectId !== '';
@@ -290,12 +299,12 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       ids = ids.filter((id) => groupUserIds.has(id));
     }
 
-    if (selectedUserId) {
-      ids = ids.filter((id) => id === Number(selectedUserId));
+    if (effectiveSelectedUserId) {
+      ids = ids.filter((id) => id === Number(effectiveSelectedUserId));
     }
 
     return Array.from(new Set(ids));
-  }, [selectedGroup, selectedUserId, users]);
+  }, [effectiveSelectedUserId, selectedGroup, users]);
 
   useEffect(() => {
     if (!usersQuery.isSuccess || selectedUserId === '') {
@@ -309,7 +318,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   }, [selectedUserId, users, usersQuery.isSuccess]);
 
   const dataQuery = useQuery({
-    queryKey: ['report-workspace-data', mode, startDate, endDate, selectedUserId, selectedGroupId],
+    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, selectedGroupId],
     enabled: usersQuery.isSuccess && groupsQuery.isSuccess,
     placeholderData: (previousData) => previousData,
     refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 10000 : false,
@@ -319,7 +328,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         const response = await reportApi.attendance({
           start_date: startDate,
           end_date: endDate,
-          user_id: selectedUserId ? Number(selectedUserId) : undefined,
+          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
         });
         return response.data;
       }
@@ -328,7 +337,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         const response = await reportApi.overall({
           start_date: startDate,
           end_date: endDate,
-          user_ids: selectedUserId ? [Number(selectedUserId)] : undefined,
+          user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
         });
         return response.data;
@@ -350,7 +359,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
       if (mode === 'timeline') {
         const response = await activityApi.getAll({
-          user_id: selectedUserId ? Number(selectedUserId) : undefined,
+          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
           start_date: startDate,
           end_date: endDate,
@@ -364,7 +373,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         const response = await reportApi.employeeInsights({
           start_date: startDate,
           end_date: endDate,
-          user_id: selectedUserId ? Number(selectedUserId) : undefined,
+          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
         });
         return response.data;
@@ -403,7 +412,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const projects = projectsData?.projects || [];
   const tasks = projectsData?.tasks || [];
   const projectTimeEntries = projectsData?.timeEntries || [];
-  const hasProjectsTasksScope = selectedUserId !== '' || selectedGroupId !== '';
+  const hasProjectsTasksScope = effectiveSelectedUserId !== '' || selectedGroupId !== '';
   const scopedUserIdSet = useMemo(() => new Set(scopedUserIds), [scopedUserIds]);
   const projectsById = useMemo(() => new Map<number, any>(projects.map((project: any) => [Number(project.id), project])), [projects]);
   const tasksById = useMemo(() => new Map<number, any>(tasks.map((task: any) => [Number(task.id), task])), [tasks]);
@@ -796,7 +805,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const orgSummary = usageData?.organization_summary || {};
   const usageOrganizationTools = usageData?.organization_tools || { productive: [], unproductive: [] };
   const employeeRankings = usageData?.employee_rankings?.by_productive_duration || [];
-  const hasSelectedEmployee = selectedUserId !== '';
+  const hasSelectedEmployee = effectiveSelectedUserId !== '';
   const usageWorkedDuration = hasSelectedEmployee
     ? Number(usageStats.total_duration || 0)
     : Number(orgSummary.productive_duration || 0) + Number(orgSummary.unproductive_duration || 0) + Number(orgSummary.neutral_duration || 0);
@@ -810,7 +819,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       const response = await reportApi.export({
         start_date: startDate,
         end_date: endDate,
-        user_ids: selectedUserId ? [Number(selectedUserId)] : undefined,
+        user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
         group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -906,7 +915,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               <FieldLabel><span className="whitespace-nowrap">Employee</span></FieldLabel>
               <EmployeeSelect
                 employees={users}
-                value={selectedUserId}
+                value={effectiveSelectedUserId}
                 onChange={handleEmployeeFilterChange}
                 includeAllOption
               />
@@ -928,7 +937,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             <FieldLabel>Employee</FieldLabel>
             <EmployeeSelect
               employees={users}
-              value={selectedUserId}
+              value={effectiveSelectedUserId}
               onChange={handleEmployeeFilterChange}
               includeAllOption
             />
@@ -1315,7 +1324,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Filters</p>
                 <p className="mt-2 text-lg font-semibold text-slate-950">
-                  {selectedUserId ? 'Single employee' : selectedGroupId ? 'Single group' : 'Organization-wide'}
+                  {effectiveSelectedUserId ? 'Single employee' : selectedGroupId ? 'Single group' : 'Organization-wide'}
                 </p>
               </div>
             </div>
