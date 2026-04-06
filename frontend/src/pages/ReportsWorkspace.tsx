@@ -807,8 +807,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const employeeRankings = usageData?.employee_rankings?.by_productive_duration || [];
   const hasSelectedEmployee = effectiveSelectedUserId !== '';
   const usageWorkedDuration = hasSelectedEmployee
-    ? Number(usageStats.total_duration || 0)
-    : Number(orgSummary.productive_duration || 0) + Number(orgSummary.unproductive_duration || 0) + Number(orgSummary.neutral_duration || 0);
+    ? getWorkingDuration(usageStats)
+    : getWorkingDuration(orgSummary);
   const usageProductiveRows = hasSelectedEmployee ? usageSelectedTools.productive || [] : usageOrganizationTools.productive || [];
   const usageUnproductiveRows = hasSelectedEmployee ? usageSelectedTools.unproductive || [] : usageOrganizationTools.unproductive || [];
 
@@ -1249,7 +1249,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               icon={Users}
               accent="sky"
             />
-            <MetricCard label="Worked" value={formatDuration(usageWorkedDuration)} hint={hasSelectedEmployee ? 'Tracked duration' : 'Tracked duration across current scope'} icon={TimerReset} accent="emerald" />
+            <MetricCard label="Worked" value={formatDuration(usageWorkedDuration)} hint={hasSelectedEmployee ? 'Tracked time minus measured idle time' : 'Working time across current scope'} icon={TimerReset} accent="emerald" />
             <MetricCard label="Productive Share" value={`${Number(orgSummary.productive_share || 0).toFixed(1)}%`} hint="Organization average" icon={LineChart} accent="violet" />
             <MetricCard
               label={hasSelectedEmployee ? 'Idle' : 'Employees'}
@@ -1299,7 +1299,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             columns={[
               { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
               { key: 'productive_duration', header: 'Productive Time', render: (row: any) => formatDuration(row.productive_duration || 0) },
-              { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.total_duration || 0) },
+              { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(getWorkingDuration(row) || row.total_duration || 0) },
               { key: 'matched_users', header: 'Search Pool', render: () => usageMatchedUsers.length },
             ]}
           />

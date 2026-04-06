@@ -345,9 +345,11 @@ class ReportWorkingTimeTest extends TestCase
 
             $this->getJson("/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}", $headers)
                 ->assertOk()
-                ->assertJsonPath('stats.total_duration', 1500)
+                ->assertJsonPath('stats.total_duration', 1800)
                 ->assertJsonPath('stats.working_duration', 1500)
                 ->assertJsonPath('stats.idle_total_duration', 300)
+                ->assertJsonPath('employee_rankings.by_productive_duration.0.total_duration', 1800)
+                ->assertJsonPath('employee_rankings.by_productive_duration.0.working_duration', 1500)
                 ->assertJsonPath('live_monitoring.selected_user.is_working', true);
         } finally {
             Carbon::setTestNow();
@@ -453,7 +455,8 @@ class ReportWorkingTimeTest extends TestCase
 
         $this->getJson("/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}", $headers)
             ->assertOk()
-            ->assertJsonPath('stats.total_duration', 135)
+            ->assertJsonPath('stats.total_duration', 180)
+            ->assertJsonPath('stats.working_duration', 60)
             ->assertJsonPath('stats.idle_total_duration', 120)
             ->assertJsonPath('selected_user_tools.unproductive.0.label', 'instagram.com')
             ->assertJsonPath('selected_user_tools.unproductive.0.total_duration', 135)
@@ -494,6 +497,7 @@ class ReportWorkingTimeTest extends TestCase
         $this->getJson("/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}", $headers)
             ->assertOk()
             ->assertJsonPath('stats.total_duration', 180)
+            ->assertJsonPath('stats.working_duration', 0)
             ->assertJsonPath('stats.idle_total_duration', 180)
             ->assertJsonPath('selected_user_tools.unproductive.0.label', 'instagram.com')
             ->assertJsonPath('selected_user_tools.unproductive.0.total_duration', 180)
