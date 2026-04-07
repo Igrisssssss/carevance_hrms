@@ -12,6 +12,7 @@ use App\Services\Authorization\OrganizationRoleService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class InvitationService
@@ -47,7 +48,101 @@ class InvitationService
                 continue;
             }
 
-            $created[] = $this->createSingle($actor, $organization, $email, $payload);
+            $invitation = $this->createSingle($actor, $organization, $email, $payload);
+            $created[] = $invitation;
+
+            if (($invitation['mail_delivery'] ?? null) === 'failed') {
+                $failed[] = [
+                    'email' => $email,
+                    'message' => 'Invitation created, but email delivery failed. Check SMTP settings.',
+                ];
+            }
+        }
+
+        return [
+            'created' => $created,
+            'failed' => $failed,
+        ];
+    }
+
+    public function createBulk(User $actor, Organization $organization, array $rows, array $defaults = []): array
+    {
+        $created = [];
+        $failed = [];
+        $seenEmails = [];
+
+        foreach ($rows as $index => $row) {
+            $email = mb_strtolower(trim((string) ($row['email'] ?? '')));
+            $role = (string) ($row['role'] ?? '');
+
+            if ($email === '') {
+                $failed[] = [
+                    'email' => '',
+                    'message' => 'Email is required.',
+                    'row' => $index + 1,
+                ];
+                continue;
+            }
+
+            if (isset($seenEmails[$email])) {
+                $failed[] = [
+                    'email' => $email,
+                    'message' => 'Duplicate email found in CSV upload.',
+                    'row' => $index + 1,
+                ];
+                continue;
+            }
+
+            $seenEmails[$email] = true;
+
+            try {
+                $this->organizationRoleService->assertCanAssignRole($actor, $role, "rows.{$index}.role");
+            } catch (ValidationException $exception) {
+                $failed[] = [
+                    'email' => $email,
+                    'message' => collect($exception->errors())->flatten()->first() ?: 'You are not allowed to assign this role.',
+                    'row' => $index + 1,
+                ];
+                continue;
+            }
+
+            $failure = $this->validateRecipient($actor, $organization, $email);
+
+            if ($failure !== null) {
+                $failed[] = [
+                    'email' => $email,
+                    'message' => $failure,
+                    'row' => $index + 1,
+                ];
+                continue;
+            }
+
+            $invitation = $this->createSingle($actor, $organization, $email, [
+                'role' => $role,
+                'delivery' => 'email',
+                'expires_in_hours' => $defaults['expires_in_hours'] ?? null,
+                'group_ids' => $this->mergeNumericIds(
+                    $defaults['group_ids'] ?? [],
+                    $row['group_ids'] ?? []
+                ),
+                'project_ids' => $this->mergeNumericIds(
+                    $defaults['project_ids'] ?? [],
+                    $row['project_ids'] ?? []
+                ),
+                'settings' => $this->mergeSettings(
+                    $defaults['settings'] ?? null,
+                    $row['settings'] ?? null
+                ),
+            ]);
+            $created[] = $invitation;
+
+            if (($invitation['mail_delivery'] ?? null) === 'failed') {
+                $failed[] = [
+                    'email' => $email,
+                    'message' => 'Invitation created, but email delivery failed. Check SMTP settings.',
+                    'row' => $index + 1,
+                ];
+            }
         }
 
         return [
@@ -199,7 +294,7 @@ class InvitationService
             $mailDelivery = $this->sendInvitationMail($invitation, $token) ? 'sent' : 'failed';
         }
 
-        $invitation->load('organization');
+        $invitation->setRelation('organization', $organization);
 
         return [
             ...$this->serialize($invitation, $token),
@@ -228,10 +323,39 @@ class InvitationService
         return 'This email is already in use by another workspace.';
     }
 
+    private function mergeNumericIds(array $defaults, array $rowValues): array
+    {
+        return collect([...$defaults, ...$rowValues])
+            ->map(fn ($value) => (int) $value)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function mergeSettings(?array $defaults, ?array $rowSettings): ?array
+    {
+        $defaults = $defaults ?? [];
+        $rowSettings = $rowSettings ?? [];
+        $merged = array_replace($defaults, $rowSettings);
+
+        return empty($merged) ? null : $merged;
+    }
+
     private function sendInvitationMail(Invitation $invitation, string $token): bool
     {
         try {
-            Mail::to($invitation->email)->queue(
+            if (!$this->hasMailConfiguration()) {
+                Log::warning('Invitation email skipped because mail configuration is incomplete.', [
+                    'invitation_id' => $invitation->id,
+                    'organization_id' => $invitation->organization_id,
+                    'email' => $invitation->email,
+                ]);
+
+                return false;
+            }
+
+            Mail::to($invitation->email)->sendNow(
                 new CareVanceInvitationMail(
                     invitation: $invitation->fresh(['organization', 'inviter']),
                     acceptUrl: $this->invitationUrlService->acceptUrl($token),
@@ -252,5 +376,20 @@ class InvitationService
 
             return false;
         }
+    }
+
+    private function hasMailConfiguration(): bool
+    {
+        $mailer = (string) config('mail.default', 'log');
+
+        if ($mailer !== 'smtp') {
+            return true;
+        }
+
+        return filled(config('mail.mailers.smtp.host'))
+            && filled(config('mail.mailers.smtp.port'))
+            && filled(config('mail.mailers.smtp.username'))
+            && filled(config('mail.mailers.smtp.password'))
+            && filled(config('mail.from.address'));
     }
 }

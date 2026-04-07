@@ -248,14 +248,16 @@ export default function AddUserDrawer({
       if (!csvFile) {
         throw new Error('Select a CSV file first.');
       }
-      if (!csvFile.name.toLowerCase().endsWith('.csv')) {
-        throw new Error('Only CSV files are supported.');
+      if (!addUserService.isSupportedImportFile(csvFile.name)) {
+        throw new Error('Only CSV and XLSX files are supported.');
       }
 
-      return addUserService.processCsvInvite(
+      return addUserService.processImportFile(
         csvFile,
         {
           organizationId: organization.id,
+          defaultGroupIds: [],
+          defaultProjectIds: [],
           settings,
         },
         groupsQuery.data || [],
@@ -311,7 +313,7 @@ export default function AddUserDrawer({
               </div>
               <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-slate-950">Add User</h2>
               <p className="mt-1 max-w-2xl text-sm text-slate-500">
-                An invitation email will be sent. The user creates their own account and automatically receives the selected access level.
+                An invitation email will be sent. The user creates their own account and automatically receives the assigned access level.
               </p>
             </div>
             <Button variant="ghost" className="h-11 w-11 rounded-full p-0" onClick={onClose} aria-label="Close add user drawer">
@@ -364,20 +366,40 @@ export default function AddUserDrawer({
               </>
             ) : null}
 
-            <RoleSelector value={role} onChange={setRole} allowedRoles={allowedRoles} />
+            {activeTab === 'csv' ? (
+              <>
+                <CsvUploadPanel
+                  file={csvFile}
+                  summary={csvSummary}
+                  errorMessage={csvError}
+                  onSelectFile={setCsvFile}
+                  onDownloadTemplate={addUserService.downloadCsvTemplate}
+                />
+                <div className="h-px bg-slate-200" />
+              </>
+            ) : null}
 
-            <div className="h-px bg-slate-200" />
+            {activeTab !== 'csv' ? (
+              <>
+                <RoleSelector value={role} onChange={setRole} allowedRoles={allowedRoles} />
+                <div className="h-px bg-slate-200" />
+              </>
+            ) : null}
 
-            <GroupMultiSelect
-              options={groupsQuery.data || []}
-              selectedIds={selectedGroupIds}
-              onChange={setSelectedGroupIds}
-              isLoading={groupsQuery.isLoading}
-              errorMessage={groupsQuery.isError ? 'Failed to load groups.' : undefined}
-              onCreateNew={() => setShowGroupModal(true)}
-            />
+            {activeTab !== 'csv' ? (
+              <>
+                <GroupMultiSelect
+                  options={groupsQuery.data || []}
+                  selectedIds={selectedGroupIds}
+                  onChange={setSelectedGroupIds}
+                  isLoading={groupsQuery.isLoading}
+                  errorMessage={groupsQuery.isError ? 'Failed to load groups.' : undefined}
+                  onCreateNew={() => setShowGroupModal(true)}
+                />
 
-            <div className="h-px bg-slate-200" />
+                <div className="h-px bg-slate-200" />
+              </>
+            ) : null}
 
             <div className="rounded-[26px] border border-slate-200/80 bg-slate-50/70">
               <button
@@ -487,16 +509,6 @@ export default function AddUserDrawer({
                 onCopy={() => copyLinkMutation.mutate()}
                 isGenerating={linkMutation.isPending}
                 isCopying={copyLinkMutation.isPending}
-              />
-            ) : null}
-
-            {activeTab === 'csv' ? (
-              <CsvUploadPanel
-                file={csvFile}
-                summary={csvSummary}
-                errorMessage={csvError}
-                onSelectFile={setCsvFile}
-                onDownloadTemplate={addUserService.downloadCsvTemplate}
               />
             ) : null}
 

@@ -140,6 +140,20 @@ export const invitationApi = {
     settings?: Record<string, any>;
   }) => api.post<InvitationCreateResponse>('/invitations', data),
 
+  importCsv: (data: {
+    rows: Array<{
+      email: string;
+      role: User['role'];
+      group_ids?: number[];
+      project_ids?: number[];
+      settings?: Record<string, any>;
+    }>;
+    default_group_ids?: number[];
+    default_project_ids?: number[];
+    settings?: Record<string, any>;
+    expires_in_hours?: number;
+  }) => api.post<InvitationCreateResponse>('/invitations/import', data),
+
   getByToken: (token: string) =>
     api.get<{ invitation: InvitationSummary }>(`/invitations/${token}`),
 
