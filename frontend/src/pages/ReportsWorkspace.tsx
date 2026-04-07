@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   activityApi,
@@ -9,6 +9,7 @@ import {
   timeEntryApi,
   userApi,
 } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
 import FilterPanel from '@/components/dashboard/FilterPanel';
@@ -16,10 +17,12 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput } from '@/components/ui/FormField';
 import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
-import { buildEmployeeSearchSuggestions, buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
+import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
+import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
@@ -44,7 +47,57 @@ type ReportsWorkspaceMode =
   | 'productivity'
   | 'custom-export';
 
-const defaultDateRange = deriveDateRangeFromPreset('30d');
+type PersistedReportsWorkspaceFilters = {
+  datePreset: DateRangePreset;
+  startDate: string;
+  endDate: string;
+  projectTaskSearchQuery: string;
+  selectedProjectId: number | '';
+  selectedUserId: number | '';
+  selectedGroupId: number | '';
+};
+
+const REPORTS_WORKSPACE_FILTER_STORAGE_KEY = 'reports-workspace-filters';
+const getReportsWorkspaceFilterStorageKey = (mode: ReportsWorkspaceMode) => `${REPORTS_WORKSPACE_FILTER_STORAGE_KEY}:${mode}`;
+const defaultDateRange = deriveDateRangeFromPreset('today');
+
+const getDefaultReportsWorkspaceFilters = (): PersistedReportsWorkspaceFilters => ({
+  datePreset: 'today',
+  startDate: defaultDateRange.startDate,
+  endDate: defaultDateRange.endDate,
+  projectTaskSearchQuery: '',
+  selectedProjectId: '',
+  selectedUserId: '',
+  selectedGroupId: '',
+});
+
+const readPersistedReportsWorkspaceFilters = (mode: ReportsWorkspaceMode): PersistedReportsWorkspaceFilters => {
+  const fallback = getDefaultReportsWorkspaceFilters();
+  const parsed = readSessionStorageJson<PersistedReportsWorkspaceFilters>(getReportsWorkspaceFilterStorageKey(mode));
+
+  if (!parsed) {
+    return fallback;
+  }
+
+  return {
+    datePreset:
+      parsed.datePreset === 'today'
+      || parsed.datePreset === '2d'
+      || parsed.datePreset === '7d'
+      || parsed.datePreset === '15d'
+      || parsed.datePreset === '30d'
+      || parsed.datePreset === 'custom'
+        ? parsed.datePreset
+        : fallback.datePreset,
+    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
+    projectTaskSearchQuery: typeof parsed.projectTaskSearchQuery === 'string' ? parsed.projectTaskSearchQuery : fallback.projectTaskSearchQuery,
+    selectedProjectId: coercePositiveNumber(parsed.selectedProjectId) ?? '',
+    selectedUserId: coercePositiveNumber(parsed.selectedUserId) ?? '',
+    selectedGroupId: coercePositiveNumber(parsed.selectedGroupId) ?? '',
+  };
+};
+
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
   const hours = Math.floor(safe / 3600);
@@ -153,18 +206,42 @@ const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: strin
 };
 
 export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode }) {
-  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
-  const [startDate, setStartDate] = useState(defaultDateRange.startDate);
-  const [endDate, setEndDate] = useState(defaultDateRange.endDate);
-  const [query, setQuery] = useState('');
-  const [appliedQuery, setAppliedQuery] = useState('');
-  const [projectTaskSearchQuery, setProjectTaskSearchQuery] = useState('');
-  const [projectEmployeeSearchQuery, setProjectEmployeeSearchQuery] = useState('');
-  const [selectedProjectId, setSelectedProjectId] = useState<number | ''>('');
-  const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
-  const [selectedGroupId, setSelectedGroupId] = useState<number | ''>('');
+  const { user } = useAuth();
+  const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedReportsWorkspaceFilters(mode).datePreset);
+  const [startDate, setStartDate] = useState(() => readPersistedReportsWorkspaceFilters(mode).startDate);
+  const [endDate, setEndDate] = useState(() => readPersistedReportsWorkspaceFilters(mode).endDate);
+  const [projectTaskSearchQuery, setProjectTaskSearchQuery] = useState(() => readPersistedReportsWorkspaceFilters(mode).projectTaskSearchQuery);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedProjectId);
+  const [selectedUserId, setSelectedUserId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedUserId);
+  const [selectedGroupId, setSelectedGroupId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedGroupId);
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
+
+  useEffect(() => {
+    const persisted = readPersistedReportsWorkspaceFilters(mode);
+    setDatePreset(persisted.datePreset);
+    setStartDate(persisted.startDate);
+    setEndDate(persisted.endDate);
+    setProjectTaskSearchQuery(persisted.projectTaskSearchQuery);
+    setSelectedProjectId(persisted.selectedProjectId);
+    setSelectedUserId(persisted.selectedUserId);
+    setSelectedGroupId(persisted.selectedGroupId);
+  }, [mode]);
+
+  useEffect(() => {
+    writeSessionStorageJson(
+      getReportsWorkspaceFilterStorageKey(mode),
+      {
+        datePreset,
+        startDate,
+        endDate,
+        projectTaskSearchQuery,
+        selectedProjectId,
+        selectedUserId,
+        selectedGroupId,
+      } satisfies PersistedReportsWorkspaceFilters
+    );
+  }, [datePreset, endDate, mode, projectTaskSearchQuery, selectedGroupId, selectedProjectId, selectedUserId, startDate]);
 
   const handleDatePresetChange = (preset: DateRangePreset) => {
     setDatePreset(preset);
@@ -191,13 +268,28 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       return response.data?.data || [];
     },
   });
-  const users = usersQuery.data || [];
+  const users = useMemo(
+    () => (usersQuery.data || []).filter((employee: any) => user?.role !== 'manager' || employee.role === 'employee'),
+    [user?.role, usersQuery.data]
+  );
   const groups = groupsQuery.data || [];
+  const effectiveSelectedUserId = useMemo<number | ''>(() => {
+    if (selectedUserId === '') {
+      return '';
+    }
+
+    return users.some((employee: any) => Number(employee.id) === Number(selectedUserId))
+      ? Number(selectedUserId)
+      : '';
+  }, [selectedUserId, users]);
   const projectsTaskTextSearch = projectTaskSearchQuery.trim().toLowerCase();
-  const projectsEmployeeNameSearch = projectEmployeeSearchQuery.trim();
+  const selectedEmployee = useMemo(
+    () => users.find((employee: any) => Number(employee.id) === Number(effectiveSelectedUserId)) || null,
+    [effectiveSelectedUserId, users]
+  );
+  const projectsEmployeeNameSearch = mode === 'projects-tasks' && selectedEmployee ? String(selectedEmployee.name || '').trim() : '';
   const hasSelectedProject = selectedProjectId !== '';
   const selectedProjectIdNumber = hasSelectedProject ? Number(selectedProjectId) : null;
-  const remoteSearch = mode === 'attendance' || mode === 'web-app-usage' ? appliedQuery : '';
   const selectedGroup = selectedGroupId ? groups.find((group: any) => Number(group.id) === Number(selectedGroupId)) : null;
   const scopedUserIds = useMemo(() => {
     let ids = users.map((user: any) => Number(user.id));
@@ -207,15 +299,26 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       ids = ids.filter((id) => groupUserIds.has(id));
     }
 
-    if (selectedUserId) {
-      ids = ids.filter((id) => id === Number(selectedUserId));
+    if (effectiveSelectedUserId) {
+      ids = ids.filter((id) => id === Number(effectiveSelectedUserId));
     }
 
     return Array.from(new Set(ids));
-  }, [selectedGroup, selectedUserId, users]);
+  }, [effectiveSelectedUserId, selectedGroup, users]);
+
+  useEffect(() => {
+    if (!usersQuery.isSuccess || selectedUserId === '') {
+      return;
+    }
+
+    const hasSelectedUser = users.some((employee: any) => Number(employee.id) === Number(selectedUserId));
+    if (!hasSelectedUser) {
+      setSelectedUserId('');
+    }
+  }, [selectedUserId, users, usersQuery.isSuccess]);
 
   const dataQuery = useQuery({
-    queryKey: ['report-workspace-data', mode, startDate, endDate, remoteSearch, selectedUserId, selectedGroupId],
+    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, selectedGroupId],
     enabled: usersQuery.isSuccess && groupsQuery.isSuccess,
     placeholderData: (previousData) => previousData,
     refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 10000 : false,
@@ -225,7 +328,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         const response = await reportApi.attendance({
           start_date: startDate,
           end_date: endDate,
-          q: remoteSearch || undefined,
+          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
         });
         return response.data;
       }
@@ -234,7 +337,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         const response = await reportApi.overall({
           start_date: startDate,
           end_date: endDate,
-          user_ids: selectedUserId ? [Number(selectedUserId)] : undefined,
+          user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
         });
         return response.data;
@@ -256,7 +359,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
       if (mode === 'timeline') {
         const response = await activityApi.getAll({
-          user_id: selectedUserId ? Number(selectedUserId) : undefined,
+          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
           start_date: startDate,
           end_date: endDate,
@@ -270,9 +373,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         const response = await reportApi.employeeInsights({
           start_date: startDate,
           end_date: endDate,
-          user_id: selectedUserId ? Number(selectedUserId) : undefined,
+          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
-          q: remoteSearch || undefined,
         });
         return response.data;
       }
@@ -310,7 +412,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const projects = projectsData?.projects || [];
   const tasks = projectsData?.tasks || [];
   const projectTimeEntries = projectsData?.timeEntries || [];
-  const hasProjectsTasksScope = selectedUserId !== '' || selectedGroupId !== '';
+  const hasProjectsTasksScope = effectiveSelectedUserId !== '' || selectedGroupId !== '';
   const scopedUserIdSet = useMemo(() => new Set(scopedUserIds), [scopedUserIds]);
   const projectsById = useMemo(() => new Map<number, any>(projects.map((project: any) => [Number(project.id), project])), [projects]);
   const tasksById = useMemo(() => new Map<number, any>(tasks.map((task: any) => [Number(task.id), task])), [tasks]);
@@ -415,13 +517,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     projectsTaskTextSearch,
     selectedProjectIdNumber,
   ]);
-  const employeeSearchSuggestions = useMemo(() => {
-    if (mode === 'attendance' || mode === 'web-app-usage') {
-      return buildEmployeeSearchSuggestions(users);
-    }
-
-    return [];
-  }, [mode, users]);
   const projectTaskSearchSuggestions = useMemo(() => {
     if (mode !== 'projects-tasks') {
       return [];
@@ -445,17 +540,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       (item) => item
     );
   }, [mode, projects, projectsById, tasks]);
-  const projectEmployeeSearchSuggestions = useMemo(() => {
-    if (mode !== 'projects-tasks') {
-      return [];
-    }
-
-    const visibleUsers = hasProjectsTasksScope
-      ? users.filter((employee: any) => scopedUserIdSet.has(Number(employee.id)))
-      : users;
-
-    return buildEmployeeSearchSuggestions(visibleUsers);
-  }, [hasProjectsTasksScope, mode, scopedUserIdSet, users]);
   const selectedProject = useMemo(() => {
     if (!hasSelectedProject || mode !== 'projects-tasks') {
       return null;
@@ -721,10 +805,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const orgSummary = usageData?.organization_summary || {};
   const usageOrganizationTools = usageData?.organization_tools || { productive: [], unproductive: [] };
   const employeeRankings = usageData?.employee_rankings?.by_productive_duration || [];
-  const hasSelectedEmployee = selectedUserId !== '';
+  const hasSelectedEmployee = effectiveSelectedUserId !== '';
   const usageWorkedDuration = hasSelectedEmployee
-    ? Number(usageStats.total_duration || 0)
-    : Number(orgSummary.productive_duration || 0) + Number(orgSummary.unproductive_duration || 0) + Number(orgSummary.neutral_duration || 0);
+    ? getWorkingDuration(usageStats)
+    : getWorkingDuration(orgSummary);
   const usageProductiveRows = hasSelectedEmployee ? usageSelectedTools.productive || [] : usageOrganizationTools.productive || [];
   const usageUnproductiveRows = hasSelectedEmployee ? usageSelectedTools.unproductive || [] : usageOrganizationTools.unproductive || [];
 
@@ -735,7 +819,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       const response = await reportApi.export({
         start_date: startDate,
         end_date: endDate,
-        user_ids: selectedUserId ? [Number(selectedUserId)] : undefined,
+        user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
         group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -757,6 +841,9 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       Refresh
     </Button>
   );
+  const handleEmployeeFilterChange = (value: number | '') => {
+    setSelectedUserId(value);
+  };
 
   if (isLoading) {
     return <PageLoadingState label={`Loading ${pageTitle.title.toLowerCase()}...`} />;
@@ -797,7 +884,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       {exportMessage ? <FeedbackBanner tone="success" message={exportMessage} /> : null}
       {exportError ? <FeedbackBanner tone="error" message={exportError} /> : null}
 
-      <FilterPanel className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${mode === 'projects-tasks' ? 'xl:grid-cols-10' : 'xl:grid-cols-6'}`}>
+      <FilterPanel className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${mode === 'projects-tasks' ? 'xl:grid-cols-9' : 'xl:grid-cols-5'}`}>
         <DateRangeFields
           datePreset={datePreset}
           onDatePresetChange={handleDatePresetChange}
@@ -825,13 +912,12 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               />
             </div>
             <div className="xl:col-span-2">
-              <FieldLabel><span className="whitespace-nowrap">Employee Search</span></FieldLabel>
-              <SearchSuggestInput
-                value={projectEmployeeSearchQuery}
-                onValueChange={setProjectEmployeeSearchQuery}
-                suggestions={projectEmployeeSearchSuggestions}
-                placeholder="Search employee name"
-                emptyMessage="No employee names match this search."
+              <FieldLabel><span className="whitespace-nowrap">Employee</span></FieldLabel>
+              <EmployeeSelect
+                employees={users}
+                value={effectiveSelectedUserId}
+                onChange={handleEmployeeFilterChange}
+                includeAllOption
               />
             </div>
             <div>
@@ -848,44 +934,15 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           </>
         ) : (
           <div>
-            <FieldLabel>Search</FieldLabel>
-            <SearchSuggestInput
-              value={query}
-              onValueChange={(value) => {
-                setQuery(value);
-                if ((mode === 'attendance' || mode === 'web-app-usage') && !value.trim()) {
-                  setAppliedQuery('');
-                }
-              }}
-              onSuggestionSelect={(suggestion) => {
-                const nextValue = String(suggestion.value || suggestion.label || '').trim();
-                setQuery(nextValue);
-                if (mode === 'attendance' || mode === 'web-app-usage') {
-                  setAppliedQuery(nextValue);
-                }
-              }}
-              onCommit={(value) => {
-                if (mode === 'attendance' || mode === 'web-app-usage') {
-                  setAppliedQuery(value);
-                }
-              }}
-              suggestions={employeeSearchSuggestions}
-              placeholder="Employee name"
-              emptyMessage="No employee names match this search."
+            <FieldLabel>Employee</FieldLabel>
+            <EmployeeSelect
+              employees={users}
+              value={effectiveSelectedUserId}
+              onChange={handleEmployeeFilterChange}
+              includeAllOption
             />
           </div>
         )}
-        <div>
-          <FieldLabel>Employee</FieldLabel>
-          <SelectInput value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value ? Number(event.target.value) : '')}>
-            <option value="">All employees</option>
-            {users.map((employee: any) => (
-              <option key={employee.id} value={employee.id}>
-                {employee.name}
-              </option>
-            ))}
-          </SelectInput>
-        </div>
         <div>
           <FieldLabel>Team</FieldLabel>
           <SelectInput value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value ? Number(event.target.value) : '')}>
@@ -1192,7 +1249,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               icon={Users}
               accent="sky"
             />
-            <MetricCard label="Worked" value={formatDuration(usageWorkedDuration)} hint={hasSelectedEmployee ? 'Tracked duration' : 'Tracked duration across current scope'} icon={TimerReset} accent="emerald" />
+            <MetricCard label="Worked" value={formatDuration(usageWorkedDuration)} hint={hasSelectedEmployee ? 'Tracked time minus measured idle time' : 'Working time across current scope'} icon={TimerReset} accent="emerald" />
             <MetricCard label="Productive Share" value={`${Number(orgSummary.productive_share || 0).toFixed(1)}%`} hint="Organization average" icon={LineChart} accent="violet" />
             <MetricCard
               label={hasSelectedEmployee ? 'Idle' : 'Employees'}
@@ -1232,20 +1289,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             />
           </div>
 
-          <DataTable
-            title="Top Productive Employees"
-            description={hasSelectedEmployee ? 'Employee ranking by productive duration from the current monitoring dataset.' : 'Employee ranking by productive duration across the current monitoring dataset.'}
-            rows={employeeRankings}
-            emptyMessage="No employee ranking data found."
-            headerAction={renderPanelRefreshButton()}
-            bodyClassName={employeeRankings.length > 5 ? 'max-h-[320px] overflow-y-auto' : undefined}
-            columns={[
-              { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
-              { key: 'productive_duration', header: 'Productive Time', render: (row: any) => formatDuration(row.productive_duration || 0) },
-              { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.total_duration || 0) },
-              { key: 'matched_users', header: 'Search Pool', render: () => usageMatchedUsers.length },
-            ]}
-          />
         </>
       )}
 
@@ -1267,7 +1310,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Filters</p>
                 <p className="mt-2 text-lg font-semibold text-slate-950">
-                  {selectedUserId ? 'Single employee' : selectedGroupId ? 'Single group' : 'Organization-wide'}
+                  {effectiveSelectedUserId ? 'Single employee' : selectedGroupId ? 'Single group' : 'Organization-wide'}
                 </p>
               </div>
             </div>

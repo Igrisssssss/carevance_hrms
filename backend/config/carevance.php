@@ -18,6 +18,18 @@ return [
 
     'sales_email' => (string) env('SALES_CONTACT_EMAIL', 'sales@carevance.example'),
 
+    'support_email' => (string) env('SUPPORT_CONTACT_EMAIL', 'support@carevance.example'),
+
+    'auth' => [
+        'email_verification_expire_minutes' => (int) env('AUTH_EMAIL_VERIFICATION_EXPIRE_MINUTES', 1440),
+    ],
+
+    'oauth' => [
+        'google' => [
+            'enabled' => filter_var(env('GOOGLE_OAUTH_ENABLED', false), FILTER_VALIDATE_BOOL),
+        ],
+    ],
+
     'plans' => [
         'starter' => [
             'label' => 'Starter',

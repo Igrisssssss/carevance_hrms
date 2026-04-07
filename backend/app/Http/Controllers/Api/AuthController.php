@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Api\Concerns\InteractsWithApiResponses;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Auth\LoginRequest;
+use App\Http\Requests\Api\Auth\ResendVerificationEmailRequest;
 use App\Http\Requests\Api\Auth\SignupOwnerRequest;
 use App\Models\Organization;
 use App\Models\User;
@@ -13,6 +14,7 @@ use App\Services\Audit\AuditLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -68,8 +70,6 @@ class AuthController extends Controller
 
             $user->load(['organization', 'groups']);
 
-            $token = $this->apiTokenService->issue($user);
-
             $this->auditLogService->log(
                 action: 'auth.owner_signup',
                 actor: $user,
@@ -82,14 +82,18 @@ class AuthController extends Controller
                 request: $request
             );
 
-            return compact('user', 'token', 'organization');
+            return compact('user', 'organization');
         });
+
+        $verificationEmailSent = $this->sendVerificationEmailSafely($result['user']);
 
         return $this->createdResponse([
             'user' => $result['user'],
-            'token' => $result['token'],
             'organization' => $result['organization'],
-        ], 'Registered successfully.');
+            'requires_verification' => true,
+            'email' => $result['user']->email,
+            'verification_email_sent' => $verificationEmailSent,
+        ], 'Account created successfully. Please verify your email before signing in.');
     }
 
     public function login(LoginRequest $request)
@@ -120,6 +124,31 @@ class AuthController extends Controller
             'token' => $token,
             'organization' => $user->organization,
         ], 'Logged in successfully.');
+    }
+
+    public function requestVerificationEmail(ResendVerificationEmailRequest $request)
+    {
+        $user = User::query()
+            ->whereRaw('LOWER(email) = ?', [strtolower((string) $request->validated('email'))])
+            ->first();
+
+        if (! $user) {
+            return $this->successResponse([
+                'sent' => true,
+            ], 'If an account exists for that email, a verification email has been sent.');
+        }
+
+        if ($user->hasVerifiedEmail()) {
+            return $this->successResponse([
+                'already_verified' => true,
+            ], 'This email is already verified.');
+        }
+
+        $this->sendVerificationEmailSafely($user);
+
+        return $this->successResponse([
+            'sent' => true,
+        ], 'If an account exists for that email, a verification email has been sent.');
     }
 
     public function user(Request $request)
@@ -196,6 +225,31 @@ class AuthController extends Controller
         ], 'Handoff token issued.');
     }
 
+    public function resendVerificationEmail(Request $request)
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated.',
+                'error_code' => 'UNAUTHORIZED',
+            ], 401);
+        }
+
+        if ($user->hasVerifiedEmail()) {
+            return $this->successResponse([
+                'already_verified' => true,
+            ], 'This email is already verified.');
+        }
+
+        $this->sendVerificationEmailSafely($user);
+
+        return $this->successResponse([
+            'resent' => true,
+        ], 'Verification email sent successfully.');
+    }
+
     private function generateUniqueOrganizationSlug(string $organizationName): string
     {
         $baseSlug = Str::slug($organizationName);
@@ -208,5 +262,23 @@ class AuthController extends Controller
         }
 
         return $slug;
+    }
+
+    private function sendVerificationEmailSafely(User $user): bool
+    {
+        try {
+            $user->sendEmailVerificationNotification();
+
+            return true;
+        } catch (\Throwable $exception) {
+            Log::warning('Verification email dispatch failed.', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 }

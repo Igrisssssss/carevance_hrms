@@ -40,21 +40,8 @@ class ActivityProductivityService
     {
         $text = strtolower($toolLabel);
 
-        $productiveKeywords = [
-            'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'notion', 'slack', 'teams', 'zoom',
-            'vscode', 'visual studio', 'intellij', 'pycharm', 'webstorm', 'phpstorm', 'terminal',
-            'powershell', 'cmd', 'postman', 'figma', 'miro', 'docs.google', 'sheets.google', 'drive.google',
-            'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
-            'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint', 'meet.google',
-            'chat.openai', 'chatgpt', 'claude.ai', 'gemini.google', 'code', 'cursor', 'android studio',
-            'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat',
-        ];
-
-        $unproductiveKeywords = [
-            'youtube', 'netflix', 'primevideo', 'hotstar', 'spotify', 'instagram', 'facebook', 'twitter',
-            'x.com', 'reddit', 'snapchat', 'tiktok', 'discord', 'twitch', 'pinterest', '9gag',
-            'telegram', 'whatsapp', 'web.whatsapp', 'wa.me', 'fb.com', 'reels', 'shorts', 'cricbuzz', 'espncricinfo',
-        ];
+        $productiveKeywords = (array) config('usage_processing.rules.productive', []);
+        $unproductiveKeywords = (array) config('usage_processing.rules.unproductive', []);
 
         $isProductive = collect($productiveKeywords)->contains(fn ($keyword) => str_contains($text, $keyword));
         $isUnproductive = collect($unproductiveKeywords)->contains(fn ($keyword) => str_contains($text, $keyword));

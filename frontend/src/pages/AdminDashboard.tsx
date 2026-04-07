@@ -27,7 +27,11 @@ import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState } from '@/components/ui/PageState';
 import { useAuth } from '@/contexts/AuthContext';
+import { classifyActivityProductivity, normalizeActivityToolLabel } from '@/lib/activityProductivity';
+import { deriveDateRangeFromPreset, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
+import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
+import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
 import {
   Activity,
   CalendarClock,
@@ -47,49 +51,28 @@ import {
 } from 'lucide-react';
 
 type DashboardScope = 'organization' | 'employee';
-type DatePreset = 'today' | '7d' | '30d' | 'custom';
 
 interface PersistedFilterState {
   scope: DashboardScope;
   selectedEmployeeId: number | '';
-  datePreset: DatePreset;
+  datePreset: DateRangePreset;
   startDate: string;
   endDate: string;
+  attendanceSearchQuery: string;
+  attendanceGroupFilter: number | '';
+}
+
+interface LegacyPersistedFilterState extends Partial<PersistedFilterState> {
+  selectedUserId?: number | string | null;
+}
+
+interface RequestResult<T> {
+  value: T;
+  warning: string | null;
 }
 
 const FILTER_STORAGE_KEY = 'admin-dashboard-filters';
 const ATTENDANCE_TABLE_SCROLL_CLASS = 'max-h-[28rem] overflow-y-auto overscroll-contain';
-
-const toDate = (value: Date) =>
-  `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
-
-const startOfToday = () => {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  return date;
-};
-
-const endOfToday = () => {
-  const date = new Date();
-  date.setHours(23, 59, 59, 999);
-  return date;
-};
-
-const deriveDatesFromPreset = (preset: DatePreset) => {
-  const end = endOfToday();
-  const start = startOfToday();
-
-  if (preset === '7d') {
-    start.setDate(start.getDate() - 6);
-  } else if (preset === '30d') {
-    start.setDate(start.getDate() - 29);
-  }
-
-  return {
-    startDate: toDate(start),
-    endDate: toDate(end),
-  };
-};
 
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
@@ -120,57 +103,6 @@ const percentage = (value: number, total: number) => {
   return Math.round((value / total) * 100);
 };
 
-const normalizeToolLabel = (name: string, activityType: string) => {
-  const trimmed = String(name || '').trim();
-  const normalizedType = String(activityType || '').toLowerCase();
-
-  if (!trimmed) {
-    return normalizedType === 'url' ? 'unknown-site' : 'unknown-app';
-  }
-
-  if (normalizedType === 'url') {
-    try {
-      const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
-      return parsed.hostname.replace(/^www\./, '').toLowerCase();
-    } catch {
-      const match = trimmed.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
-      if (match?.[0]) {
-        return match[0].replace(/^www\./, '').toLowerCase();
-      }
-    }
-  }
-
-  return trimmed.slice(0, 120);
-};
-
-const classifyProductivity = (toolLabel: string, activityType: string) => {
-  const text = String(toolLabel || '').toLowerCase();
-  const normalizedType = String(activityType || '').toLowerCase();
-  const productiveKeywords = [
-    'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'notion', 'slack', 'teams', 'zoom',
-    'vscode', 'visual studio', 'intellij', 'pycharm', 'webstorm', 'phpstorm', 'terminal',
-    'powershell', 'cmd', 'postman', 'figma', 'miro', 'docs.google', 'sheets.google', 'drive.google',
-    'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
-    'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint', 'meet.google',
-    'chat.openai', 'chatgpt', 'claude.ai', 'gemini.google', 'code', 'cursor', 'android studio',
-    'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat',
-  ];
-  const unproductiveKeywords = [
-    'youtube', 'netflix', 'primevideo', 'hotstar', 'spotify', 'instagram', 'facebook', 'twitter',
-    'x.com', 'reddit', 'snapchat', 'tiktok', 'discord', 'twitch', 'pinterest', '9gag',
-    'telegram', 'whatsapp', 'web.whatsapp', 'wa.me', 'fb.com', 'reels', 'shorts', 'cricbuzz', 'espncricinfo',
-  ];
-
-  const isProductive = productiveKeywords.some((keyword) => text.includes(keyword));
-  const isUnproductive = unproductiveKeywords.some((keyword) => text.includes(keyword));
-
-  if (isUnproductive && !isProductive) return 'unproductive';
-  if (isProductive && !isUnproductive) return 'productive';
-  if (normalizedType === 'idle') return 'neutral';
-  if (normalizedType === 'url' || normalizedType === 'app') return 'productive';
-  return 'neutral';
-};
-
 const productivityTone = (classification?: string | null) =>
   classification === 'productive'
     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -179,14 +111,70 @@ const productivityTone = (classification?: string | null) =>
       : 'bg-slate-100 text-slate-600 border-slate-200';
 
 const defaultFilters = (): PersistedFilterState => {
-  const dates = deriveDatesFromPreset('today');
+  const dates = deriveDateRangeFromPreset('today');
   return {
     scope: 'organization',
     selectedEmployeeId: '',
     datePreset: 'today',
     startDate: dates.startDate,
     endDate: dates.endDate,
+    attendanceSearchQuery: '',
+    attendanceGroupFilter: '',
   };
+};
+
+const readPersistedAdminDashboardFilters = (): PersistedFilterState => {
+  const fallback = defaultFilters();
+  const parsed = readSessionStorageJson<LegacyPersistedFilterState>(FILTER_STORAGE_KEY);
+  if (!parsed) {
+    return fallback;
+  }
+
+  const datePreset: DateRangePreset = isDateRangePreset(String(parsed.datePreset))
+    ? (parsed.datePreset as DateRangePreset)
+    : fallback.datePreset;
+  const derivedDates = datePreset === 'custom' ? fallback : { ...fallback, ...deriveDateRangeFromPreset(datePreset) };
+  const selectedEmployeeId = coercePositiveNumber(parsed.selectedEmployeeId ?? parsed.selectedUserId) ?? '';
+  const scope: DashboardScope =
+    parsed.scope === 'employee' || (parsed.scope == null && selectedEmployeeId !== '')
+      ? 'employee'
+      : 'organization';
+
+  return {
+    scope,
+    selectedEmployeeId,
+    datePreset,
+    startDate: parsed.startDate || derivedDates.startDate,
+    endDate: parsed.endDate || derivedDates.endDate,
+    attendanceSearchQuery: typeof parsed.attendanceSearchQuery === 'string' ? parsed.attendanceSearchQuery : fallback.attendanceSearchQuery,
+    attendanceGroupFilter: coercePositiveNumber(parsed.attendanceGroupFilter) ?? '',
+  };
+};
+
+const getRequestWarningMessage = (label: string, error: any) => {
+  const message = error?.response?.data?.message || error?.message;
+  return message ? `${label}: ${message}` : `${label} is temporarily unavailable.`;
+};
+
+const withDashboardFallback = async <T,>(
+  label: string,
+  request: Promise<any>,
+  fallback: T,
+  select: (response: any) => T
+): Promise<RequestResult<T>> => {
+  try {
+    const response = await request;
+    return {
+      value: select(response),
+      warning: null,
+    };
+  } catch (error: any) {
+    console.error(`[admin-dashboard] ${label} request failed`, error);
+    return {
+      value: fallback,
+      warning: getRequestWarningMessage(label, error),
+    };
+  }
 };
 
 function DashboardSkeleton() {
@@ -292,29 +280,7 @@ function CompactList({
 
 export default function AdminDashboard() {
   const { user } = useAuth();
-  const [filters, setFilters] = useState<PersistedFilterState>(() => {
-    const fallback = defaultFilters();
-    const raw = sessionStorage.getItem(FILTER_STORAGE_KEY);
-    if (!raw) return fallback;
-
-    try {
-      const parsed = JSON.parse(raw) as Partial<PersistedFilterState>;
-      return {
-        scope: parsed.scope === 'employee' ? 'employee' : 'organization',
-        selectedEmployeeId:
-          typeof parsed.selectedEmployeeId === 'number' && parsed.selectedEmployeeId > 0
-            ? parsed.selectedEmployeeId
-            : '',
-        datePreset: ['today', '7d', '30d', 'custom'].includes(String(parsed.datePreset))
-          ? (parsed.datePreset as DatePreset)
-          : fallback.datePreset,
-        startDate: parsed.startDate || fallback.startDate,
-        endDate: parsed.endDate || fallback.endDate,
-      };
-    } catch {
-      return fallback;
-    }
-  });
+  const [filters, setFilters] = useState<PersistedFilterState>(() => readPersistedAdminDashboardFilters());
   const [exportFeedback, setExportFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isScreenshotManagerOpen, setIsScreenshotManagerOpen] = useState(false);
@@ -322,12 +288,17 @@ export default function AdminDashboard() {
   const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
   const [screenshotActionFeedback, setScreenshotActionFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isDeletingScreenshots, setIsDeletingScreenshots] = useState(false);
-  const [attendanceSearchQuery, setAttendanceSearchQuery] = useState('');
-  const [attendanceGroupFilter, setAttendanceGroupFilter] = useState<number | ''>('');
+  const [attendanceSearchQuery, setAttendanceSearchQuery] = useState(filters.attendanceSearchQuery);
+  const [attendanceGroupFilter, setAttendanceGroupFilter] = useState<number | ''>(filters.attendanceGroupFilter);
 
   useEffect(() => {
-    sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
-  }, [filters]);
+    writeSessionStorageJson(FILTER_STORAGE_KEY, {
+      ...filters,
+      selectedUserId: filters.selectedEmployeeId,
+      attendanceSearchQuery,
+      attendanceGroupFilter,
+    } satisfies PersistedFilterState & { selectedUserId: number | '' });
+  }, [attendanceGroupFilter, attendanceSearchQuery, filters]);
 
   useEffect(() => {
     setIsScreenshotManagerOpen(false);
@@ -366,71 +337,160 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (
+      !usersQuery.isSuccess ||
       filters.scope === 'employee' &&
       filters.selectedEmployeeId !== '' &&
-      !selectableUsers.some((item: any) => item.id === filters.selectedEmployeeId)
+      !selectableUsers.some((item: any) => Number(item.id) === Number(filters.selectedEmployeeId))
     ) {
+      if (!usersQuery.isSuccess) {
+        return;
+      }
+
       setFilters((current) => ({
         ...current,
         selectedEmployeeId: selectableUsers[0]?.id || '',
       }));
     }
-  }, [filters.scope, filters.selectedEmployeeId, selectableUsers]);
+  }, [filters.scope, filters.selectedEmployeeId, selectableUsers, usersQuery.isSuccess]);
 
   const organizationQuery = useQuery({
     queryKey: ['admin-dashboard-organization', filters.startDate, filters.endDate, organizationUsers.map((user: any) => user.id).join(',')],
     enabled: filters.scope === 'organization' && usersQuery.isSuccess,
     queryFn: async () => {
       const payrollMonth = filters.endDate.slice(0, 7);
-      const organizationTimeEntryResponses = organizationUsers.length === 0
+      const organizationTimeEntryResults = organizationUsers.length === 0
         ? []
         : await Promise.all(
             organizationUsers.map((user: any) =>
-              timeEntryApi.getAll({
-                user_id: Number(user.id),
-                start_date: filters.startDate,
-                end_date: filters.endDate,
-                page: 1,
-                per_page: 500,
-              })
+              withDashboardFallback(
+                `Time entries for ${user.name || 'employee'}`,
+                timeEntryApi.getAll({
+                  user_id: Number(user.id),
+                  start_date: filters.startDate,
+                  end_date: filters.endDate,
+                  page: 1,
+                  per_page: 500,
+                }),
+                [],
+                (response) => response.data?.data || []
+              )
             )
           );
       const [
-        attendanceResponse,
-        overallResponse,
-        insightsResponse,
-        websiteActivityResponse,
-        leaveResponse,
-        timeEditResponse,
-        payrollResponse,
-        notificationsResponse,
-        groupsResponse,
-        tasksResponse,
+        attendanceResult,
+        overallResult,
+        insightsResult,
+        websiteActivityResult,
+        leaveResult,
+        timeEditResult,
+        payrollResult,
+        notificationsResult,
+        groupsResult,
+        tasksResult,
       ] = await Promise.all([
-        attendanceApi.summary({ start_date: filters.startDate, end_date: filters.endDate }),
-        reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate }),
-        reportApi.employeeInsights({ start_date: filters.startDate, end_date: filters.endDate }),
-        activityApi.getAll({ start_date: filters.startDate, end_date: filters.endDate, type: 'url', page: 1 }),
-        leaveApi.list({ status: 'pending' }),
-        attendanceTimeEditApi.list({ status: 'pending' }),
-        payrollApi.getRecords({ payroll_month: payrollMonth }),
-        notificationApi.list({ limit: 6 }),
-        reportGroupApi.list(),
-        taskApi.getAll({ status: 'done' }),
+        withDashboardFallback(
+          'Attendance summary',
+          attendanceApi.summary({ start_date: filters.startDate, end_date: filters.endDate }),
+          { data: [] },
+          (response) => response.data || { data: [] }
+        ),
+        withDashboardFallback(
+          'Overall report',
+          reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate }),
+          { summary: {}, by_user: [], by_day: [] },
+          (response) => response.data || { summary: {}, by_user: [], by_day: [] }
+        ),
+        withDashboardFallback(
+          'Employee insights',
+          reportApi.employeeInsights({ start_date: filters.startDate, end_date: filters.endDate }),
+          {
+            organization_summary: {},
+            live_monitoring: { employees_active: [], employees_inactive: [], employees_on_leave: [] },
+            team_rankings: { by_efficiency: [] },
+          },
+          (response) => response.data || {
+            organization_summary: {},
+            live_monitoring: { employees_active: [], employees_inactive: [], employees_on_leave: [] },
+            team_rankings: { by_efficiency: [] },
+          }
+        ),
+        withDashboardFallback(
+          'Website activity',
+          activityApi.getAll({ start_date: filters.startDate, end_date: filters.endDate, type: 'url', page: 1 }),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Pending leaves',
+          leaveApi.list({ status: 'pending' }),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Pending time edits',
+          attendanceTimeEditApi.list({ status: 'pending' }),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Payroll records',
+          payrollApi.getRecords({ payroll_month: payrollMonth }),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Notifications',
+          notificationApi.list({ limit: 6 }),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Groups',
+          reportGroupApi.list(),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Completed tasks',
+          taskApi.getAll({ status: 'done' }),
+          [],
+          (response) => response.data || []
+        ),
       ]);
 
+      const requestWarnings = [
+        attendanceResult.warning,
+        overallResult.warning,
+        insightsResult.warning,
+        websiteActivityResult.warning,
+        leaveResult.warning,
+        timeEditResult.warning,
+        payrollResult.warning,
+        notificationsResult.warning,
+        groupsResult.warning,
+        tasksResult.warning,
+      ].filter(Boolean) as string[];
+
+      const failedTimeEntryRequests = organizationTimeEntryResults.filter((result) => result.warning).length;
+      if (failedTimeEntryRequests > 0) {
+        requestWarnings.push(
+          `Time entries are unavailable for ${failedTimeEntryRequests} employee${failedTimeEntryRequests === 1 ? '' : 's'}.`
+        );
+      }
+
       return {
-        attendance: attendanceResponse.data,
-        overall: overallResponse.data,
-        insights: insightsResponse.data,
-        websiteActivity: websiteActivityResponse.data?.data || [],
-        timeEntries: organizationTimeEntryResponses.flatMap((response) => response.data?.data || []),
-        pendingLeaves: leaveResponse.data?.data || [],
-        pendingTimeEdits: timeEditResponse.data?.data || [],
-        payrollRecords: payrollResponse.data?.data || [],
-        notifications: notificationsResponse.data?.data || [],
-        groups: groupsResponse.data?.data || [],
-        completedTasks: tasksResponse.data || [],
+        attendance: attendanceResult.value,
+        overall: overallResult.value,
+        insights: insightsResult.value,
+        websiteActivity: websiteActivityResult.value,
+        timeEntries: organizationTimeEntryResults.flatMap((result) => result.value),
+        pendingLeaves: leaveResult.value,
+        pendingTimeEdits: timeEditResult.value,
+        payrollRecords: payrollResult.value,
+        notifications: notificationsResult.value,
+        groups: groupsResult.value,
+        completedTasks: tasksResult.value,
+        requestWarnings,
       };
     },
   });
@@ -440,31 +500,69 @@ export default function AdminDashboard() {
     enabled: filters.scope === 'employee' && Boolean(filters.selectedEmployeeId),
     queryFn: async () => {
       const userId = Number(filters.selectedEmployeeId);
-      const month = filters.endDate.slice(0, 7);
       const [
-        profileResponse,
-        insightsResponse,
-        overallResponse,
-        attendanceCalendarResponse,
-        timeEntriesResponse,
-        screenshotsResponse,
+        profileResult,
+        insightsResult,
+        overallResult,
+        timeEntriesResult,
+        screenshotsResult,
       ] = await Promise.all([
-        userApi.getProfile360(userId, { start_date: filters.startDate, end_date: filters.endDate }),
-        reportApi.employeeInsights({ start_date: filters.startDate, end_date: filters.endDate, user_id: userId }),
-        reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate, user_ids: [userId] }),
-        attendanceApi.calendar({ month, user_id: userId }),
-        timeEntryApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1 }),
-        screenshotApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1, per_page: 8 }),
+        withDashboardFallback(
+          'Employee profile',
+          userApi.getProfile360(userId, { start_date: filters.startDate, end_date: filters.endDate }),
+          { summary: {}, status: {} },
+          (response) => response.data || { summary: {}, status: {} }
+        ),
+        withDashboardFallback(
+          'Employee insights',
+          reportApi.employeeInsights({ start_date: filters.startDate, end_date: filters.endDate, user_id: userId }),
+          {
+            stats: {},
+            selected_user_tools: { productive: [], unproductive: [], neutral: [] },
+            live_monitoring: { selected_user: null },
+          },
+          (response) => response.data || {
+            stats: {},
+            selected_user_tools: { productive: [], unproductive: [], neutral: [] },
+            live_monitoring: { selected_user: null },
+          }
+        ),
+        withDashboardFallback(
+          'Employee overall report',
+          reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate, user_ids: [userId] }),
+          { summary: {}, by_user: [], by_day: [] },
+          (response) => response.data || { summary: {}, by_user: [], by_day: [] }
+        ),
+        withDashboardFallback(
+          'Employee time entries',
+          timeEntryApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1 }),
+          [],
+          (response) => response.data?.data || []
+        ),
+        withDashboardFallback(
+          'Employee screenshots',
+          screenshotApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1, per_page: 8 }),
+          { data: [], total: 0 },
+          (response) => response.data || { data: [], total: 0 }
+        ),
       ]);
 
+      const requestWarnings = [
+        profileResult.warning,
+        insightsResult.warning,
+        overallResult.warning,
+        timeEntriesResult.warning,
+        screenshotsResult.warning,
+      ].filter(Boolean) as string[];
+
       return {
-        profile: profileResponse.data,
-        insights: insightsResponse.data,
-        overall: overallResponse.data,
-        calendar: attendanceCalendarResponse.data,
-        timeEntries: timeEntriesResponse.data?.data || [],
-        screenshots: screenshotsResponse.data?.data || [],
-        screenshotsTotal: Number(screenshotsResponse.data?.total || screenshotsResponse.data?.data?.length || 0),
+        profile: profileResult.value,
+        insights: insightsResult.value,
+        overall: overallResult.value,
+        timeEntries: timeEntriesResult.value,
+        screenshots: screenshotsResult.value?.data || [],
+        screenshotsTotal: Number(screenshotsResult.value?.total || screenshotsResult.value?.data?.length || 0),
+        requestWarnings,
       };
     },
   });
@@ -500,14 +598,14 @@ export default function AdminDashboard() {
     }));
   };
 
-  const handleDatePresetChange = (preset: DatePreset) => {
+  const handleDatePresetChange = (preset: DateRangePreset) => {
     setExportFeedback(null);
     if (preset === 'custom') {
       setFilters((current) => ({ ...current, datePreset: preset }));
       return;
     }
 
-    const dates = deriveDatesFromPreset(preset);
+    const dates = deriveDateRangeFromPreset(preset);
     setFilters((current) => ({
       ...current,
       datePreset: preset,
@@ -598,8 +696,8 @@ export default function AdminDashboard() {
             onDatePresetChange={handleDatePresetChange}
             startDate={filters.startDate}
             endDate={filters.endDate}
-            onStartDateChange={(value) => setFilters((current) => ({ ...current, startDate: value }))}
-            onEndDateChange={(value) => setFilters((current) => ({ ...current, endDate: value }))}
+            onStartDateChange={(value) => setFilters((current) => ({ ...current, startDate: value, datePreset: 'custom' }))}
+            onEndDateChange={(value) => setFilters((current) => ({ ...current, endDate: value, datePreset: 'custom' }))}
             onRefresh={() => void usersQuery.refetch()}
             onExport={handleExport}
             isRefreshing={usersQuery.isFetching}
@@ -611,9 +709,15 @@ export default function AdminDashboard() {
     );
   }
 
-  const selectedEmployee = selectableUsers.find((employee: any) => employee.id === filters.selectedEmployeeId) || null;
+  const selectedEmployee = selectableUsers.find((employee: any) => Number(employee.id) === Number(filters.selectedEmployeeId)) || null;
   const organizationData: any = organizationQuery.data;
   const employeeData: any = employeeQuery.data;
+  const dashboardWarnings = filters.scope === 'organization'
+    ? organizationData?.requestWarnings || []
+    : employeeData?.requestWarnings || [];
+  const dashboardWarningMessage = dashboardWarnings.length === 0
+    ? null
+    : `${dashboardWarnings.slice(0, 2).join(' ')}${dashboardWarnings.length > 2 ? ' Additional sections may still be unavailable.' : ''}`;
 
   const attendanceRows = organizationData?.attendance?.data || [];
   const overallSummary = organizationData?.overall?.summary || {};
@@ -723,7 +827,6 @@ export default function AdminDashboard() {
   const profile: any = employeeData?.profile;
   const employeeInsights: any = employeeData?.insights;
   const employeeOverall: any = employeeData?.overall;
-  const employeeCalendar: any = employeeData?.calendar;
   const employeeEntries = employeeData?.timeEntries || [];
   const employeeScreenshots = employeeData?.screenshots || [];
   const employeeScreenshotTotal = Number(employeeData?.screenshotsTotal || employeeScreenshots.length || 0);
@@ -735,20 +838,20 @@ export default function AdminDashboard() {
   const visibleScreenshotIds = screenshotGalleryItems.map((shot: any) => Number(shot.id));
   const allVisibleScreenshotsSelected = visibleScreenshotIds.length > 0 && visibleScreenshotIds.every((id: number) => selectedScreenshotIds.includes(id));
   const employeeSummary: any = profile?.summary || {};
+  const employeeOverallSummary: any = employeeOverall?.summary || {};
   const employeeStatus: any = profile?.status || {};
   const employeeStats: any = employeeInsights?.stats || {};
   const selectedUserTools = employeeInsights?.selected_user_tools || { productive: [], unproductive: [], neutral: [] };
   const employeeTrend = employeeOverall?.by_day || [];
-  const calendarSummary: any = employeeCalendar?.summary || {};
   const latestAttendance: any = employeeStatus.latest_attendance;
   const employeeLiveMonitoring: any = employeeInsights?.live_monitoring?.selected_user || null;
-  const employeeTrackedDuration = Number(employeeSummary.total_duration || 0);
-  const employeeIdleDuration = Number(employeeStats.idle_total_duration || 0);
-  const employeeWorkingDuration = getWorkingDuration(employeeSummary);
-  const monthlyAttendancePercentage = percentage(
-    Number(calendarSummary.present_days || 0),
-    Number(calendarSummary.present_days || 0) + Number(calendarSummary.absent_days || 0)
-  );
+  const employeeTrackedDuration = Number(employeeOverallSummary.total_duration ?? employeeSummary.total_duration ?? employeeStats.total_duration ?? 0);
+  const employeeIdleDuration = Number(employeeOverallSummary.idle_duration ?? employeeSummary.idle_duration ?? employeeStats.idle_total_duration ?? 0);
+  const employeeWorkingDuration = Number(employeeOverallSummary.working_duration ?? employeeSummary.working_duration ?? getWorkingDuration(employeeOverallSummary.total_duration ? employeeOverallSummary : employeeSummary));
+  const employeePresentDays = Number(employeeSummary.present_days || 0);
+  const employeeAbsentDays = Number(employeeSummary.absent_days ?? Math.max(Number(employeeSummary.attendance_days || 0) - employeePresentDays, 0));
+  const employeeLateDays = Number(employeeSummary.late_days || 0);
+  const employeeAttendancePercentage = percentage(employeePresentDays, employeePresentDays + employeeAbsentDays);
   const employeeProductivity = percentage(
     employeeWorkingDuration,
     employeeTrackedDuration
@@ -855,9 +958,9 @@ export default function AdminDashboard() {
     }
   };
   const websiteUsageByEmployee = organizationWebsiteActivity.reduce((rows: any[], item: any) => {
-    const website = normalizeToolLabel(item.name || '', item.type || 'url');
+    const website = normalizeActivityToolLabel(item.name || '', item.type || 'url');
     const employeeName = item.user?.name || 'Unknown';
-    const classification = classifyProductivity(website, item.type || 'url');
+    const classification = classifyActivityProductivity(website, item.type || 'url');
     const existing = rows.find((row) => row.employeeName === employeeName && row.website === website && row.classification === classification);
 
     if (existing) {
@@ -927,6 +1030,7 @@ export default function AdminDashboard() {
         />
       </DashboardHeader>
 
+      {dashboardWarningMessage ? <FeedbackBanner tone="error" message={dashboardWarningMessage} /> : null}
       {exportFeedback ? <FeedbackBanner tone={exportFeedback.tone} message={exportFeedback.message} /> : null}
 
       {filters.scope === 'organization' ? (
@@ -1516,15 +1620,15 @@ export default function AdminDashboard() {
                   label: 'Productivity score',
                   value: `${employeeProductivity}%`,
                   caption: 'Working share in the selected range',
-                  meta: `${monthlyAttendancePercentage}% monthly attendance`,
+                  meta: `${employeeAttendancePercentage}% attendance in the selected range`,
                   icon: TrendingUp,
                   accent: 'amber',
                 },
               ]}
               secondaryItems={[
-                { id: 'present-days', label: 'Present days', value: calendarSummary.present_days || 0 },
-                { id: 'late-days', label: 'Late days', value: calendarSummary.late_days || 0 },
-                { id: 'approved-leaves', label: 'Approved leaves', value: profile?.leave_requests?.filter((row: any) => row.status === 'approved').length || 0 },
+                { id: 'present-days', label: 'Present days', value: employeePresentDays },
+                { id: 'late-days', label: 'Late days', value: employeeLateDays },
+                { id: 'approved-leaves', label: 'Approved leaves', value: employeeSummary.approved_leave_days || 0 },
                 { id: 'screenshots', label: 'Screenshots', value: employeeScreenshotTotal },
               ]}
             />
@@ -1551,29 +1655,29 @@ export default function AdminDashboard() {
               />
               <DashboardTrendCard
                 title="Attendance trend"
-                description="Current month attendance snapshot from the attendance calendar endpoint."
+                description="Attendance summary for the selected date range."
                 points={[
                   {
                     id: 'present-days',
                     label: 'Present days',
-                    value: Number(calendarSummary.present_days || 0),
-                    formattedValue: String(calendarSummary.present_days || 0),
+                    value: employeePresentDays,
+                    formattedValue: String(employeePresentDays),
                   },
                   {
                     id: 'absent-days',
                     label: 'Absent days',
-                    value: Number(calendarSummary.absent_days || 0),
-                    formattedValue: String(calendarSummary.absent_days || 0),
+                    value: employeeAbsentDays,
+                    formattedValue: String(employeeAbsentDays),
                   },
                   {
                     id: 'late-days',
                     label: 'Late days',
-                    value: Number(calendarSummary.late_days || 0),
-                    formattedValue: String(calendarSummary.late_days || 0),
+                    value: employeeLateDays,
+                    formattedValue: String(employeeLateDays),
                   },
                 ]}
                 colorClassName="bg-violet-500"
-                footer="This uses the month containing the selected end date because the current backend exposes attendance calendar data month by month."
+                footer="These counts are now taken from the selected range instead of the month-only attendance snapshot."
               />
             </div>
             <SurfaceCard className="p-5 sm:p-6">
@@ -1612,15 +1716,15 @@ export default function AdminDashboard() {
                     id: 'attendance-status',
                     title: latestAttendance?.status || 'No current attendance status',
                     subtitle: `Check in ${latestAttendance?.check_in_at ? new Date(latestAttendance.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'} / Check out ${latestAttendance?.check_out_at ? new Date(latestAttendance.check_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}`,
-                    value: `${monthlyAttendancePercentage}%`,
-                    tone: monthlyAttendancePercentage >= 85 ? 'good' : 'warning',
+                    value: `${employeeAttendancePercentage}%`,
+                    tone: employeeAttendancePercentage >= 85 ? 'good' : 'warning',
                   },
                   {
                     id: 'late-days',
-                    title: 'Late days this month',
-                    subtitle: 'Based on the attendance calendar summary',
-                    value: String(calendarSummary.late_days || 0),
-                    tone: Number(calendarSummary.late_days || 0) > 0 ? 'warning' : 'good',
+                    title: 'Late days in range',
+                    subtitle: `${filters.startDate} to ${filters.endDate}`,
+                    value: String(employeeLateDays),
+                    tone: employeeLateDays > 0 ? 'warning' : 'good',
                   },
                 ]}
               />
@@ -1714,8 +1818,8 @@ export default function AdminDashboard() {
                           header: 'Project',
                           render: (row: any) => (
                             <div>
-                              <p className="font-medium text-slate-950">{row.project?.name || 'General work'}</p>
-                              <p className="text-xs text-slate-500">{row.description || 'No description provided'}</p>
+                              <p className="font-medium text-slate-950">{getTimeEntryTitle(row)}</p>
+                              <p className="text-xs text-slate-500">{getTimeEntrySubtitle(row)}</p>
                             </div>
                           ),
                         },

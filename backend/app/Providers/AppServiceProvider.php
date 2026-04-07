@@ -36,6 +36,45 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute((int) env('RATE_LIMIT_REGISTER_PER_MINUTE', 3))->by($request->ip()),
         ]);
 
+        RateLimiter::for('auth.password.request', function (Request $request) {
+            $email = Str::lower((string) $request->input('email', 'guest'));
+
+            return [
+                Limit::perMinute((int) env('RATE_LIMIT_PASSWORD_RESET_REQUEST_PER_MINUTE', 5))->by($email.'|'.$request->ip()),
+                Limit::perMinute((int) env('RATE_LIMIT_PASSWORD_RESET_REQUEST_IP_PER_MINUTE', 20))->by($request->ip()),
+            ];
+        });
+
+        RateLimiter::for('auth.password.reset', function (Request $request) {
+            $email = Str::lower((string) $request->input('email', 'guest'));
+
+            return [
+                Limit::perMinute((int) env('RATE_LIMIT_PASSWORD_RESET_PER_MINUTE', 10))->by($email.'|'.$request->ip()),
+                Limit::perMinute((int) env('RATE_LIMIT_PASSWORD_RESET_IP_PER_MINUTE', 25))->by($request->ip()),
+            ];
+        });
+
+        RateLimiter::for('auth.verification.resend', fn (Request $request) => [
+            Limit::perMinute((int) env('RATE_LIMIT_VERIFICATION_RESEND_PER_MINUTE', 3))
+                ->by(
+                    ($request->user()?->email
+                        ? Str::lower((string) $request->user()?->email)
+                        : 'guest')
+                    .'|'.$request->ip()
+                ),
+        ]);
+
+        RateLimiter::for('auth.verification.resend.public', function (Request $request) {
+            $email = Str::lower((string) $request->input('email', 'guest'));
+
+            return [
+                Limit::perMinute((int) env('RATE_LIMIT_VERIFICATION_RESEND_PER_MINUTE', 3))
+                    ->by($email.'|'.$request->ip()),
+                Limit::perMinute((int) env('RATE_LIMIT_VERIFICATION_RESEND_IP_PER_MINUTE', 10))
+                    ->by($request->ip()),
+            ];
+        });
+
         RateLimiter::for('invitations.create', fn (Request $request) => [
             Limit::perMinute((int) env('RATE_LIMIT_INVITATIONS_CREATE_PER_MINUTE', 20))
                 ->by((string) optional($request->user())->getAuthIdentifier()),
@@ -44,6 +83,11 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('invitations.accept', fn (Request $request) => [
             Limit::perMinute((int) env('RATE_LIMIT_INVITATIONS_ACCEPT_PER_MINUTE', 10))
                 ->by($request->ip().'|'.(string) $request->route('token')),
+        ]);
+
+        RateLimiter::for('invitations.validate', fn (Request $request) => [
+            Limit::perMinute((int) env('RATE_LIMIT_INVITATIONS_VALIDATE_PER_MINUTE', 30))
+                ->by($request->ip()),
         ]);
 
         RateLimiter::for('auth.handoff', fn (Request $request) => [
@@ -69,5 +113,14 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('desktop.download', fn (Request $request) => [
             Limit::perMinute((int) env('RATE_LIMIT_DESKTOP_DOWNLOAD_PER_MINUTE', 10))->by($request->ip()),
         ]);
+
+        RateLimiter::for('support.bug-report', function (Request $request) {
+            $email = Str::lower((string) $request->input('email', 'guest'));
+
+            return [
+                Limit::perMinute((int) env('RATE_LIMIT_BUG_REPORT_PER_MINUTE', 5))->by($email.'|'.$request->ip()),
+                Limit::perMinute((int) env('RATE_LIMIT_BUG_REPORT_IP_PER_MINUTE', 10))->by($request->ip()),
+            ];
+        });
     }
 }

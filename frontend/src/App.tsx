@@ -5,12 +5,18 @@ import { hasAdminAccess } from '@/lib/permissions';
 
 const LandingPage = lazy(() => import('@/pages/LandingPage'));
 const PricingPage = lazy(() => import('@/pages/PricingPage'));
+const PrivacyPolicyPage = lazy(() => import('@/pages/PrivacyPolicyPage'));
+const TermsPage = lazy(() => import('@/pages/TermsPage'));
 const OwnerSignupPage = lazy(() => import('@/pages/OwnerSignupPage'));
 const InviteSignupPage = lazy(() => import('@/pages/InviteSignupPage'));
 const ContactSalesPage = lazy(() => import('@/pages/ContactSalesPage'));
+const SupportPage = lazy(() => import('@/pages/SupportPage'));
 const AcceptInvitePage = lazy(() => import('@/pages/AcceptInvitePage'));
 const Layout = lazy(() => import('@/components/Layout'));
 const Login = lazy(() => import('@/pages/Login'));
+const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage'));
+const VerifyEmailPage = lazy(() => import('@/pages/VerifyEmailPage'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const AdminDashboard = lazy(() => import('@/pages/AdminDashboard'));
 const DesktopTimerDashboard = lazy(() => import('@/pages/DesktopTimerDashboard'));
@@ -207,8 +213,14 @@ function App() {
           <Route path="/" element={<HomeRoute />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/contact-sales" element={<ContactSalesPage />} />
+          <Route path="/support" element={<SupportPage />} />
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           <Route path="/book-demo" element={<Navigate to="/contact-sales" replace />} />
           <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route
             path="/login"
             element={

@@ -27,6 +27,7 @@ class AuthApiTest extends TestCase
             'role' => 'admin',
             'organization_id' => $organization->id,
         ]);
+        $user->forceFill(['email_verified_at' => now()])->save();
 
         $loginResponse = $this->postJson('/api/auth/login', [
             'email' => 'admin@example.com',
@@ -89,13 +90,14 @@ class AuthApiTest extends TestCase
             'slug' => 'carevance',
         ]);
 
-        User::create([
+        $user = User::create([
             'name' => 'Admin User',
             'email' => 'admin@example.com',
             'password' => Hash::make('password123'),
             'role' => 'admin',
             'organization_id' => $organization->id,
         ]);
+        $user->forceFill(['email_verified_at' => now()])->save();
 
         foreach (range(1, 5) as $attempt) {
             $this->postJson('/api/auth/login', [
@@ -108,5 +110,29 @@ class AuthApiTest extends TestCase
             'email' => 'admin@example.com',
             'password' => 'wrong-password',
         ])->assertStatus(429);
+    }
+
+    public function test_login_allows_unverified_email_after_account_creation(): void
+    {
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        User::create([
+            'name' => 'Pending User',
+            'email' => 'pending@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+
+        $this->postJson('/api/auth/login', [
+            'email' => 'pending@example.com',
+            'password' => 'password123',
+        ])
+            ->assertOk()
+            ->assertJsonPath('user.email', 'pending@example.com')
+            ->assertJsonStructure(['token', 'user', 'organization']);
     }
 }

@@ -6,6 +6,9 @@ import type {
   OwnerSignupRequest,
   AuthResponse,
   ApiResponse,
+  ForgotPasswordRequest,
+  ResetPasswordRequest,
+  PasswordResetTokenValidationResponse,
   User,
   Organization,
   Group,
@@ -51,6 +54,8 @@ import type {
   InvitationCreateResponse,
   InviteValidationResponse,
   BillingSnapshot,
+  BugReportRequest,
+  BugReportResponse,
 } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 
@@ -93,6 +98,24 @@ export const authApi = {
 
   signupOwner: (data: OwnerSignupRequest) =>
     api.post<AuthResponse>('/auth/signup-owner', data),
+
+  forgotPassword: (data: ForgotPasswordRequest) =>
+    api.post<{ message: string }>('/auth/forgot-password', data),
+
+  validateResetToken: (params: { token: string; email: string }) =>
+    api.get<PasswordResetTokenValidationResponse>('/auth/reset-password/validate', { params }),
+
+  resetPassword: (data: ResetPasswordRequest) =>
+    api.post<{ message: string }>('/auth/reset-password', data),
+
+  resendVerificationEmail: () =>
+    api.post<{ message: string; already_verified?: boolean }>('/auth/email/verification-notification'),
+
+  requestVerificationEmail: (data: { email: string }) =>
+    api.post<{ message: string; already_verified?: boolean; sent?: boolean }>(
+      '/auth/email/verification-notification/request',
+      data
+    ),
   
   logout: () => 
     api.post('/auth/logout'),
@@ -978,6 +1001,11 @@ export const billingApi = {
 export const companyApi = {
   current: () =>
     api.get<{ company: Organization | null }>('/me/company'),
+};
+
+export const supportApi = {
+  submitBugReport: (data: BugReportRequest) =>
+    api.post<BugReportResponse>('/support/bug-reports', data),
 };
 
 export const auditApi = {

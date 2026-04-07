@@ -6,7 +6,8 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import FilterPanel from '@/components/dashboard/FilterPanel';
 import EmptyStateCard from '@/components/dashboard/EmptyStateCard';
 import Button from '@/components/ui/Button';
-import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
+import { FieldLabel, TextInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { payrollApi } from '@/services/api';
 import type { Payslip } from '@/types';
@@ -14,18 +15,60 @@ import { Download, FileText, Receipt, Wallet } from 'lucide-react';
 import PayrollSectionCard from '@/features/payroll/components/PayrollSectionCard';
 import PayrollStatusBadge from '@/features/payroll/components/PayrollStatusBadge';
 import { defaultPayrollMonth, formatPayrollCurrency, formatPayrollMonth } from '@/features/payroll/utils';
+import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { hasAdminAccess } from '@/lib/permissions';
+
+type PersistedPayrollPayslipFilters = {
+  selectedUserId: number | '';
+  periodMonth: string;
+};
+
+const PAYROLL_PAYSLIP_FILTER_STORAGE_KEY = 'payroll-payslips-filters';
+
+const readPersistedPayrollPayslipFilters = (fallbackUserId: number | ''): PersistedPayrollPayslipFilters => {
+  const parsed = readSessionStorageJson<PersistedPayrollPayslipFilters>(PAYROLL_PAYSLIP_FILTER_STORAGE_KEY);
+  const canRestoreSelection = fallbackUserId === '';
+
+  if (!parsed) {
+    return {
+      selectedUserId: fallbackUserId,
+      periodMonth: defaultPayrollMonth(),
+    };
+  }
+
+  return {
+    selectedUserId:
+      canRestoreSelection && coercePositiveNumber(parsed.selectedUserId)
+        ? coercePositiveNumber(parsed.selectedUserId)!
+        : fallbackUserId,
+    periodMonth: typeof parsed.periodMonth === 'string' && parsed.periodMonth ? parsed.periodMonth : defaultPayrollMonth(),
+  };
+};
 
 export default function PayrollPayslipsView() {
   const { user } = useAuth();
   const canManage = hasAdminAccess(user);
+  const defaultSelectedUserId = canManage ? '' : Number(user?.id || 0);
   const [employees, setEmployees] = useState<Array<{ id: number; name: string; email: string; role: string }>>([]);
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [selectedPayslipId, setSelectedPayslipId] = useState<number | null>(null);
-  const [selectedUserId, setSelectedUserId] = useState<number | ''>(canManage ? '' : Number(user?.id || 0));
-  const [periodMonth, setPeriodMonth] = useState(defaultPayrollMonth());
+  const [selectedUserId, setSelectedUserId] = useState<number | ''>(() => readPersistedPayrollPayslipFilters(defaultSelectedUserId).selectedUserId);
+  const [periodMonth, setPeriodMonth] = useState(() => readPersistedPayrollPayslipFilters(defaultSelectedUserId).periodMonth);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const persisted = readPersistedPayrollPayslipFilters(defaultSelectedUserId);
+    setSelectedUserId(persisted.selectedUserId);
+    setPeriodMonth(persisted.periodMonth);
+  }, [defaultSelectedUserId]);
+
+  useEffect(() => {
+    writeSessionStorageJson(PAYROLL_PAYSLIP_FILTER_STORAGE_KEY, {
+      selectedUserId,
+      periodMonth,
+    } satisfies PersistedPayrollPayslipFilters);
+  }, [periodMonth, selectedUserId]);
 
   const selectedPayslip = useMemo(
     () => payslips.find((item) => item.id === selectedPayslipId) || payslips[0] || null,
@@ -131,10 +174,7 @@ export default function PayrollPayslipsView() {
         {canManage ? (
           <div>
             <FieldLabel>Employee</FieldLabel>
-            <SelectInput value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value ? Number(event.target.value) : '')}>
-              <option value="">All employees</option>
-              {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-            </SelectInput>
+            <EmployeeSelect employees={employees} value={selectedUserId} onChange={setSelectedUserId} includeAllOption />
           </div>
         ) : null}
         <div>

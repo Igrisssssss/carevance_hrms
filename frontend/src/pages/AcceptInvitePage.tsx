@@ -4,9 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, ArrowLeft, ArrowRight, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from 'lucide-react';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import BrandLogo from '@/components/branding/BrandLogo';
+import AuthPageFooter from '@/components/auth/AuthPageFooter';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { invitationApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { analytics } from '@/lib/analytics';
 
 const parseError = (error: any) => {
   const fieldErrors = error?.response?.data?.errors;
@@ -56,13 +58,19 @@ export default function AcceptInvitePage() {
     setIsSubmitting(true);
 
     try {
-      await acceptInvitation(token, {
+      analytics.trackEvent('invite_accept_started', {
+        source: 'accept-invite-page',
+      });
+      const result = await acceptInvitation(token, {
         name: name.trim(),
         password,
         password_confirmation: passwordConfirmation,
       });
 
-      navigate('/dashboard');
+      analytics.trackEvent('invite_accept_completed', {
+        source: 'accept-invite-page',
+      });
+      navigate(`/verify-email?email=${encodeURIComponent(result.email)}&status=pending-invite`);
     } catch (requestError: any) {
       setSubmitError(parseError(requestError));
     } finally {
@@ -230,6 +238,8 @@ export default function AcceptInvitePage() {
                   </button>
                 </form>
               )}
+
+              <AuthPageFooter />
             </AdaptiveSurface>
           </div>
         </section>

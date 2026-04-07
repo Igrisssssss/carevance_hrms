@@ -15,6 +15,7 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Authorization\OrganizationRoleService;
 use App\Services\Audit\AuditLogService;
+use App\Services\Reports\ActivityDurationNormalizer;
 use App\Services\Reports\TimeBreakdownService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
@@ -26,6 +27,7 @@ class UserController extends Controller
 {
     public function __construct(
         private readonly AuditLogService $auditLogService,
+        private readonly ActivityDurationNormalizer $activityDurationNormalizer,
         private readonly TimeBreakdownService $timeBreakdownService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
         private readonly OrganizationRoleService $organizationRoleService,
@@ -294,9 +296,10 @@ class UserController extends Controller
             $idleQuery->whereDate('recorded_at', '<=', $request->end_date);
         }
 
+        $idleActivities = $idleQuery->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
-            (int) $idleQuery->sum('duration')
+            $this->activityDurationNormalizer->sumIdleDuration($idleActivities)
         );
 
         return response()->json([
@@ -343,12 +346,13 @@ class UserController extends Controller
             return $entry;
         });
 
-        $attendanceRecords = AttendanceRecord::query()
+        $attendanceSummaryRecords = AttendanceRecord::query()
             ->where('user_id', $user->id)
-            ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->whereDate('attendance_date', '>=', $startDate->toDateString())
+            ->whereDate('attendance_date', '<=', $endDate->toDateString())
             ->orderByDesc('attendance_date')
-            ->limit(14)
             ->get();
+        $attendanceRecords = $attendanceSummaryRecords->take(14)->values();
 
         $leaveRequests = LeaveRequest::query()
             ->with(['reviewer:id,name,email', 'revokeReviewer:id,name,email'])
@@ -356,6 +360,12 @@ class UserController extends Controller
             ->orderByDesc('created_at')
             ->limit(8)
             ->get();
+        $approvedLeaveRequestsInRange = LeaveRequest::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'approved')
+            ->whereDate('end_date', '>=', $startDate->toDateString())
+            ->whereDate('start_date', '<=', $endDate->toDateString())
+            ->get(['start_date', 'end_date']);
 
         $timeEditRequests = AttendanceTimeEditRequest::query()
             ->with('reviewer:id,name,email')
@@ -363,12 +373,22 @@ class UserController extends Controller
             ->orderByDesc('created_at')
             ->limit(8)
             ->get();
+        $approvedTimeEditsSeconds = (int) AttendanceTimeEditRequest::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'approved')
+            ->whereDate('attendance_date', '>=', $startDate->toDateString())
+            ->whereDate('attendance_date', '<=', $endDate->toDateString())
+            ->sum('extra_seconds');
 
         $payslips = Payslip::query()
             ->where('user_id', $user->id)
             ->orderByDesc('period_month')
             ->limit(6)
             ->get();
+        $payslipsCount = (int) Payslip::query()
+            ->where('user_id', $user->id)
+            ->whereBetween('period_month', [$startDate->format('Y-m'), $endDate->format('Y-m')])
+            ->count();
 
         $latestNotification = AppNotification::query()
             ->where('organization_id', $currentUser->organization_id)
@@ -376,23 +396,33 @@ class UserController extends Controller
             ->latest('created_at')
             ->first(['id', 'type', 'title', 'message', 'created_at', 'is_read']);
 
-        $idleDuration = (int) Activity::query()
+        $idleActivities = Activity::query()
             ->where('user_id', $user->id)
             ->where('type', 'idle')
             ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->sum('duration');
+            ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
-            $idleDuration
+            $this->activityDurationNormalizer->sumIdleDuration($idleActivities)
         );
-        $approvedLeaveDays = (int) $leaveRequests
-            ->where('status', 'approved')
-            ->sum(function (LeaveRequest $leaveRequest) {
-                return Carbon::parse($leaveRequest->start_date)->diffInDays(Carbon::parse($leaveRequest->end_date)) + 1;
+        $presentAttendanceDays = (int) $attendanceSummaryRecords
+            ->filter(fn (AttendanceRecord $record) => !empty($record->check_in_at) || (int) ($record->worked_seconds ?? 0) > 0 || (int) ($record->manual_adjustment_seconds ?? 0) > 0)
+            ->count();
+        $absentAttendanceDays = (int) $attendanceSummaryRecords
+            ->filter(fn (AttendanceRecord $record) => ($record->status ?? null) === 'absent')
+            ->count();
+        $lateAttendanceDays = (int) $attendanceSummaryRecords
+            ->filter(fn (AttendanceRecord $record) => (int) ($record->late_minutes ?? 0) > 0)
+            ->count();
+        $approvedLeaveDays = (int) $approvedLeaveRequestsInRange
+            ->sum(function (LeaveRequest $leaveRequest) use ($startDate, $endDate) {
+                $overlapStart = Carbon::parse($leaveRequest->start_date)->startOfDay()->max($startDate->copy());
+                $overlapEnd = Carbon::parse($leaveRequest->end_date)->endOfDay()->min($endDate->copy());
+
+                return $overlapStart->greaterThan($overlapEnd)
+                    ? 0
+                    : $overlapStart->diffInDays($overlapEnd) + 1;
             });
-        $approvedTimeEditsSeconds = (int) $timeEditRequests
-            ->where('status', 'approved')
-            ->sum('extra_seconds');
 
         $latestAttendance = $attendanceRecords->first();
         $activeEntry = TimeEntry::query()
@@ -410,11 +440,13 @@ class UserController extends Controller
             ],
             'summary' => [
                 'entries_count' => $entries->count(),
-                'attendance_days' => $attendanceRecords->count(),
-                'present_days' => $attendanceRecords->where('worked_seconds', '>', 0)->count(),
+                'attendance_days' => $attendanceSummaryRecords->count(),
+                'present_days' => $presentAttendanceDays,
+                'absent_days' => $absentAttendanceDays,
+                'late_days' => $lateAttendanceDays,
                 'approved_leave_days' => $approvedLeaveDays,
                 'approved_time_edit_seconds' => $approvedTimeEditsSeconds,
-                'payslips_count' => $payslips->count(),
+                'payslips_count' => $payslipsCount,
             ] + $timeBreakdown,
             'status' => [
                 'is_working' => (bool) $activeEntry,

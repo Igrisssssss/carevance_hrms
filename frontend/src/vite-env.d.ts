@@ -37,6 +37,13 @@ interface AppRuntimeConfig {
   VITE_WEB_APP_URL?: string;
   VITE_DESKTOP_DOWNLOAD_URL?: string;
   VITE_DESKTOP_DOWNLOAD_LABEL?: string;
+  VITE_SALES_EMAIL?: string;
+  VITE_SUPPORT_EMAIL?: string;
+  VITE_GA_MEASUREMENT_ID?: string;
+  VITE_PLAUSIBLE_DOMAIN?: string;
+  VITE_POSTHOG_KEY?: string;
+  VITE_POSTHOG_HOST?: string;
+  VITE_GOOGLE_OAUTH_ENABLED?: string;
   VITE_IDLE_TRACK_THRESHOLD_SECONDS?: string;
   VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS?: string;
   VITE_IDLE_GUARD_INTERVAL_MS?: string;
@@ -45,4 +52,9 @@ interface AppRuntimeConfig {
 interface Window {
   desktopTracker?: DesktopTrackerBridge;
   __APP_CONFIG__?: AppRuntimeConfig;
+  gtag?: (...args: unknown[]) => void;
+  plausible?: (eventName: string, options?: { props?: Record<string, unknown> }) => void;
+  posthog?: {
+    capture: (eventName: string, properties?: Record<string, unknown>) => void;
+  };
 }

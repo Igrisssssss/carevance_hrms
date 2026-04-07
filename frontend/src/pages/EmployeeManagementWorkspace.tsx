@@ -8,15 +8,19 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
-import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasStrictAdminAccess } from '@/lib/permissions';
-import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
+import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { KeyRound, MailPlus, ShieldCheck, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
+
+type PersistedEmployeeWorkspaceFilters = {
+  selectedUserId: number | null;
+};
 
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
@@ -48,11 +52,27 @@ const modeCopy: Record<EmployeeWorkspaceMode, { title: string; description: stri
   },
 };
 
+const EMPLOYEE_WORKSPACE_FILTER_STORAGE_KEY = 'employee-workspace-filters';
+const getEmployeeWorkspaceFilterStorageKey = (mode: EmployeeWorkspaceMode) => `${EMPLOYEE_WORKSPACE_FILTER_STORAGE_KEY}:${mode}`;
+
+const readPersistedEmployeeWorkspaceFilters = (mode: EmployeeWorkspaceMode): PersistedEmployeeWorkspaceFilters => {
+  const parsed = readSessionStorageJson<PersistedEmployeeWorkspaceFilters>(getEmployeeWorkspaceFilterStorageKey(mode));
+
+  if (!parsed) {
+    return {
+      selectedUserId: null,
+    };
+  }
+
+  return {
+    selectedUserId: typeof parsed.selectedUserId === 'number' && parsed.selectedUserId > 0 ? parsed.selectedUserId : null,
+  };
+};
+
 export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWorkspaceMode }) {
   const { organization, user } = useAuth();
   const queryClient = useQueryClient();
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
-  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(() => readPersistedEmployeeWorkspaceFilters(mode).selectedUserId);
   const [groupName, setGroupName] = useState('');
   const [groupMembers, setGroupMembers] = useState<number[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -61,6 +81,17 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const isStrictAdmin = hasStrictAdminAccess(user);
   const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
   const employeeRoleOptions = useMemo(() => allowedRoles, [allowedRoles]);
+
+  useEffect(() => {
+    const persistedFilters = readPersistedEmployeeWorkspaceFilters(mode);
+    setSelectedUserId(persistedFilters.selectedUserId);
+  }, [mode]);
+
+  useEffect(() => {
+    writeSessionStorageJson(getEmployeeWorkspaceFilterStorageKey(mode), {
+      selectedUserId,
+    } satisfies PersistedEmployeeWorkspaceFilters);
+  }, [mode, selectedUserId]);
 
   const usersQuery = useQuery({
     queryKey: ['employee-workspace-users'],
@@ -105,6 +136,17 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   useEffect(() => {
     if (!selectedUserId && (usersQuery.data || []).length > 0) {
       setSelectedUserId(usersQuery.data![0].id);
+    }
+  }, [selectedUserId, usersQuery.data]);
+
+  useEffect(() => {
+    if (!selectedUserId || !(usersQuery.data || []).length) {
+      return;
+    }
+
+    const hasSelectedUser = (usersQuery.data || []).some((item: any) => Number(item.id) === Number(selectedUserId));
+    if (!hasSelectedUser) {
+      setSelectedUserId(usersQuery.data?.[0]?.id || null);
     }
   }, [selectedUserId, usersQuery.data]);
 
@@ -205,19 +247,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const isError = usersQuery.isError || groupsQuery.isError || membersQuery.isError || profileQuery.isError || invitationsQuery.isError;
   const pageTitle = modeCopy[mode];
   const users = usersQuery.data || [];
-  const employeeSearchSuggestions = useMemo(
-    () =>
-      buildSearchSuggestions(users, (item: any) => ({
-        id: item.id,
-        label: item.name || item.email || `User #${item.id}`,
-        description: item.email || undefined,
-        keywords: [item.role].filter(Boolean),
-      })),
-    [users]
-  );
-  const filteredUsers = useMemo(() => {
-    return users.filter((item: any) => matchesSearchFilter(employeeSearch, [item.name]));
-  }, [employeeSearch, users]);
   const groups = groupsQuery.data || [];
   const members = membersQuery.data || [];
   const invitations = invitationsQuery.data || [];
@@ -279,23 +308,11 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
 
           <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
-              <FieldLabel>Selected Employee</FieldLabel>
-              <SelectInput value={selectedUserId || ''} onChange={(event) => setSelectedUserId(event.target.value ? Number(event.target.value) : null)}>
-                {filteredUsers.map((user: any) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </div>
-            <div>
-              <FieldLabel>Search Employee</FieldLabel>
-              <SearchSuggestInput
-                value={employeeSearch}
-                onValueChange={setEmployeeSearch}
-                suggestions={employeeSearchSuggestions}
-                placeholder="Search by employee name"
-                emptyMessage="No employee names match this search."
+              <FieldLabel>Employee</FieldLabel>
+              <EmployeeSelect
+                employees={users}
+                value={selectedUserId ?? ''}
+                onChange={(value) => setSelectedUserId(value ? Number(value) : null)}
               />
             </div>
             <div className="flex items-end">
@@ -345,7 +362,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           <DataTable
             title="Employee Directory"
             description={isStrictAdmin ? 'Role, work state, tracked hours, and admin-only promotion controls from the existing users endpoint.' : 'Role, work state, and tracked hours from the existing users endpoint.'}
-            rows={filteredUsers}
+            rows={users}
             emptyMessage="No employees found."
             bodyClassName="max-h-[34rem] overflow-auto"
             columns={[

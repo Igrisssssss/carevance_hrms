@@ -7,6 +7,7 @@ import FilterPanel from '@/components/dashboard/FilterPanel';
 import DataTable from '@/components/dashboard/DataTable';
 import EmptyStateCard from '@/components/dashboard/EmptyStateCard';
 import Button from '@/components/ui/Button';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { LayoutTemplate, Shuffle, Users, Wallet } from 'lucide-react';
@@ -653,10 +654,7 @@ export default function PayrollStructuresView() {
         <FilterPanel className="grid grid-cols-1 gap-3 p-0 shadow-none md:grid-cols-[1fr_auto]">
           <div>
             <FieldLabel>Filter by Employee</FieldLabel>
-            <SelectInput value={legacyEmployeeFilter} onChange={(event) => setLegacyEmployeeFilter(event.target.value ? Number(event.target.value) : '')}>
-              <option value="">All employees</option>
-              {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-            </SelectInput>
+            <EmployeeSelect employees={employees} value={legacyEmployeeFilter} onChange={setLegacyEmployeeFilter} includeAllOption />
           </div>
           <div className="flex items-end">
             <Button variant="secondary" onClick={() => setLegacyEmployeeFilter('')}>Clear</Button>

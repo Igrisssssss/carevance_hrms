@@ -15,6 +15,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react';
+import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
 import type { TimeEntry } from '@/types';
 
 export default function Dashboard() {
@@ -255,8 +256,8 @@ export default function Dashboard() {
                       <Clock className="h-5 w-5 text-slate-600" />
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-slate-950">{entry.project?.name || 'General work'}</p>
-                      <p className="truncate text-sm text-slate-500">{entry.description || 'No description provided'}</p>
+                      <p className="truncate font-medium text-slate-950">{getTimeEntryTitle(entry)}</p>
+                      <p className="truncate text-sm text-slate-500">{getTimeEntrySubtitle(entry)}</p>
                     </div>
                   </div>
                   <div className="text-right">

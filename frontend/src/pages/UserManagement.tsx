@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { reportGroupApi, userApi } from '@/services/api';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import { useAuth } from '@/contexts/AuthContext';
-import { deriveDateRangeFromPreset, getDateRangePresetLabel, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, getDateRangePresetLabel, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
+import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
@@ -30,19 +31,61 @@ const COUNTRY_TIMEZONES: Record<string, string[]> = {
   Australia: ['Australia/Sydney', 'Australia/Perth'],
 };
 
+type PersistedUserManagementFilters = {
+  datePreset: DateRangePreset;
+  country: string;
+  timezone: string;
+  startDate: string;
+  endDate: string;
+  selectedProfileUserId: number | null;
+};
+
+const USER_MANAGEMENT_FILTER_STORAGE_KEY = 'user-management-filters';
+const userManagementDefaultDateRange = deriveDateRangeFromPreset('today');
+
+const getDefaultUserManagementFilters = (defaultTimezone: string): PersistedUserManagementFilters => ({
+  datePreset: 'today',
+  country: 'India',
+  timezone: defaultTimezone,
+  startDate: userManagementDefaultDateRange.startDate,
+  endDate: userManagementDefaultDateRange.endDate,
+  selectedProfileUserId: null,
+});
+
+const readPersistedUserManagementFilters = (defaultTimezone: string): PersistedUserManagementFilters => {
+  const fallback = getDefaultUserManagementFilters(defaultTimezone);
+  const parsed = readSessionStorageJson<PersistedUserManagementFilters>(USER_MANAGEMENT_FILTER_STORAGE_KEY);
+
+  if (!parsed) {
+    return fallback;
+  }
+
+  const nextCountry = typeof parsed.country === 'string' && COUNTRY_TIMEZONES[parsed.country] ? parsed.country : fallback.country;
+  const timezoneOptions = COUNTRY_TIMEZONES[nextCountry] || COUNTRY_TIMEZONES[fallback.country];
+
+  return {
+    datePreset: isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset,
+    country: nextCountry,
+    timezone: typeof parsed.timezone === 'string' && timezoneOptions.includes(parsed.timezone) ? parsed.timezone : timezoneOptions[0],
+    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
+    selectedProfileUserId: coercePositiveNumber(parsed.selectedProfileUserId),
+  };
+};
+
 export default function UserManagement() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isAdmin = hasAdminAccess(user);
   const isStrictAdmin = hasStrictAdminAccess(user);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
-  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
-  const [country, setCountry] = useState('India');
   const defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
-  const [timezone, setTimezone] = useState(defaultTimezone);
-  const [startDate, setStartDate] = useState(() => deriveDateRangeFromPreset('30d').startDate);
-  const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
-  const [selectedProfileUserId, setSelectedProfileUserId] = useState<number | null>(null);
+  const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedUserManagementFilters(defaultTimezone).datePreset);
+  const [country, setCountry] = useState(() => readPersistedUserManagementFilters(defaultTimezone).country);
+  const [timezone, setTimezone] = useState(() => readPersistedUserManagementFilters(defaultTimezone).timezone);
+  const [startDate, setStartDate] = useState(() => readPersistedUserManagementFilters(defaultTimezone).startDate);
+  const [endDate, setEndDate] = useState(() => readPersistedUserManagementFilters(defaultTimezone).endDate);
+  const [selectedProfileUserId, setSelectedProfileUserId] = useState<number | null>(() => readPersistedUserManagementFilters(defaultTimezone).selectedProfileUserId);
 
   const [userForm, setUserForm] = useState({ id: 0, name: '', email: '', role: 'employee' as OrgUser['role'], password: '' });
   const [groupForm, setGroupForm] = useState({ id: 0, name: '', user_ids: [] as number[] });
@@ -52,6 +95,17 @@ export default function UserManagement() {
       setTimezone(COUNTRY_TIMEZONES[country][0]);
     }
   }, [country, timezone]);
+
+  useEffect(() => {
+    writeSessionStorageJson(USER_MANAGEMENT_FILTER_STORAGE_KEY, {
+      datePreset,
+      country,
+      timezone,
+      startDate,
+      endDate,
+      selectedProfileUserId,
+    } satisfies PersistedUserManagementFilters);
+  }, [country, datePreset, defaultTimezone, endDate, selectedProfileUserId, startDate, timezone]);
 
   const handleDatePresetChange = (preset: DateRangePreset) => {
     setDatePreset(preset);
@@ -114,6 +168,17 @@ export default function UserManagement() {
   useEffect(() => {
     if (!selectedProfileUserId && users.length > 0) {
       setSelectedProfileUserId(users[0].id);
+    }
+  }, [selectedProfileUserId, users]);
+
+  useEffect(() => {
+    if (!selectedProfileUserId) {
+      return;
+    }
+
+    const hasSelectedUser = users.some((item) => item.id === selectedProfileUserId);
+    if (!hasSelectedUser) {
+      setSelectedProfileUserId(users[0]?.id || null);
     }
   }, [selectedProfileUserId, users]);
 
@@ -339,8 +404,8 @@ export default function UserManagement() {
         <div className="flex items-end">
           <button
             onClick={() => {
-              const nextRange = deriveDateRangeFromPreset('30d');
-              setDatePreset('30d');
+              const nextRange = deriveDateRangeFromPreset('today');
+              setDatePreset('today');
               setStartDate(nextRange.startDate);
               setEndDate(nextRange.endDate);
             }}

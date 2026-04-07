@@ -15,7 +15,9 @@ import {
 } from 'lucide-react';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import BrandLogo from '@/components/branding/BrandLogo';
+import AuthPageFooter from '@/components/auth/AuthPageFooter';
 import { useAuth } from '@/contexts/AuthContext';
+import { analytics } from '@/lib/analytics';
 import {
   getPlanPrice,
   getPricingPlan,
@@ -83,7 +85,11 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
     setIsLoading(true);
 
     try {
-      await signupOwner({
+      analytics.trackEvent('owner_signup_started', {
+        plan_code: planCode,
+        signup_mode: signupMode,
+      });
+      const result = await signupOwner({
         company_name: companyName.trim(),
         name: name.trim(),
         email: email.trim(),
@@ -95,7 +101,11 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
         ...(termsAccepted ? { terms_accepted: true } : {}),
       });
 
-      navigate('/dashboard');
+      analytics.trackEvent('owner_signup_completed', {
+        plan_code: planCode,
+        signup_mode: signupMode,
+      });
+      navigate(`/verify-email?email=${encodeURIComponent(result.email)}&status=pending-signup`);
     } catch (requestError: any) {
       const parsed = formatError(requestError);
       setError(parsed.message);
@@ -337,7 +347,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                     className="mt-1 h-4 w-4 rounded border-slate-300 bg-white text-sky-600 focus:ring-sky-400"
                   />
                   <span>
-                    I agree to the terms and privacy policy for this workspace setup.
+                    I agree to the <Link to="/terms" className="font-semibold text-slate-900 underline-offset-4 hover:underline">terms</Link> and <Link to="/privacy" className="font-semibold text-slate-900 underline-offset-4 hover:underline">privacy policy</Link> for this workspace setup.
                     <span className="mt-1 block text-xs text-slate-500">Optional now, easy to enforce later if you make legal acceptance mandatory.</span>
                   </span>
                 </label>
@@ -360,6 +370,8 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                   )}
                 </button>
               </form>
+
+              <AuthPageFooter />
             </AdaptiveSurface>
           </div>
         </section>
