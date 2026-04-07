@@ -1300,9 +1300,9 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
               { key: 'productive_duration', header: 'Productive Time', render: (row: any) => formatDuration(row.productive_duration || 0) },
               { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(getWorkingDuration(row) || row.total_duration || 0) },
-              { key: 'matched_users', header: 'Search Pool', render: () => usageMatchedUsers.length },
-            ]}
-          />
+                { key: 'matched_users', header: 'Search Pool', render: () => usageMatchedUsers.length },
+              ]}
+            />
         </>
       )}
 

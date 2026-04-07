@@ -19,8 +19,8 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signupOwner: (payload: OwnerSignupRequest) => Promise<void>;
-  acceptInvitation: (token: string, payload: { name: string; password: string; password_confirmation: string }) => Promise<void>;
+  signupOwner: (payload: OwnerSignupRequest) => Promise<{ requiresVerification: boolean; email: string }>;
+  acceptInvitation: (token: string, payload: { name: string; password: string; password_confirmation: string }) => Promise<{ requiresVerification: boolean; email: string }>;
   register: (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (user: User) => void;
@@ -338,23 +338,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
 
       storeAuthState('demo-token-12345', demoUser, demoOrg);
-      return;
+      return { requiresVerification: false, email: demoUser.email };
     }
 
     const response = await authApi.signupOwner(payload);
-    const { user: userData, token: authToken, organization: org } = response.data;
-
-    storeAuthState(authToken, userData, org);
+    return {
+      requiresVerification: Boolean(response.data.requires_verification),
+      email: response.data.email || response.data.user.email,
+    };
   };
 
   const acceptInvitation = async (
     tokenValue: string,
     payload: { name: string; password: string; password_confirmation: string }
   ) => {
-    const response = await invitationApi.accept(tokenValue, payload);
-    const { user: userData, token: authToken, organization: org } = response.data;
+    if (DEMO_MODE) {
+      return { requiresVerification: false, email: payload.name };
+    }
 
-    storeAuthState(authToken, userData, org);
+    const response = await invitationApi.accept(tokenValue, payload);
+    return {
+      requiresVerification: Boolean(response.data.requires_verification),
+      email: response.data.email || response.data.user.email,
+    };
   };
 
   const register = async (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => {

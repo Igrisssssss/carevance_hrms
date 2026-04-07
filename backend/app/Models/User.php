@@ -3,12 +3,16 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Mail\PasswordResetMail;
+use App\Mail\VerifyEmailMail;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
@@ -194,5 +198,41 @@ class User extends Authenticatable
         }
 
         return $this->last_seen_at->greaterThanOrEqualTo(now()->subMinutes(2));
+    }
+
+    public function hasVerifiedEmail(): bool
+    {
+        return $this->email_verified_at !== null;
+    }
+
+    public function markEmailAsVerified(): bool
+    {
+        return $this->forceFill([
+            'email_verified_at' => now(),
+        ])->save();
+    }
+
+    public function sendEmailVerificationNotification(): void
+    {
+        $verificationUrl = URL::temporarySignedRoute(
+            'verification.verify',
+            now()->addMinutes((int) config('carevance.auth.email_verification_expire_minutes', 1440)),
+            [
+                'id' => $this->getKey(),
+                'hash' => sha1((string) $this->email),
+            ]
+        );
+
+        Mail::to($this->email)->queue(new VerifyEmailMail($this, $verificationUrl));
+    }
+
+    public function sendPasswordResetNotification(#[\SensitiveParameter] $token): void
+    {
+        $resetUrl = rtrim((string) config('carevance.frontend_url', config('app.url')), '/').'/reset-password?'.http_build_query([
+            'token' => $token,
+            'email' => $this->email,
+        ]);
+
+        Mail::to($this->email)->queue(new PasswordResetMail($this, $resetUrl));
     }
 }

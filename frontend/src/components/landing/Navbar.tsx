@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import BrandLogo from '@/components/branding/BrandLogo';
 import { desktopDownloadUrl } from '@/lib/runtimeConfig';
+import { analytics } from '@/lib/analytics';
 
 const navItems = [
   { label: 'Product', href: '#product' },
@@ -114,12 +115,14 @@ export default function Navbar() {
             </Link>
             <Link
               to="/contact-sales"
+              onClick={() => analytics.trackEvent('book_demo_clicked', { location: 'navbar' })}
               className="rounded-full px-4 py-2 text-sm font-semibold text-slate-900 transition duration-300 hover:-translate-y-0.5 hover:text-sky-700"
             >
               Book Demo
             </Link>
             <Link
               to="/start-trial"
+              onClick={() => analytics.trackEvent('start_trial_clicked', { location: 'navbar' })}
               className="rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_40px_-18px_rgba(14,165,233,0.7)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_46px_-20px_rgba(14,165,233,0.8)]"
             >
               Start Free Trial
@@ -166,14 +169,20 @@ export default function Navbar() {
                 )}
                 <Link
                   to="/contact-sales"
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => {
+                    analytics.trackEvent('book_demo_clicked', { location: 'navbar-mobile' });
+                    setIsOpen(false);
+                  }}
                   className="block rounded-2xl border border-slate-200/90 px-4 py-3 text-center text-sm font-semibold text-slate-900"
                 >
                   Book Demo
                 </Link>
                 <Link
                   to="/start-trial"
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => {
+                    analytics.trackEvent('start_trial_clicked', { location: 'navbar-mobile' });
+                    setIsOpen(false);
+                  }}
                   className="block rounded-2xl bg-[linear-gradient(135deg,#020617_0%,#0f172a_35%,#0284c7_100%)] px-4 py-3 text-center text-sm font-semibold text-white"
                 >
                   Start Free Trial

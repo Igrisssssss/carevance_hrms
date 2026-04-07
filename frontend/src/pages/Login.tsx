@@ -18,7 +18,9 @@ import {
 } from 'lucide-react';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import BrandLogo from '@/components/branding/BrandLogo';
+import AuthPageFooter from '@/components/auth/AuthPageFooter';
 import { desktopDownloadLabel, desktopDownloadUrl } from '@/lib/runtimeConfig';
+import { analytics } from '@/lib/analytics';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -41,6 +43,9 @@ export default function Login() {
     setPassword(submittedPassword);
     
     try {
+      analytics.trackEvent('login_submitted', {
+        source: 'login-page',
+      });
       await login(submittedEmail, submittedPassword);
       navigate('/dashboard');
     } catch (err: any) {
@@ -158,12 +163,12 @@ export default function Login() {
                     />
                     Remember me
                   </label>
-                  <a
-                    href="#"
+                  <Link
+                    to="/forgot-password"
                     className="text-sm font-semibold text-sky-700 transition hover:text-slate-950 focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
                   >
                     Forgot password?
-                  </a>
+                  </Link>
                 </div>
 
                 <button
@@ -210,6 +215,8 @@ export default function Login() {
                   </div>
                 </div>
               ) : null}
+
+              <AuthPageFooter />
             </AdaptiveSurface>
           </div>
         </section>

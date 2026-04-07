@@ -129,6 +129,58 @@ Important:
 - Do not regenerate `APP_KEY` on updates. Keep the same key from first deployment.
 - Keep `APP_URL` and `VITE_API_URL` aligned with the deployed backend URL on every update.
 
+## 8. CI/CD Without Building On Lightsail
+
+This repo now includes a GitHub Actions workflow at `.github/workflows/deploy-lightsail.yml`.
+
+Recommended flow:
+
+- GitHub Actions builds the `backend` and `frontend` Docker images
+- GitHub pushes those images to GHCR
+- Lightsail pulls the ready-made images and restarts the stack
+- No `npm run build` or `docker build` runs on the Lightsail server
+
+### One-time server setup
+
+Install Docker on the server and clone the repo as described above, then:
+
+```bash
+cd ~/carevance_hrms/deploy/lightsail
+cp .env.example .env
+```
+
+Fill in `.env` with your production values.
+
+### GitHub secrets to add
+
+In your GitHub repository settings, add these secrets:
+
+- `LIGHTSAIL_HOST`: your public Lightsail IP or domain
+- `LIGHTSAIL_USERNAME`: usually `ubuntu`
+- `LIGHTSAIL_SSH_KEY`: the private SSH key content used to connect to Lightsail
+- `GHCR_READ_TOKEN`: a GitHub token with at least `read:packages` and repo access
+
+### First manual deploy using prebuilt images
+
+Pick image names that match your repo and owner. Example:
+
+```bash
+export BACKEND_IMAGE=ghcr.io/YOUR_GITHUB_USERNAME/carevance_hrms-backend:main
+export FRONTEND_IMAGE=ghcr.io/YOUR_GITHUB_USERNAME/carevance_hrms-frontend:main
+docker login ghcr.io
+docker compose -f docker-compose.ci.yml pull
+docker compose -f docker-compose.ci.yml up -d
+```
+
+After that, every push to `main` can deploy automatically through GitHub Actions.
+
+### Notes
+
+- `docker-compose.yml` is still the local/manual build-on-server option
+- `docker-compose.ci.yml` is the CI/CD option that pulls prebuilt images
+- if you change `deploy/lightsail/.env`, those env changes still live on the server and are picked up on the next deploy
+- the workflow currently deploys from `/var/www/carevance`; change that path in the workflow if your server uses a different folder
+
 ## Notes
 
 - The backend container runs `php artisan migrate --force` on startup.

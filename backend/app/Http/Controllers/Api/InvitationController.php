@@ -8,10 +8,10 @@ use App\Http\Requests\Api\Invitations\AcceptInvitationRequest;
 use App\Http\Requests\Api\Invitations\StoreInvitationRequest;
 use App\Models\Invitation;
 use App\Models\Organization;
-use App\Services\Auth\ApiTokenService;
 use App\Services\Authorization\OrganizationRoleService;
 use App\Services\Invitations\InvitationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class InvitationController extends Controller
 {
@@ -19,7 +19,6 @@ class InvitationController extends Controller
 
     public function __construct(
         private readonly InvitationService $invitationService,
-        private readonly ApiTokenService $apiTokenService,
         private readonly OrganizationRoleService $organizationRoleService,
     ) {
     }
@@ -85,12 +84,15 @@ class InvitationController extends Controller
         $invitation = $this->invitationService->resolveByToken($token);
         $user = $this->invitationService->accept($invitation, $request->validated());
         $user->load(['organization', 'groups']);
+        $verificationEmailSent = $this->sendVerificationEmailSafely($user);
 
         return $this->createdResponse([
             'user' => $user,
-            'token' => $this->apiTokenService->issue($user),
             'organization' => $user->organization,
-        ], 'Invitation accepted successfully.');
+            'requires_verification' => true,
+            'email' => $user->email,
+            'verification_email_sent' => $verificationEmailSent,
+        ], 'Invitation accepted successfully. Please verify your email before signing in.');
     }
 
     private function storeForOrganization(StoreInvitationRequest $request, Organization $organization)
@@ -122,5 +124,23 @@ class InvitationController extends Controller
             'failed' => $result['failed'],
             'invited_count' => $createdCount,
         ], $createdCount === 1 ? 'Invitation created successfully.' : 'Invitations created successfully.');
+    }
+
+    private function sendVerificationEmailSafely($user): bool
+    {
+        try {
+            $user->sendEmailVerificationNotification();
+
+            return true;
+        } catch (\Throwable $exception) {
+            Log::warning('Verification email dispatch failed for invitation acceptance.', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 }

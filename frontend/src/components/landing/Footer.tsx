@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Github, Linkedin, Twitter } from 'lucide-react';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import BrandLogo from '@/components/branding/BrandLogo';
+import { useConsent } from '@/contexts/ConsentContext';
 
 const footerGroups = [
   {
@@ -21,16 +22,19 @@ const footerGroups = [
     ],
   },
   {
-    title: 'Admin',
+    title: 'Company',
     links: [
-      { label: 'Billing', to: '/pricing' },
+      { label: 'Support', to: '/support' },
       { label: 'Contact Sales', to: '/contact-sales' },
-      { label: 'Home', to: '/' },
+      { label: 'Privacy Policy', to: '/privacy' },
+      { label: 'Terms & Conditions', to: '/terms' },
     ],
   },
 ];
 
 export default function Footer() {
+  const { openPreferences } = useConsent();
+
   return (
     <footer className="px-4 pb-10 pt-6 sm:px-6 lg:px-8">
       <AdaptiveSurface
@@ -74,6 +78,19 @@ export default function Footer() {
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="mt-8 flex flex-col gap-3 border-t border-slate-200/80 pt-5 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <p className="contrast-text-muted">
+            Placeholder legal and compliance copy is included for launch prep only and must be reviewed by qualified legal counsel before production use.
+          </p>
+          <button
+            type="button"
+            onClick={openPreferences}
+            className="w-fit font-semibold text-sky-700 underline-offset-4 transition hover:text-slate-950 hover:underline"
+          >
+            Cookie Preferences
+          </button>
         </div>
       </AdaptiveSurface>
     </footer>

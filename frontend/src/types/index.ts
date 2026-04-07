@@ -3,6 +3,7 @@ export interface User {
   id: number;
   name: string;
   email: string;
+  email_verified_at?: string | null;
   role: 'admin' | 'manager' | 'employee' | 'client';
   organization_id: number | null;
   invited_by?: number | null;
@@ -236,8 +237,27 @@ export interface OwnerSignupRequest {
 
 export interface AuthResponse {
   user: User;
-  token: string;
+  token?: string;
   organization?: Organization;
+  requires_verification?: boolean;
+  email?: string;
+  verification_email_sent?: boolean;
+}
+
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ResetPasswordRequest {
+  token: string;
+  email: string;
+  password: string;
+  password_confirmation: string;
+}
+
+export interface PasswordResetTokenValidationResponse {
+  valid: boolean;
+  message?: string;
 }
 
 export interface InvitationSummary {
@@ -296,6 +316,20 @@ export interface BillingSnapshot {
     slug: string;
     owner_user_id?: number | null;
   } | null;
+}
+
+export interface BugReportRequest {
+  name?: string;
+  email: string;
+  issue_category: 'bug' | 'ui' | 'performance' | 'billing' | 'account' | 'other';
+  summary: string;
+  description: string;
+  current_path?: string | null;
+}
+
+export interface BugReportResponse {
+  message: string;
+  report_id?: number;
 }
 
 // API Response Types

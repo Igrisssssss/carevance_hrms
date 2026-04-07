@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Download } from 'lucide-react';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import { desktopDownloadUrl } from '@/lib/runtimeConfig';
+import { analytics } from '@/lib/analytics';
 
 export default function CTA() {
   return (
@@ -32,12 +33,20 @@ export default function CTA() {
           <div className="relative flex flex-col gap-3 sm:gap-4 sm:flex-row">
             <Link
               to="/start-trial"
+              onClick={() => {
+                analytics.trackEvent('landing_cta_clicked', { location: 'footer-cta', action: 'start-trial' });
+                analytics.trackEvent('start_trial_clicked', { location: 'footer-cta' });
+              }}
               className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3.5 text-sm font-semibold text-slate-950 transition duration-300 hover:-translate-y-0.5 hover:bg-cyan-50 sm:w-auto"
             >
               Start Free Trial
             </Link>
             <Link
               to="/contact-sales"
+              onClick={() => {
+                analytics.trackEvent('landing_cta_clicked', { location: 'footer-cta', action: 'contact-sales' });
+                analytics.trackEvent('book_demo_clicked', { location: 'footer-cta' });
+              }}
               className="inline-flex w-full items-center justify-center rounded-full border border-white/25 bg-white/10 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:bg-white/15 sm:w-auto"
             >
               Contact Sales

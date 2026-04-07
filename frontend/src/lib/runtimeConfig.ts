@@ -3,6 +3,13 @@ type AppRuntimeConfig = {
   VITE_WEB_APP_URL?: string;
   VITE_DESKTOP_DOWNLOAD_URL?: string;
   VITE_DESKTOP_DOWNLOAD_LABEL?: string;
+  VITE_SALES_EMAIL?: string;
+  VITE_SUPPORT_EMAIL?: string;
+  VITE_GA_MEASUREMENT_ID?: string;
+  VITE_PLAUSIBLE_DOMAIN?: string;
+  VITE_POSTHOG_KEY?: string;
+  VITE_POSTHOG_HOST?: string;
+  VITE_GOOGLE_OAUTH_ENABLED?: string;
   VITE_IDLE_TRACK_THRESHOLD_SECONDS?: string;
   VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS?: string;
   VITE_IDLE_GUARD_INTERVAL_MS?: string;
@@ -23,6 +30,28 @@ const resolveConfigValue = (runtimeValue?: string, buildValue?: string) => {
   }
 
   return '';
+};
+
+const resolveBooleanConfigValue = (
+  runtimeValue: string | undefined,
+  buildValue: string | undefined,
+  fallback = false
+) => {
+  const candidate = resolveConfigValue(runtimeValue, buildValue).toLowerCase();
+
+  if (candidate === '') {
+    return fallback;
+  }
+
+  if (['1', 'true', 'yes', 'on'].includes(candidate)) {
+    return true;
+  }
+
+  if (['0', 'false', 'no', 'off'].includes(candidate)) {
+    return false;
+  }
+
+  return fallback;
 };
 
 const resolveNumericConfigValue = (
@@ -71,6 +100,39 @@ export const desktopDownloadUrl =
 export const desktopDownloadLabel =
   resolveConfigValue(runtimeConfig.VITE_DESKTOP_DOWNLOAD_LABEL, import.meta.env.VITE_DESKTOP_DOWNLOAD_LABEL) ||
   'Download for Windows';
+
+export const salesContactEmail =
+  resolveConfigValue(runtimeConfig.VITE_SALES_EMAIL, import.meta.env.VITE_SALES_EMAIL) ||
+  'sales@carevance.example';
+
+export const supportContactEmail =
+  resolveConfigValue(runtimeConfig.VITE_SUPPORT_EMAIL, import.meta.env.VITE_SUPPORT_EMAIL) ||
+  'support@carevance.example';
+
+export const gaMeasurementId = resolveConfigValue(
+  runtimeConfig.VITE_GA_MEASUREMENT_ID,
+  import.meta.env.VITE_GA_MEASUREMENT_ID
+);
+
+export const plausibleDomain = resolveConfigValue(
+  runtimeConfig.VITE_PLAUSIBLE_DOMAIN,
+  import.meta.env.VITE_PLAUSIBLE_DOMAIN
+);
+
+export const posthogKey = resolveConfigValue(
+  runtimeConfig.VITE_POSTHOG_KEY,
+  import.meta.env.VITE_POSTHOG_KEY
+);
+
+export const posthogHost =
+  resolveConfigValue(runtimeConfig.VITE_POSTHOG_HOST, import.meta.env.VITE_POSTHOG_HOST) ||
+  'https://app.posthog.com';
+
+export const googleOAuthEnabled = resolveBooleanConfigValue(
+  runtimeConfig.VITE_GOOGLE_OAUTH_ENABLED,
+  import.meta.env.VITE_GOOGLE_OAUTH_ENABLED,
+  false
+);
 
 export const idleTrackThresholdSeconds = resolveNumericConfigValue(
   runtimeConfig.VITE_IDLE_TRACK_THRESHOLD_SECONDS,
