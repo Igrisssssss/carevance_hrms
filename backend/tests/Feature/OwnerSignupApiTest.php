@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Mail\VerifyEmailMail;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class OwnerSignupApiTest extends TestCase
@@ -13,6 +15,8 @@ class OwnerSignupApiTest extends TestCase
 
     public function test_owner_signup_creates_workspace_admin_trial_and_billing_snapshot(): void
     {
+        Mail::fake();
+
         $response = $this->postJson('/api/auth/signup-owner', [
             'company_name' => 'CareVance Labs',
             'name' => 'Workspace Owner',
@@ -29,7 +33,10 @@ class OwnerSignupApiTest extends TestCase
             ->assertJsonPath('user.role', 'admin')
             ->assertJsonPath('organization.name', 'CareVance Labs')
             ->assertJsonPath('organization.plan_code', 'starter')
-            ->assertJsonPath('organization.subscription_status', 'trial');
+            ->assertJsonPath('organization.subscription_status', 'trial')
+            ->assertJsonPath('requires_verification', true)
+            ->assertJsonMissingPath('token')
+            ->assertJsonPath('verification_email_sent', true);
 
         $organization = Organization::query()->firstOrFail();
         $owner = User::query()->firstOrFail();
@@ -38,17 +45,10 @@ class OwnerSignupApiTest extends TestCase
         $this->assertSame('trial', $organization->subscription_intent);
         $this->assertNotNull($organization->trial_starts_at);
         $this->assertNotNull($organization->trial_ends_at);
+        $this->assertNull($owner->email_verified_at);
+        Mail::assertQueued(VerifyEmailMail::class);
 
-        $token = (string) $response->json('token');
-
-        $this->getJson('/api/billing/current', [
-            'Authorization' => 'Bearer '.$token,
-            'Accept' => 'application/json',
-        ])
-            ->assertOk()
-            ->assertJsonPath('plan.code', 'starter')
-            ->assertJsonPath('plan.status', 'trial')
-            ->assertJsonPath('workspace.owner_user_id', $owner->id);
+        $this->assertDatabaseCount('personal_access_tokens', 0);
     }
 
     public function test_owner_signup_supports_paid_intent_without_public_role_selection(): void
@@ -67,7 +67,9 @@ class OwnerSignupApiTest extends TestCase
         $paidIntentResponse
             ->assertCreated()
             ->assertJsonPath('organization.subscription_status', 'inactive')
-            ->assertJsonPath('organization.subscription_intent', 'paid');
+            ->assertJsonPath('organization.subscription_intent', 'paid')
+            ->assertJsonPath('requires_verification', true)
+            ->assertJsonMissingPath('token');
 
         $employeeAttempt = $this->postJson('/api/auth/register', [
             'organization_name' => 'CareVance Growth',
@@ -81,5 +83,32 @@ class OwnerSignupApiTest extends TestCase
         $employeeAttempt
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['role']);
+    }
+
+    public function test_owner_signup_is_rate_limited(): void
+    {
+        foreach (range(1, 3) as $attempt) {
+            $this->postJson('/api/auth/signup-owner', [
+                'company_name' => 'CareVance Labs '.$attempt,
+                'name' => 'Workspace Owner '.$attempt,
+                'email' => "owner{$attempt}@example.com",
+                'password' => 'password123',
+                'password_confirmation' => 'password123',
+                'plan_code' => 'starter',
+                'signup_mode' => 'trial',
+                'billing_cycle' => 'monthly',
+            ])->assertCreated();
+        }
+
+        $this->postJson('/api/auth/signup-owner', [
+            'company_name' => 'CareVance Labs 4',
+            'name' => 'Workspace Owner 4',
+            'email' => 'owner4@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'plan_code' => 'starter',
+            'signup_mode' => 'trial',
+            'billing_cycle' => 'monthly',
+        ])->assertStatus(429);
     }
 }

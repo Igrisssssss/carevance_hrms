@@ -1,3 +1,5 @@
+import { salesContactEmail } from '@/lib/runtimeConfig';
+
 export type PricingBillingCycle = 'monthly' | 'yearly';
 export type SignupMode = 'trial' | 'paid';
 
@@ -17,7 +19,7 @@ export interface PricingPlan {
 export const pricingUi = {
   trialBadge: '14-day free trial',
   noCardCopy: 'No credit card required initially',
-  contactEmail: 'sales@carevance.example',
+  contactEmail: salesContactEmail,
 };
 
 export const pricingPlans: PricingPlan[] = [

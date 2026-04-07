@@ -1,0 +1,71 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Mail\VerifyEmailMail;
+use App\Models\Organization;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\URL;
+use Tests\TestCase;
+
+class EmailVerificationFlowTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_signed_verification_link_marks_user_as_verified_and_redirects_to_frontend(): void
+    {
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $user = User::create([
+            'name' => 'Owner',
+            'email' => 'owner@example.com',
+            'password' => 'password123',
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+
+        $verificationUrl = URL::temporarySignedRoute(
+            'verification.verify',
+            now()->addMinutes(60),
+            [
+                'id' => $user->id,
+                'hash' => sha1($user->email),
+            ]
+        );
+
+        $this->get($verificationUrl)
+            ->assertRedirect(config('carevance.frontend_url').'/verify-email?status=verified');
+
+        $this->assertNotNull($user->fresh()->email_verified_at);
+    }
+
+    public function test_authenticated_user_can_resend_verification_email(): void
+    {
+        Mail::fake();
+
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $user = User::create([
+            'name' => 'Owner',
+            'email' => 'owner@example.com',
+            'password' => 'password123',
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+
+        $this->postJson('/api/auth/email/verification-notification', [], $this->apiHeadersFor($user))
+            ->assertOk()
+            ->assertJsonPath('message', 'Verification email sent successfully.');
+
+        Mail::assertQueued(VerifyEmailMail::class);
+        Mail::assertQueuedCount(1);
+    }
+}

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, BarChart3, CalendarRange, Clock4, Download } from 'lucide-react';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import { desktopDownloadUrl } from '@/lib/runtimeConfig';
+import { analytics } from '@/lib/analytics';
 
 const container: Variants = {
   hidden: { opacity: 0 },
@@ -47,6 +48,10 @@ export default function Hero() {
           <motion.div variants={item} className="mt-8 flex flex-col gap-3 sm:mt-11 sm:gap-4 lg:flex-row">
             <Link
               to="/start-trial"
+              onClick={() => {
+                analytics.trackEvent('landing_cta_clicked', { location: 'hero', action: 'start-trial' });
+                analytics.trackEvent('start_trial_clicked', { location: 'hero' });
+              }}
               className="group inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-6 py-3.5 text-sm font-semibold text-white shadow-[0_22px_50px_-18px_rgba(14,165,233,0.6)] transition duration-300 hover:-translate-y-0.5 sm:w-auto"
             >
               Start Free Trial
@@ -54,6 +59,10 @@ export default function Hero() {
             </Link>
             <Link
               to="/contact-sales"
+              onClick={() => {
+                analytics.trackEvent('landing_cta_clicked', { location: 'hero', action: 'book-demo' });
+                analytics.trackEvent('book_demo_clicked', { location: 'hero' });
+              }}
               className="inline-flex w-full items-center justify-center rounded-full border border-slate-300/80 bg-white/80 px-6 py-3.5 text-sm font-semibold text-slate-900 shadow-[0_16px_35px_-26px_rgba(15,23,42,0.45)] backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:border-slate-950 hover:bg-white sm:w-auto"
             >
               Book Demo

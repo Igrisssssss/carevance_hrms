@@ -2,6 +2,16 @@
 
 TimeTrack Pro is a Laravel 12 API with a React 18 frontend and an optional Electron desktop shell for timer capture, screenshots, and desktop activity context.
 
+## Launch Prep Notes
+
+- `/privacy` and `/terms` now exist for pre-launch readiness, but the legal copy is placeholder content only and must be reviewed by qualified legal counsel before production use.
+- Cookie consent is implemented for public pages and non-essential analytics stays disabled until a visitor explicitly accepts it.
+- Email verification, password reset, support email routing, and bug-report submission flows are now wired into the repo in a production-safe additive way.
+- Google OAuth hook points are scaffolded in config and env files, but OAuth is intentionally not surfaced as an active login path by default.
+- Launch docs:
+  - [`LAUNCH_SEO_CHECKLIST.md`](/d:/demo_laravel_2/LAUNCH_SEO_CHECKLIST.md)
+  - [`backend/docs/LAUNCH_SECURITY_CHECKLIST.md`](/d:/demo_laravel_2/backend/docs/LAUNCH_SECURITY_CHECKLIST.md)
+
 ## Stack
 
 ### Backend
@@ -144,6 +154,14 @@ VITE_WEB_APP_URL=http://localhost:5173
 # Optional: overrides the backend-powered installer download endpoint
 # VITE_DESKTOP_DOWNLOAD_URL=http://localhost:8000/api/downloads/desktop/windows
 VITE_DESKTOP_DOWNLOAD_LABEL=Download for Windows
+VITE_SALES_EMAIL=sales@carevance.example
+VITE_SUPPORT_EMAIL=support@carevance.example
+# Optional analytics providers. Leave blank until you are ready to wire a consent-aware provider.
+VITE_GA_MEASUREMENT_ID=
+VITE_PLAUSIBLE_DOMAIN=
+VITE_POSTHOG_KEY=
+VITE_POSTHOG_HOST=https://app.posthog.com
+VITE_GOOGLE_OAUTH_ENABLED=false
 ```
 
 Start the frontend:
@@ -196,6 +214,14 @@ Frontend example:
 ```env
 VITE_API_URL=https://your-backend-domain.com/api
 VITE_WEB_APP_URL=https://your-frontend-domain.com
+VITE_SALES_EMAIL=sales@your-domain.com
+VITE_SUPPORT_EMAIL=support@your-domain.com
+# Optional analytics provider config
+VITE_GA_MEASUREMENT_ID=
+VITE_PLAUSIBLE_DOMAIN=
+VITE_POSTHOG_KEY=
+VITE_POSTHOG_HOST=https://app.posthog.com
+VITE_GOOGLE_OAUTH_ENABLED=false
 ```
 
 The frontend now ships with a production Nginx config and Dockerfile in [`frontend/Dockerfile`](/d:/demo_laravel_2/frontend/Dockerfile). That setup keeps clean React Router URLs working on refresh with:
@@ -236,6 +262,13 @@ Installer download behavior:
 - `IDLE_TRACK_THRESHOLD_SECONDS`
 - `IDLE_AUTO_STOP_THRESHOLD_SECONDS`
 - `RATE_LIMIT_*`
+- `AUTH_EMAIL_VERIFICATION_EXPIRE_MINUTES`
+- `SALES_CONTACT_EMAIL`
+- `SUPPORT_CONTACT_EMAIL`
+- `GOOGLE_OAUTH_ENABLED`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URI`
 - `DESKTOP_WINDOWS_DOWNLOAD_URL`
 - `ATTENDANCE_LATE_AFTER`
 - `ATTENDANCE_SHIFT_SECONDS`
@@ -248,6 +281,13 @@ Installer download behavior:
 - `VITE_WEB_APP_URL`
 - `VITE_DESKTOP_DOWNLOAD_URL`
 - `VITE_DESKTOP_DOWNLOAD_LABEL`
+- `VITE_SALES_EMAIL`
+- `VITE_SUPPORT_EMAIL`
+- `VITE_GA_MEASUREMENT_ID`
+- `VITE_PLAUSIBLE_DOMAIN`
+- `VITE_POSTHOG_KEY`
+- `VITE_POSTHOG_HOST`
+- `VITE_GOOGLE_OAUTH_ENABLED`
 - `VITE_IDLE_TRACK_THRESHOLD_SECONDS`
 - `VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS`
 - `VITE_IDLE_GUARD_INTERVAL_MS`

@@ -9,6 +9,7 @@ import {
   pricingUi,
   PricingBillingCycle,
 } from '@/constants/pricing';
+import { analytics } from '@/lib/analytics';
 
 export default function PricingSection({ standalone = false }: { standalone?: boolean }) {
   const [billingCycle, setBillingCycle] = useState<PricingBillingCycle>('monthly');
@@ -107,6 +108,10 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
                     {plan.enterpriseContactOnly ? (
                       <Link
                         to="/contact-sales"
+                        onClick={() => {
+                          analytics.trackEvent('pricing_cta_clicked', { plan_code: plan.code, action: 'contact-sales' });
+                          analytics.trackEvent('book_demo_clicked', { location: 'pricing', plan_code: plan.code });
+                        }}
                         className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_22px_50px_-18px_rgba(14,165,233,0.6)] transition duration-300 hover:-translate-y-0.5"
                       >
                         {plan.ctaLabel}
@@ -116,6 +121,10 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
                       <>
                         <Link
                           to={`/signup-owner?${query}`}
+                          onClick={() => {
+                            analytics.trackEvent('pricing_cta_clicked', { plan_code: plan.code, action: 'start-trial' });
+                            analytics.trackEvent('start_trial_clicked', { location: 'pricing', plan_code: plan.code });
+                          }}
                           className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_22px_50px_-18px_rgba(14,165,233,0.6)] transition duration-300 hover:-translate-y-0.5"
                         >
                           {plan.ctaLabel}
@@ -123,6 +132,9 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
                         </Link>
                         <Link
                           to={`/signup-owner?${buildSignupQuery(plan.code, 'paid', billingCycle)}`}
+                          onClick={() => {
+                            analytics.trackEvent('pricing_cta_clicked', { plan_code: plan.code, action: 'paid-plan' });
+                          }}
                           className="inline-flex items-center justify-center rounded-full border border-slate-300/85 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition duration-300 hover:-translate-y-0.5 hover:border-slate-950"
                         >
                           Continue with Paid Plan

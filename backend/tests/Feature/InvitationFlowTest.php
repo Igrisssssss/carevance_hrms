@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Mail\CareVanceInvitationMail;
+use App\Mail\VerifyEmailMail;
 use App\Models\Invitation;
 use App\Models\Organization;
 use App\Models\User;
@@ -56,13 +57,17 @@ class InvitationFlowTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('user.email', 'new.employee@example.com')
             ->assertJsonPath('user.role', 'employee')
-            ->assertJsonPath('organization.id', $organization->id);
+            ->assertJsonPath('organization.id', $organization->id)
+            ->assertJsonPath('requires_verification', true)
+            ->assertJsonMissingPath('token')
+            ->assertJsonPath('verification_email_sent', true);
 
         $this->assertDatabaseHas('invitations', [
             'organization_id' => $organization->id,
             'email' => 'new.employee@example.com',
             'status' => 'accepted',
         ]);
+        Mail::assertQueued(VerifyEmailMail::class);
 
         $this->postJson("/api/invitations/{$token}/accept", [
             'name' => 'New Employee',
@@ -158,6 +163,37 @@ class InvitationFlowTest extends TestCase
             ->assertJsonValidationErrors(['role']);
     }
 
+    public function test_invitation_accept_endpoint_is_rate_limited(): void
+    {
+        [$organization, $owner] = $this->createWorkspaceOwner();
+        $token = Invitation::generatePublicToken();
+
+        Invitation::create([
+            'organization_id' => $organization->id,
+            'email' => 'new.employee@example.com',
+            'role' => 'employee',
+            'token_hash' => Invitation::hashPublicToken($token),
+            'invited_by' => $owner->id,
+            'status' => 'pending',
+            'delivery_method' => 'link',
+            'expires_at' => now()->addHours(24),
+        ]);
+
+        foreach (range(1, 10) as $attempt) {
+            $this->postJson("/api/invitations/{$token}/accept", [
+                'name' => 'New Employee',
+                'password' => 'short',
+                'password_confirmation' => 'short',
+            ])->assertStatus(422);
+        }
+
+        $this->postJson("/api/invitations/{$token}/accept", [
+            'name' => 'New Employee',
+            'password' => 'short',
+            'password_confirmation' => 'short',
+        ])->assertStatus(429);
+    }
+
     private function createWorkspaceOwner(): array
     {
         $organization = Organization::create([
@@ -177,6 +213,7 @@ class InvitationFlowTest extends TestCase
             'password' => Hash::make('password123'),
             'role' => 'admin',
             'organization_id' => $organization->id,
+            'email_verified_at' => now(),
         ]);
 
         $organization->forceFill(['owner_user_id' => $owner->id])->save();

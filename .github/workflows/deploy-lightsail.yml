@@ -1,0 +1,93 @@
+name: Deploy Lightsail
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      backend_image: ${{ steps.image_refs.outputs.backend_image_sha }}
+      frontend_image: ${{ steps.image_refs.outputs.frontend_image_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute image refs
+        id: image_refs
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          repo="${repo,,}"
+          echo "backend_image_sha=ghcr.io/${owner}/${repo}-backend:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "backend_image_main=ghcr.io/${owner}/${repo}-backend:main" >> "$GITHUB_OUTPUT"
+          echo "frontend_image_sha=ghcr.io/${owner}/${repo}-frontend:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "frontend_image_main=ghcr.io/${owner}/${repo}-frontend:main" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image_refs.outputs.backend_image_sha }}
+            ${{ steps.image_refs.outputs.backend_image_main }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image_refs.outputs.frontend_image_sha }}
+            ${{ steps.image_refs.outputs.frontend_image_main }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy on Lightsail
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          BACKEND_IMAGE: ${{ needs.build-and-push.outputs.backend_image }}
+          FRONTEND_IMAGE: ${{ needs.build-and-push.outputs.frontend_image }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USERNAME }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          envs: BACKEND_IMAGE,FRONTEND_IMAGE,GHCR_USERNAME,GHCR_TOKEN
+          script_stop: true
+          script: |
+            set -eu
+            cd /var/www/carevance
+            git pull origin main
+            cd deploy/lightsail
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+            export BACKEND_IMAGE
+            export FRONTEND_IMAGE
+            docker compose -f docker-compose.ci.yml pull
+            docker compose -f docker-compose.ci.yml up -d
+            docker compose -f docker-compose.ci.yml exec -T backend php artisan screenshots:health-check || true
+            docker compose -f docker-compose.ci.yml exec -T backend php artisan idle:health-check || true

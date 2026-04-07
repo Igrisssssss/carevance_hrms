@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, ArrowLeft } from 'lucide-react';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import BrandLogo from '@/components/branding/BrandLogo';
+import AuthPageFooter from '@/components/auth/AuthPageFooter';
 import { inviteApi } from '@/services/api';
 import { InviteValidationResponse } from '@/types';
 
@@ -111,6 +112,8 @@ export default function InviteSignupPage() {
                 </div>
               </div>
             ) : null}
+
+            <AuthPageFooter />
           </AdaptiveSurface>
         </div>
       </div>

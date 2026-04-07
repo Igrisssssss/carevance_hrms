@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 
@@ -10,6 +11,10 @@ Route::get('/', function () {
         'message' => 'API is running',
     ]);
 });
+
+Route::get('/email/verify/{id}/{hash}', [VerifyEmailController::class, 'verify'])
+    ->whereNumber('id')
+    ->name('verification.verify');
 
 // Temporary route for verifying SMTP delivery locally. Remove once SMTP is confirmed.
 Route::get('/test-mail', function () {
