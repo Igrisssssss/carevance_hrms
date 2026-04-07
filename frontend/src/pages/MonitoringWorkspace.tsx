@@ -14,7 +14,7 @@ import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel } from '@/components/ui/FormField';
 import { classifyActivityProductivity as classifyProductivity, normalizeActivityToolLabel as normalizeToolLabel } from '@/lib/activityProductivity';
-import { deriveDateRangeFromPreset, detectDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
 
@@ -52,18 +52,25 @@ const readPersistedMonitoringWorkspaceFilters = (mode: MonitoringWorkspaceMode):
     return fallback;
   }
 
+  const datePreset: DateRangePreset =
+    parsed.datePreset === 'today'
+    || parsed.datePreset === '2d'
+    || parsed.datePreset === '7d'
+    || parsed.datePreset === '15d'
+    || parsed.datePreset === '30d'
+    || parsed.datePreset === 'custom'
+      ? parsed.datePreset
+      : fallback.datePreset;
+  const resolvedRange = resolvePersistedDateRange(
+    datePreset,
+    typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate
+  );
+
   return {
-    datePreset:
-      parsed.datePreset === 'today'
-      || parsed.datePreset === '2d'
-      || parsed.datePreset === '7d'
-      || parsed.datePreset === '15d'
-      || parsed.datePreset === '30d'
-      || parsed.datePreset === 'custom'
-        ? parsed.datePreset
-        : fallback.datePreset,
-    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
-    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
+    datePreset,
+    startDate: resolvedRange.startDate,
+    endDate: resolvedRange.endDate,
     query: typeof parsed.query === 'string' ? parsed.query : fallback.query,
     selectedUserId: coercePositiveNumber(parsed.selectedUserId) ?? '',
   };

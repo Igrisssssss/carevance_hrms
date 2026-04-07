@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { reportGroupApi, userApi } from '@/services/api';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import { useAuth } from '@/contexts/AuthContext';
-import { deriveDateRangeFromPreset, getDateRangePresetLabel, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, getDateRangePresetLabel, isDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { queryKeys } from '@/lib/queryKeys';
@@ -62,13 +62,19 @@ const readPersistedUserManagementFilters = (defaultTimezone: string): PersistedU
 
   const nextCountry = typeof parsed.country === 'string' && COUNTRY_TIMEZONES[parsed.country] ? parsed.country : fallback.country;
   const timezoneOptions = COUNTRY_TIMEZONES[nextCountry] || COUNTRY_TIMEZONES[fallback.country];
+  const datePreset = isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset;
+  const resolvedRange = resolvePersistedDateRange(
+    datePreset,
+    typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate
+  );
 
   return {
-    datePreset: isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset,
+    datePreset,
     country: nextCountry,
     timezone: typeof parsed.timezone === 'string' && timezoneOptions.includes(parsed.timezone) ? parsed.timezone : timezoneOptions[0],
-    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
-    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
+    startDate: resolvedRange.startDate,
+    endDate: resolvedRange.endDate,
     selectedProfileUserId: coercePositiveNumber(parsed.selectedProfileUserId),
   };
 };

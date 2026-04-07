@@ -9,7 +9,7 @@ import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel } from '@/components/ui/FormField';
-import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Activity, Camera, Users } from 'lucide-react';
@@ -65,19 +65,26 @@ const readPersistedMonitoringFilters = (): PersistedMonitoringFilters => {
     return fallback;
   }
 
+  const datePreset: DateRangePreset =
+    parsed.datePreset === 'today'
+    || parsed.datePreset === '2d'
+    || parsed.datePreset === '7d'
+    || parsed.datePreset === '15d'
+    || parsed.datePreset === '30d'
+    || parsed.datePreset === 'custom'
+      ? parsed.datePreset
+      : fallback.datePreset;
+  const resolvedRange = resolvePersistedDateRange(
+    datePreset,
+    typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate
+  );
+
   return {
     query: typeof parsed.query === 'string' ? parsed.query : fallback.query,
-    datePreset:
-      parsed.datePreset === 'today'
-      || parsed.datePreset === '2d'
-      || parsed.datePreset === '7d'
-      || parsed.datePreset === '15d'
-      || parsed.datePreset === '30d'
-      || parsed.datePreset === 'custom'
-        ? parsed.datePreset
-        : fallback.datePreset,
-    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
-    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
+    datePreset,
+    startDate: resolvedRange.startDate,
+    endDate: resolvedRange.endDate,
     selectedUserId: coercePositiveNumber(parsed.selectedUserId),
   };
 };

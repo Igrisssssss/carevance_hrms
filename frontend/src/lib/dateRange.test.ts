@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DATE_RANGE_PRESET_OPTIONS, deriveDateRangeFromPreset, detectDateRangePreset, getDateRangePresetLabel, isDateRangePreset } from '@/lib/dateRange';
+import { DATE_RANGE_PRESET_OPTIONS, deriveDateRangeFromPreset, detectDateRangePreset, getDateRangePresetLabel, isDateRangePreset, resolvePersistedDateRange } from '@/lib/dateRange';
 
 describe('dateRange helpers', () => {
   it('exposes the expected preset options', () => {
@@ -44,5 +44,22 @@ describe('dateRange helpers', () => {
     expect(isDateRangePreset('month')).toBe(false);
     expect(getDateRangePresetLabel('15d')).toBe('Last 15 days');
     expect(getDateRangePresetLabel('custom')).toBe('Custom range');
+  });
+
+  it('recomputes persisted preset ranges using the current reference date while preserving custom ranges', () => {
+    const referenceDate = new Date(2026, 3, 7);
+
+    expect(resolvePersistedDateRange('today', '2026-04-06', '2026-04-06', referenceDate)).toEqual({
+      startDate: '2026-04-07',
+      endDate: '2026-04-07',
+    });
+    expect(resolvePersistedDateRange('7d', '2026-03-30', '2026-04-05', referenceDate)).toEqual({
+      startDate: '2026-04-01',
+      endDate: '2026-04-07',
+    });
+    expect(resolvePersistedDateRange('custom', '2026-04-01', '2026-04-05', referenceDate)).toEqual({
+      startDate: '2026-04-01',
+      endDate: '2026-04-05',
+    });
   });
 });

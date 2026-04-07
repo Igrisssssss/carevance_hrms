@@ -4,7 +4,7 @@ import { reportApi, reportGroupApi, userApi } from '@/services/api';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess } from '@/lib/permissions';
-import { deriveDateRangeFromPreset, getDateRangePresetLabel, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, getDateRangePresetLabel, isDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumberArray, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
@@ -64,10 +64,17 @@ const readPersistedReportsPageFilters = (isAdmin: boolean): PersistedReportsPage
     return fallback;
   }
 
+  const datePreset = isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset;
+  const resolvedRange = resolvePersistedDateRange(
+    datePreset,
+    typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate
+  );
+
   return {
-    datePreset: isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset,
-    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
-    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
+    datePreset,
+    startDate: resolvedRange.startDate,
+    endDate: resolvedRange.endDate,
     reportType: parsed.reportType === 'daily' || parsed.reportType === 'weekly' ? parsed.reportType : fallback.reportType,
     filterMode: parsed.filterMode === 'group' || parsed.filterMode === 'user' ? parsed.filterMode : fallback.filterMode,
     selectedUserIds: coercePositiveNumberArray(parsed.selectedUserIds),
