@@ -9,7 +9,8 @@ import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel } from '@/components/ui/FormField';
-import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
+import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Activity, Camera, Users } from 'lucide-react';
 
@@ -37,14 +38,74 @@ const arcPath = (cx: number, cy: number, r: number, startAngle: number, endAngle
   return `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
 };
 
+type PersistedMonitoringFilters = {
+  query: string;
+  datePreset: DateRangePreset;
+  startDate: string;
+  endDate: string;
+  selectedUserId: number | null;
+};
+
+const MONITORING_FILTER_STORAGE_KEY = 'monitoring-page-filters';
+const monitoringDefaultDateRange = deriveDateRangeFromPreset('today');
+
+const getDefaultMonitoringFilters = (): PersistedMonitoringFilters => ({
+  query: '',
+  datePreset: 'today',
+  startDate: monitoringDefaultDateRange.startDate,
+  endDate: monitoringDefaultDateRange.endDate,
+  selectedUserId: null,
+});
+
+const readPersistedMonitoringFilters = (): PersistedMonitoringFilters => {
+  const fallback = getDefaultMonitoringFilters();
+  const parsed = readSessionStorageJson<PersistedMonitoringFilters>(MONITORING_FILTER_STORAGE_KEY);
+
+  if (!parsed) {
+    return fallback;
+  }
+
+  const datePreset: DateRangePreset =
+    parsed.datePreset === 'today'
+    || parsed.datePreset === '2d'
+    || parsed.datePreset === '7d'
+    || parsed.datePreset === '15d'
+    || parsed.datePreset === '30d'
+    || parsed.datePreset === 'custom'
+      ? parsed.datePreset
+      : fallback.datePreset;
+  const resolvedRange = resolvePersistedDateRange(
+    datePreset,
+    typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate
+  );
+
+  return {
+    query: typeof parsed.query === 'string' ? parsed.query : fallback.query,
+    datePreset,
+    startDate: resolvedRange.startDate,
+    endDate: resolvedRange.endDate,
+    selectedUserId: coercePositiveNumber(parsed.selectedUserId),
+  };
+};
 export default function Monitoring() {
-  const [query, setQuery] = useState('');
-  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
-  const [startDate, setStartDate] = useState(() => deriveDateRangeFromPreset('30d').startDate);
-  const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
-  const [selectedUserId, setSelectedUserId] = useState<number | undefined>(undefined);
+  const [query, setQuery] = useState(() => readPersistedMonitoringFilters().query);
+  const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedMonitoringFilters().datePreset);
+  const [startDate, setStartDate] = useState(() => readPersistedMonitoringFilters().startDate);
+  const [endDate, setEndDate] = useState(() => readPersistedMonitoringFilters().endDate);
+  const [selectedUserId, setSelectedUserId] = useState<number | undefined>(() => readPersistedMonitoringFilters().selectedUserId ?? undefined);
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    writeSessionStorageJson(MONITORING_FILTER_STORAGE_KEY, {
+      query,
+      datePreset,
+      startDate,
+      endDate,
+      selectedUserId: selectedUserId ?? null,
+    } satisfies PersistedMonitoringFilters);
+  }, [datePreset, endDate, query, selectedUserId, startDate]);
 
   const handleDatePresetChange = (preset: DateRangePreset) => {
     setDatePreset(preset);

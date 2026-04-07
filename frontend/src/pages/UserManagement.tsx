@@ -5,6 +5,7 @@ import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import { useAuth } from '@/contexts/AuthContext';
 import { deriveDateRangeFromPreset, getDateRangePresetLabel, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
 import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
+import { resolvePersistedDateRange } from '@/lib/dateRange';
 import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
@@ -62,14 +63,23 @@ const readPersistedUserManagementFilters = (defaultTimezone: string): PersistedU
 
   const nextCountry = typeof parsed.country === 'string' && COUNTRY_TIMEZONES[parsed.country] ? parsed.country : fallback.country;
   const timezoneOptions = COUNTRY_TIMEZONES[nextCountry] || COUNTRY_TIMEZONES[fallback.country];
+  const datePreset = isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset;
+  const resolvedRange = resolvePersistedDateRange(
+    datePreset,
+    typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate
+  );
 
   return {
-    datePreset: isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset,
+    datePreset,
     country: nextCountry,
     timezone: typeof parsed.timezone === 'string' && timezoneOptions.includes(parsed.timezone) ? parsed.timezone : timezoneOptions[0],
-    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
-    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
-    selectedProfileUserId: typeof parsed.selectedProfileUserId === 'number' && parsed.selectedProfileUserId > 0 ? parsed.selectedProfileUserId : null,
+    startDate: resolvedRange.startDate,
+    endDate: resolvedRange.endDate,
+    selectedProfileUserId:
+      typeof parsed.selectedProfileUserId === 'number' && parsed.selectedProfileUserId > 0
+        ? parsed.selectedProfileUserId
+        : null,
   };
 };
 

@@ -54,5 +54,18 @@ export const detectDateRangePreset = (
   return 'custom';
 };
 
+export const resolvePersistedDateRange = (
+  datePreset: DateRangePreset,
+  startDate: string,
+  endDate: string,
+  referenceDate = new Date()
+) => {
+  if (datePreset === 'custom') {
+    return { startDate, endDate };
+  }
+
+  return deriveDateRangeFromPreset(datePreset, referenceDate);
+};
+
 export const getDateRangePresetLabel = (preset: DateRangePreset) =>
   DATE_RANGE_PRESET_OPTIONS.find((option) => option.value === preset)?.label || 'Custom range';

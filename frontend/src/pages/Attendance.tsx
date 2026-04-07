@@ -13,7 +13,9 @@ import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
-import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
+import { classifyActivityProductivity as classifyProductivity, normalizeActivityToolLabel as normalizeToolLabel } from '@/lib/activityProductivity';
+import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
+import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Briefcase, CalendarDays, Clock, Eye, FolderKanban, Layers3, Users } from 'lucide-react';
 import type { UserProfile360 } from '@/types';
@@ -25,51 +27,6 @@ const formatDuration = (seconds: number) => {
   return `${hours}h ${minutes}m`;
 };
 const formatDateTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : 'Not available');
-const normalizeToolLabel = (name: string, activityType: string) => {
-  const trimmed = String(name || '').trim();
-  const normalizedType = String(activityType || '').toLowerCase();
-
-  if (!trimmed) return normalizedType === 'url' ? 'unknown-site' : 'unknown-app';
-
-  if (normalizedType === 'url') {
-    try {
-      const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
-      return parsed.hostname.replace(/^www\./, '').toLowerCase();
-    } catch {
-      const match = trimmed.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
-      if (match?.[0]) return match[0].replace(/^www\./, '').toLowerCase();
-    }
-  }
-
-  return trimmed.slice(0, 120);
-};
-const classifyProductivity = (toolLabel: string, activityType: string) => {
-  const text = String(toolLabel || '').toLowerCase();
-  const normalizedType = String(activityType || '').toLowerCase();
-  const productiveKeywords = [
-    'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'notion', 'slack', 'teams', 'zoom',
-    'vscode', 'visual studio', 'intellij', 'pycharm', 'webstorm', 'phpstorm', 'terminal',
-    'powershell', 'cmd', 'postman', 'figma', 'miro', 'docs.google', 'sheets.google', 'drive.google',
-    'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
-    'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint', 'meet.google',
-    'chat.openai', 'chatgpt', 'claude.ai', 'gemini.google', 'code', 'cursor', 'android studio',
-    'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat',
-  ];
-  const unproductiveKeywords = [
-    'youtube', 'netflix', 'primevideo', 'hotstar', 'spotify', 'instagram', 'facebook', 'twitter',
-    'x.com', 'reddit', 'snapchat', 'tiktok', 'discord', 'twitch', 'pinterest', '9gag',
-    'telegram', 'whatsapp', 'web.whatsapp', 'wa.me', 'fb.com', 'reels', 'shorts', 'cricbuzz', 'espncricinfo',
-  ];
-
-  const isProductive = productiveKeywords.some((keyword) => text.includes(keyword));
-  const isUnproductive = unproductiveKeywords.some((keyword) => text.includes(keyword));
-
-  if (isUnproductive && !isProductive) return 'unproductive';
-  if (isProductive && !isUnproductive) return 'productive';
-  if (normalizedType === 'idle') return 'neutral';
-  if (normalizedType === 'url' || normalizedType === 'app') return 'productive';
-  return 'neutral';
-};
 const productivityTone = (classification?: string | null) =>
   classification === 'productive'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
@@ -161,15 +118,68 @@ type SectionFeedback = {
   message: string;
 } | null;
 
+type PersistedAttendanceFilters = {
+  selectedFilterUserId: number | '';
+  countryFilter: string;
+  calendarScope: 'selected' | 'overall';
+  datePreset: DateRangePreset;
+  startDate: string;
+  endDate: string;
+};
+
+const ATTENDANCE_FILTER_STORAGE_KEY = 'attendance-page-filters';
+const attendanceDefaultDateRange = deriveDateRangeFromPreset('today');
+
+const getDefaultAttendanceFilters = (): PersistedAttendanceFilters => ({
+  selectedFilterUserId: '',
+  countryFilter: 'ALL',
+  calendarScope: 'selected',
+  datePreset: 'today',
+  startDate: attendanceDefaultDateRange.startDate,
+  endDate: attendanceDefaultDateRange.endDate,
+});
+
+const readPersistedAttendanceFilters = (): PersistedAttendanceFilters => {
+  const fallback = getDefaultAttendanceFilters();
+  const parsed = readSessionStorageJson<PersistedAttendanceFilters>(ATTENDANCE_FILTER_STORAGE_KEY);
+
+  if (!parsed) {
+    return fallback;
+  }
+
+  const datePreset: DateRangePreset =
+    parsed.datePreset === 'today'
+    || parsed.datePreset === '2d'
+    || parsed.datePreset === '7d'
+    || parsed.datePreset === '15d'
+    || parsed.datePreset === '30d'
+    || parsed.datePreset === 'custom'
+      ? parsed.datePreset
+      : fallback.datePreset;
+  const resolvedRange = resolvePersistedDateRange(
+    datePreset,
+    typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate
+  );
+
+  return {
+    selectedFilterUserId: coercePositiveNumber(parsed.selectedFilterUserId) ?? '',
+    countryFilter: typeof parsed.countryFilter === 'string' && parsed.countryFilter ? parsed.countryFilter : fallback.countryFilter,
+    calendarScope: parsed.calendarScope === 'overall' ? 'overall' : fallback.calendarScope,
+    datePreset,
+    startDate: resolvedRange.startDate,
+    endDate: resolvedRange.endDate,
+  };
+};
 export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const navigate = useNavigate();
   const { user, organization } = useAuth();
-  const [selectedFilterUserId, setSelectedFilterUserId] = useState<number | ''>('');
-  const [countryFilter, setCountryFilter] = useState('ALL');
-  const [calendarScope, setCalendarScope] = useState<'selected' | 'overall'>('selected');
-  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
-  const [startDate, setStartDate] = useState(() => deriveDateRangeFromPreset('30d').startDate);
-  const [endDate, setEndDate] = useState(() => deriveDateRangeFromPreset('30d').endDate);
+  const [selectedFilterUserId, setSelectedFilterUserId] = useState<number | ''>(() => readPersistedAttendanceFilters().selectedFilterUserId);
+  const [countryFilter, setCountryFilter] = useState(() => readPersistedAttendanceFilters().countryFilter);
+  const [calendarScope, setCalendarScope] = useState<'selected' | 'overall'>(() => readPersistedAttendanceFilters().calendarScope);
+  const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedAttendanceFilters().datePreset);
+  const [startDate, setStartDate] = useState(() => readPersistedAttendanceFilters().startDate);
+  const [endDate, setEndDate] = useState(() => readPersistedAttendanceFilters().endDate);
   const [rows, setRows] = useState<any[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [workingDays, setWorkingDays] = useState(0);
@@ -235,6 +245,16 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [employeeMonitoringScreenshots, setEmployeeMonitoringScreenshots] = useState<any[]>([]);
   const [employeeWebsiteUsage, setEmployeeWebsiteUsage] = useState<any[]>([]);
   const [employeeGroups, setEmployeeGroups] = useState<Array<{ id: number; name: string }>>([]);
+  useEffect(() => {
+    writeSessionStorageJson(ATTENDANCE_FILTER_STORAGE_KEY, {
+      selectedFilterUserId,
+      countryFilter,
+      calendarScope,
+      datePreset,
+      startDate,
+      endDate,
+    } satisfies PersistedAttendanceFilters);
+  }, [calendarScope, countryFilter, datePreset, endDate, selectedFilterUserId, startDate]);
   const [organizationMembersCount, setOrganizationMembersCount] = useState(0);
   const [isEmployeePanelLoading, setIsEmployeePanelLoading] = useState(false);
 

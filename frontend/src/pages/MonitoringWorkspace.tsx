@@ -13,7 +13,9 @@ import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel } from '@/components/ui/FormField';
-import { deriveDateRangeFromPreset, detectDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
+import { classifyActivityProductivity as classifyProductivity, normalizeActivityToolLabel as normalizeToolLabel } from '@/lib/activityProductivity';
+import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
+import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
 
 type MonitoringWorkspaceMode = 'productive-time' | 'unproductive-time' | 'screenshots' | 'app-usage' | 'website-usage';
@@ -22,7 +24,57 @@ type SectionFeedback = {
   message: string;
 } | null;
 
-const defaultDateRange = deriveDateRangeFromPreset('30d');
+type PersistedMonitoringWorkspaceFilters = {
+  datePreset: DateRangePreset;
+  startDate: string;
+  endDate: string;
+  query: string;
+  selectedUserId: number | '';
+};
+
+const MONITORING_WORKSPACE_FILTER_STORAGE_KEY = 'monitoring-workspace-filters';
+const getMonitoringWorkspaceFilterStorageKey = (mode: MonitoringWorkspaceMode) => `${MONITORING_WORKSPACE_FILTER_STORAGE_KEY}:${mode}`;
+const defaultDateRange = deriveDateRangeFromPreset('today');
+
+const getDefaultMonitoringWorkspaceFilters = (): PersistedMonitoringWorkspaceFilters => ({
+  datePreset: 'today',
+  startDate: defaultDateRange.startDate,
+  endDate: defaultDateRange.endDate,
+  query: '',
+  selectedUserId: '',
+});
+
+const readPersistedMonitoringWorkspaceFilters = (mode: MonitoringWorkspaceMode): PersistedMonitoringWorkspaceFilters => {
+  const fallback = getDefaultMonitoringWorkspaceFilters();
+  const parsed = readSessionStorageJson<PersistedMonitoringWorkspaceFilters>(getMonitoringWorkspaceFilterStorageKey(mode));
+
+  if (!parsed) {
+    return fallback;
+  }
+
+  const datePreset: DateRangePreset =
+    parsed.datePreset === 'today'
+    || parsed.datePreset === '2d'
+    || parsed.datePreset === '7d'
+    || parsed.datePreset === '15d'
+    || parsed.datePreset === '30d'
+    || parsed.datePreset === 'custom'
+      ? parsed.datePreset
+      : fallback.datePreset;
+  const resolvedRange = resolvePersistedDateRange(
+    datePreset,
+    typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate
+  );
+
+  return {
+    datePreset,
+    startDate: resolvedRange.startDate,
+    endDate: resolvedRange.endDate,
+    query: typeof parsed.query === 'string' ? parsed.query : fallback.query,
+    selectedUserId: coercePositiveNumber(parsed.selectedUserId) ?? '',
+  };
+};
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
   const hours = Math.floor(safe / 3600);
@@ -30,55 +82,6 @@ const formatDuration = (seconds: number) => {
   return `${hours}h ${minutes}m`;
 };
 const formatDateTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : 'No recent activity');
-const normalizeToolLabel = (name: string, activityType: string) => {
-  const trimmed = String(name || '').trim();
-  const normalizedType = String(activityType || '').trim().toLowerCase();
-
-  if (!trimmed) {
-    return normalizedType === 'url' ? 'unknown-site' : 'unknown-app';
-  }
-
-  if (normalizedType === 'url') {
-    try {
-      const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
-      return parsed.hostname.replace(/^www\./, '').toLowerCase();
-    } catch {
-      const match = trimmed.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
-      if (match?.[0]) {
-        return match[0].replace(/^www\./, '').toLowerCase();
-      }
-    }
-  }
-
-  return trimmed.slice(0, 120);
-};
-const classifyProductivity = (toolLabel: string, activityType: string) => {
-  const text = String(toolLabel || '').toLowerCase();
-  const normalizedType = String(activityType || '').trim().toLowerCase();
-  const productiveKeywords = [
-    'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'notion', 'slack', 'teams', 'zoom',
-    'vscode', 'visual studio', 'intellij', 'pycharm', 'webstorm', 'phpstorm', 'terminal',
-    'powershell', 'cmd', 'postman', 'figma', 'miro', 'docs.google', 'sheets.google', 'drive.google',
-    'stackoverflow', 'learn.microsoft', 'developer.mozilla', 'trello', 'asana', 'linear', 'clickup',
-    'outlook', 'gmail', 'calendar.google', 'word', 'excel', 'powerpoint', 'meet.google',
-    'chat.openai', 'chatgpt', 'claude.ai', 'gemini.google', 'code', 'cursor', 'android studio',
-    'datagrip', 'dbeaver', 'tableplus', 'mysql workbench', 'navicat',
-  ];
-  const unproductiveKeywords = [
-    'youtube', 'netflix', 'primevideo', 'hotstar', 'spotify', 'instagram', 'facebook', 'twitter',
-    'x.com', 'reddit', 'snapchat', 'tiktok', 'discord', 'twitch', 'pinterest', '9gag',
-    'telegram', 'whatsapp', 'web.whatsapp', 'wa.me', 'fb.com', 'reels', 'shorts', 'cricbuzz', 'espncricinfo',
-  ];
-
-  const isProductive = productiveKeywords.some((keyword) => text.includes(keyword));
-  const isUnproductive = unproductiveKeywords.some((keyword) => text.includes(keyword));
-
-  if (isUnproductive && !isProductive) return 'unproductive';
-  if (isProductive && !isUnproductive) return 'productive';
-  if (normalizedType === 'idle') return 'neutral';
-  if (normalizedType === 'url' || normalizedType === 'app') return 'productive';
-  return 'neutral';
-};
 const productivityTone = (classification?: string | null) =>
   classification === 'productive'
     ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
@@ -119,11 +122,11 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
-  const [startDate, setStartDate] = useState(defaultDateRange.startDate);
-  const [endDate, setEndDate] = useState(defaultDateRange.endDate);
-  const [query, setQuery] = useState('');
-  const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
+  const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedMonitoringWorkspaceFilters(mode).datePreset);
+  const [startDate, setStartDate] = useState(() => readPersistedMonitoringWorkspaceFilters(mode).startDate);
+  const [endDate, setEndDate] = useState(() => readPersistedMonitoringWorkspaceFilters(mode).endDate);
+  const [query, setQuery] = useState(() => readPersistedMonitoringWorkspaceFilters(mode).query);
+  const [selectedUserId, setSelectedUserId] = useState<number | ''>(() => readPersistedMonitoringWorkspaceFilters(mode).selectedUserId);
   const [screenshotPage, setScreenshotPage] = useState(1);
   const [screenshotFeedback, setScreenshotFeedback] = useState<SectionFeedback>(null);
   const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
@@ -132,6 +135,28 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const hasExplicitEmployeeSelection = selectedUserId !== '';
   const screenshotTotalQueryEnabled =
     hasExplicitEmployeeSelection && (mode === 'productive-time' || mode === 'unproductive-time');
+
+  useEffect(() => {
+    const persisted = readPersistedMonitoringWorkspaceFilters(mode);
+    setDatePreset(persisted.datePreset);
+    setStartDate(persisted.startDate);
+    setEndDate(persisted.endDate);
+    setQuery(persisted.query);
+    setSelectedUserId(persisted.selectedUserId);
+  }, [mode]);
+
+  useEffect(() => {
+    writeSessionStorageJson(
+      getMonitoringWorkspaceFilterStorageKey(mode),
+      {
+        datePreset,
+        startDate,
+        endDate,
+        query,
+        selectedUserId,
+      } satisfies PersistedMonitoringWorkspaceFilters
+    );
+  }, [datePreset, endDate, mode, query, selectedUserId, startDate]);
 
   useEffect(() => {
     if (!location.search) return;

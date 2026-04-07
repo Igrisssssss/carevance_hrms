@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess } from '@/lib/permissions';
 import { deriveDateRangeFromPreset, getDateRangePresetLabel, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
 import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
+import { resolvePersistedDateRange } from '@/lib/dateRange';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import DataTable from '@/components/dashboard/DataTable';
@@ -64,10 +65,17 @@ const readPersistedReportsPageFilters = (isAdmin: boolean): PersistedReportsPage
     return fallback;
   }
 
+  const datePreset = isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset;
+  const resolvedRange = resolvePersistedDateRange(
+    datePreset,
+    typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate
+  );
+
   return {
-    datePreset: isDateRangePreset(String(parsed.datePreset || '')) ? parsed.datePreset as DateRangePreset : fallback.datePreset,
-    startDate: typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
-    endDate: typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate,
+    datePreset,
+    startDate: resolvedRange.startDate,
+    endDate: resolvedRange.endDate,
     reportType: parsed.reportType === 'daily' || parsed.reportType === 'weekly' ? parsed.reportType : fallback.reportType,
     filterMode: parsed.filterMode === 'group' || parsed.filterMode === 'user' ? parsed.filterMode : fallback.filterMode,
     selectedUserIds: Array.isArray(parsed.selectedUserIds) ? parsed.selectedUserIds.map(Number).filter((id) => Number.isFinite(id) && id > 0) : fallback.selectedUserIds,

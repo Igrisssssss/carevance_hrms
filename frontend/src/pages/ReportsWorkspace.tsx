@@ -19,7 +19,8 @@ import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput } from '@/components/ui/FormField';
-import { deriveDateRangeFromPreset, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
+import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
@@ -45,7 +46,63 @@ type ReportsWorkspaceMode =
   | 'productivity'
   | 'custom-export';
 
-const defaultDateRange = deriveDateRangeFromPreset('30d');
+type PersistedReportsWorkspaceFilters = {
+  datePreset: DateRangePreset;
+  startDate: string;
+  endDate: string;
+  projectTaskSearchQuery: string;
+  selectedProjectId: number | '';
+  selectedUserId: number | '';
+  selectedGroupId: number | '';
+};
+
+const REPORTS_WORKSPACE_FILTER_STORAGE_KEY = 'reports-workspace-filters';
+const getReportsWorkspaceFilterStorageKey = (mode: ReportsWorkspaceMode) => `${REPORTS_WORKSPACE_FILTER_STORAGE_KEY}:${mode}`;
+const defaultDateRange = deriveDateRangeFromPreset('today');
+
+const getDefaultReportsWorkspaceFilters = (): PersistedReportsWorkspaceFilters => ({
+  datePreset: 'today',
+  startDate: defaultDateRange.startDate,
+  endDate: defaultDateRange.endDate,
+  projectTaskSearchQuery: '',
+  selectedProjectId: '',
+  selectedUserId: '',
+  selectedGroupId: '',
+});
+
+const readPersistedReportsWorkspaceFilters = (mode: ReportsWorkspaceMode): PersistedReportsWorkspaceFilters => {
+  const fallback = getDefaultReportsWorkspaceFilters();
+  const parsed = readSessionStorageJson<PersistedReportsWorkspaceFilters>(getReportsWorkspaceFilterStorageKey(mode));
+
+  if (!parsed) {
+    return fallback;
+  }
+
+  const datePreset: DateRangePreset =
+    parsed.datePreset === 'today'
+    || parsed.datePreset === '2d'
+    || parsed.datePreset === '7d'
+    || parsed.datePreset === '15d'
+    || parsed.datePreset === '30d'
+    || parsed.datePreset === 'custom'
+      ? parsed.datePreset
+      : fallback.datePreset;
+  const resolvedRange = resolvePersistedDateRange(
+    datePreset,
+    typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
+    typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate
+  );
+
+  return {
+    datePreset,
+    startDate: resolvedRange.startDate,
+    endDate: resolvedRange.endDate,
+    projectTaskSearchQuery: typeof parsed.projectTaskSearchQuery === 'string' ? parsed.projectTaskSearchQuery : fallback.projectTaskSearchQuery,
+    selectedProjectId: coercePositiveNumber(parsed.selectedProjectId) ?? '',
+    selectedUserId: coercePositiveNumber(parsed.selectedUserId) ?? '',
+    selectedGroupId: coercePositiveNumber(parsed.selectedGroupId) ?? '',
+  };
+};
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
   const hours = Math.floor(safe / 3600);
@@ -154,15 +211,41 @@ const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: strin
 };
 
 export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode }) {
-  const [datePreset, setDatePreset] = useState<DateRangePreset>('30d');
-  const [startDate, setStartDate] = useState(defaultDateRange.startDate);
-  const [endDate, setEndDate] = useState(defaultDateRange.endDate);
-  const [projectTaskSearchQuery, setProjectTaskSearchQuery] = useState('');
-  const [selectedProjectId, setSelectedProjectId] = useState<number | ''>('');
-  const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
-  const [selectedGroupId, setSelectedGroupId] = useState<number | ''>('');
+  const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedReportsWorkspaceFilters(mode).datePreset);
+  const [startDate, setStartDate] = useState(() => readPersistedReportsWorkspaceFilters(mode).startDate);
+  const [endDate, setEndDate] = useState(() => readPersistedReportsWorkspaceFilters(mode).endDate);
+  const [projectTaskSearchQuery, setProjectTaskSearchQuery] = useState(() => readPersistedReportsWorkspaceFilters(mode).projectTaskSearchQuery);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedProjectId);
+  const [selectedUserId, setSelectedUserId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedUserId);
+  const [selectedGroupId, setSelectedGroupId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedGroupId);
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
+
+  useEffect(() => {
+    const persisted = readPersistedReportsWorkspaceFilters(mode);
+    setDatePreset(persisted.datePreset);
+    setStartDate(persisted.startDate);
+    setEndDate(persisted.endDate);
+    setProjectTaskSearchQuery(persisted.projectTaskSearchQuery);
+    setSelectedProjectId(persisted.selectedProjectId);
+    setSelectedUserId(persisted.selectedUserId);
+    setSelectedGroupId(persisted.selectedGroupId);
+  }, [mode]);
+
+  useEffect(() => {
+    writeSessionStorageJson(
+      getReportsWorkspaceFilterStorageKey(mode),
+      {
+        datePreset,
+        startDate,
+        endDate,
+        projectTaskSearchQuery,
+        selectedProjectId,
+        selectedUserId,
+        selectedGroupId,
+      } satisfies PersistedReportsWorkspaceFilters
+    );
+  }, [datePreset, endDate, mode, projectTaskSearchQuery, selectedGroupId, selectedProjectId, selectedUserId, startDate]);
 
   const handleDatePresetChange = (preset: DateRangePreset) => {
     setDatePreset(preset);
