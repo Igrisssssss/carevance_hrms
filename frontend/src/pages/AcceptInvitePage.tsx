@@ -15,6 +15,7 @@ const parseError = (error: any) => {
   const firstFieldError = fieldErrors
     ? Object.values(fieldErrors).flat().find(Boolean)
     : null;
+  const normalizedFieldError = typeof firstFieldError === 'string' ? firstFieldError : '';
 
   const responseMessage = String(error?.response?.data?.message || '');
 
@@ -25,7 +26,7 @@ const parseError = (error: any) => {
     return 'This invitation is no longer available.';
   }
 
-  return firstFieldError || responseMessage || 'Unable to accept this invitation right now.';
+  return normalizedFieldError || responseMessage || 'Unable to accept this invitation right now.';
 };
 
 export default function AcceptInvitePage() {

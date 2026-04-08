@@ -62,6 +62,10 @@ class ReportController extends Controller
         $openPunch = $record->punches->first(fn (AttendancePunch $punch) => !$punch->punch_out_at);
         if ($openPunch) {
             $openWorkedSeconds = max(0, Carbon::parse($openPunch->punch_in_at)->diffInSeconds(now()));
+        } elseif ($record->check_in_at && !$record->check_out_at) {
+            // Fall back to the attendance record timestamps when an open punch row is missing
+            // or has not been hydrated as expected. This keeps live worked time visible in reports.
+            $openWorkedSeconds = max(0, Carbon::parse($record->check_in_at)->diffInSeconds(now()));
         }
 
         return (int) max(
@@ -707,7 +711,8 @@ class ReportController extends Controller
             $records = AttendanceRecord::query()
                 ->where('organization_id', $currentUser->organization_id)
                 ->where('user_id', $user->id)
-                ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
+                ->whereDate('attendance_date', '>=', $startDate->toDateString())
+                ->whereDate('attendance_date', '<=', $endDate->toDateString())
                 ->with('punches')
                 ->get(['id', 'attendance_date', 'check_in_at', 'check_out_at', 'worked_seconds', 'manual_adjustment_seconds']);
 

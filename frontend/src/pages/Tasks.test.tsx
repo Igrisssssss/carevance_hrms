@@ -169,11 +169,8 @@ describe('Tasks page', () => {
 
     await user.type(screen.getByRole('textbox', { name: /search group directory/i }), 'digital');
 
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: /add existing member to digital marketing/i }),
-      '4'
-    );
-    await user.click(screen.getByRole('button', { name: /add member to digital marketing/i }));
+    await user.click(screen.getByRole('checkbox', { name: /jordan miles employee jordan@example.com/i }));
+    await user.click(screen.getByRole('button', { name: /add members to digital marketing/i }));
 
     await waitFor(() => {
       expect(mocks.updateUser).toHaveBeenCalledWith(4, { group_ids: [8, 7] });

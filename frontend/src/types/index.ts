@@ -765,6 +765,7 @@ export interface UserProfile360 {
   status: {
     is_working: boolean;
     current_project?: string | null;
+    current_task?: string | null;
     current_timer_started_at?: string | null;
     last_seen_at?: string | null;
     latest_attendance?: {

@@ -2,6 +2,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { render } from '@testing-library/react';
+import { ConsentProvider } from '@/contexts/ConsentContext';
 
 const routerFuture = {
   v7_startTransition: true,
@@ -24,7 +25,9 @@ export function renderWithProviders(
 
   const BaseWrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter future={routerFuture} initialEntries={[options?.route || '/']}>{children}</MemoryRouter>
+      <ConsentProvider>
+        <MemoryRouter future={routerFuture} initialEntries={[options?.route || '/']}>{children}</MemoryRouter>
+      </ConsentProvider>
     </QueryClientProvider>
   );
 
