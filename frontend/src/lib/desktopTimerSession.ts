@@ -1,6 +1,4 @@
 export const ACTIVE_TIMER_KEY = 'active_timer_snapshot';
-export const DESKTOP_SCREENSHOT_SCHEDULER_KEY = 'desktop_tracker_screenshot_scheduler';
-const DESKTOP_SCREENSHOT_CAPTURE_LOCK_KEY = 'desktop_tracker_screenshot_capture_lock';
 const AUTO_START_SUPPRESSED_KEY = 'desktop_timer_auto_start_suppressed';
 const AUTO_START_ARMED_KEY = 'desktop_timer_auto_start_armed';
 const DESKTOP_LAUNCH_AUTO_START_KEY = 'desktop_timer_launch_auto_start_seeded';
@@ -18,12 +16,6 @@ export type DesktopTimerIdleStopDetail = {
 export type DesktopTimerSessionDetail = {
   userId: number;
   entryId?: number | null;
-};
-
-type DesktopScreenshotCaptureLock = {
-  entryId: number;
-  startedAt: number;
-  completedAt?: number;
 };
 
 export const canUseDesktopAutoStart = () =>
@@ -196,84 +188,6 @@ export const clearWorkedBaselineSnapshot = (userId?: number | null) => {
   sessionStorage.removeItem(getWorkedBaselineKey(userId));
 };
 
-const readDesktopScreenshotCaptureLock = (): DesktopScreenshotCaptureLock | null => {
-  const raw = sessionStorage.getItem(DESKTOP_SCREENSHOT_CAPTURE_LOCK_KEY);
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<DesktopScreenshotCaptureLock>;
-    const entryId = Number(parsed.entryId);
-    const startedAt = Number(parsed.startedAt);
-    const completedAt = parsed.completedAt === undefined ? undefined : Number(parsed.completedAt);
-
-    if (!Number.isFinite(entryId) || !Number.isFinite(startedAt)) {
-      sessionStorage.removeItem(DESKTOP_SCREENSHOT_CAPTURE_LOCK_KEY);
-      return null;
-    }
-
-    return {
-      entryId,
-      startedAt,
-      completedAt: completedAt !== undefined && Number.isFinite(completedAt) ? completedAt : undefined,
-    };
-  } catch {
-    sessionStorage.removeItem(DESKTOP_SCREENSHOT_CAPTURE_LOCK_KEY);
-    return null;
-  }
-};
-
-export const clearDesktopScreenshotCaptureLock = (entryId?: number | null) => {
-  const currentLock = readDesktopScreenshotCaptureLock();
-  if (!currentLock) {
-    return;
-  }
-
-  if (entryId && currentLock.entryId !== entryId) {
-    return;
-  }
-
-  sessionStorage.removeItem(DESKTOP_SCREENSHOT_CAPTURE_LOCK_KEY);
-};
-
-export const tryBeginDesktopScreenshotCapture = (entryId: number, staleMs = 30000) => {
-  const now = Date.now();
-  const currentLock = readDesktopScreenshotCaptureLock();
-
-  if (currentLock?.entryId === entryId) {
-    const lockTimestamp = currentLock.completedAt ?? currentLock.startedAt;
-    if (now - lockTimestamp < staleMs) {
-      return false;
-    }
-  }
-
-  sessionStorage.setItem(
-    DESKTOP_SCREENSHOT_CAPTURE_LOCK_KEY,
-    JSON.stringify({
-      entryId,
-      startedAt: now,
-    } satisfies DesktopScreenshotCaptureLock)
-  );
-
-  return true;
-};
-
-export const completeDesktopScreenshotCapture = (entryId: number) => {
-  const currentLock = readDesktopScreenshotCaptureLock();
-  if (!currentLock || currentLock.entryId !== entryId) {
-    return;
-  }
-
-  sessionStorage.setItem(
-    DESKTOP_SCREENSHOT_CAPTURE_LOCK_KEY,
-    JSON.stringify({
-      ...currentLock,
-      completedAt: Date.now(),
-    } satisfies DesktopScreenshotCaptureLock)
-  );
-};
-
 export const emitDesktopTimerIdleStop = (detail: DesktopTimerIdleStopDetail) => {
   window.dispatchEvent(new CustomEvent<DesktopTimerIdleStopDetail>(DESKTOP_TIMER_IDLE_STOP_EVENT, { detail }));
 };
@@ -300,8 +214,6 @@ export const clearDesktopTimerSession = () => {
       || key.startsWith(`${DESKTOP_LAUNCH_AUTO_START_KEY}:`)
       || key === IDLE_AUTO_STOP_NOTICE_KEY
       || key.startsWith(`${IDLE_AUTO_STOP_NOTICE_KEY}:`)
-      || key === DESKTOP_SCREENSHOT_CAPTURE_LOCK_KEY
-      || key === DESKTOP_SCREENSHOT_SCHEDULER_KEY
       || key === WORKED_BASELINE_KEY
       || key.startsWith(`${WORKED_BASELINE_KEY}:`)
     );

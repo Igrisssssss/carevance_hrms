@@ -34,7 +34,6 @@ const APP_ID = 'com.carevance.tracker';
 const DEFAULT_SCREENSHOT_MAX_WIDTH = 1920;
 const DEFAULT_SCREENSHOT_MAX_HEIGHT = 1080;
 const DEFAULT_SCREENSHOT_JPEG_QUALITY = 82;
-const DEFAULT_SCREENSHOT_MAX_DATA_URL_BYTES = 850000;
 let mainWindow = null;
 let allowWindowClose = false;
 let closePreparationInProgress = false;
@@ -141,20 +140,6 @@ const parseIntEnv = (key, fallback, min, max) => {
 const SCREENSHOT_MAX_WIDTH = parseIntEnv('DESKTOP_SCREENSHOT_MAX_WIDTH', DEFAULT_SCREENSHOT_MAX_WIDTH, 640, 4096);
 const SCREENSHOT_MAX_HEIGHT = parseIntEnv('DESKTOP_SCREENSHOT_MAX_HEIGHT', DEFAULT_SCREENSHOT_MAX_HEIGHT, 360, 2160);
 const SCREENSHOT_JPEG_QUALITY = parseIntEnv('DESKTOP_SCREENSHOT_JPEG_QUALITY', DEFAULT_SCREENSHOT_JPEG_QUALITY, 60, 95);
-const SCREENSHOT_MAX_DATA_URL_BYTES = parseIntEnv(
-  'DESKTOP_SCREENSHOT_MAX_DATA_URL_BYTES',
-  DEFAULT_SCREENSHOT_MAX_DATA_URL_BYTES,
-  200000,
-  5 * 1024 * 1024,
-);
-const SCREENSHOT_MIN_WIDTH = 640;
-const SCREENSHOT_MIN_HEIGHT = 360;
-const SCREENSHOT_SCALE_FACTORS = [1, 0.82, 0.68, 0.56];
-const SCREENSHOT_QUALITY_STEPS = Array.from(new Set([
-  SCREENSHOT_JPEG_QUALITY,
-  Math.max(60, SCREENSHOT_JPEG_QUALITY - 8),
-  Math.max(52, SCREENSHOT_JPEG_QUALITY - 16),
-]));
 
 const buildScreenshotCaptureAttempts = () => {
   const primaryDisplaySize = screen.getPrimaryDisplay()?.size || { width: SCREENSHOT_MAX_WIDTH, height: SCREENSHOT_MAX_HEIGHT };
@@ -233,59 +218,20 @@ const thumbnailToDataUrl = (thumbnail) => {
     return null;
   }
 
-  const originalSize = thumbnail.getSize();
-  let smallestCandidate = null;
-
-  for (const scaleFactor of SCREENSHOT_SCALE_FACTORS) {
-    const targetWidth = Math.max(SCREENSHOT_MIN_WIDTH, Math.floor(originalSize.width * scaleFactor));
-    const targetHeight = Math.max(SCREENSHOT_MIN_HEIGHT, Math.floor(originalSize.height * scaleFactor));
-
-    let resizedThumbnail = thumbnail;
-    if (targetWidth !== originalSize.width || targetHeight !== originalSize.height) {
-      try {
-        resizedThumbnail = thumbnail.resize({
-          width: targetWidth,
-          height: targetHeight,
-        });
-      } catch {
-        resizedThumbnail = thumbnail;
-      }
+  try {
+    const jpegBuffer = thumbnail.toJPEG(SCREENSHOT_JPEG_QUALITY);
+    if (jpegBuffer?.length) {
+      return `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
     }
-
-    for (const quality of SCREENSHOT_QUALITY_STEPS) {
-      try {
-        const jpegBuffer = resizedThumbnail.toJPEG(quality);
-        if (!jpegBuffer?.length) {
-          continue;
-        }
-
-        const dataUrl = `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
-        const payloadBytes = Buffer.byteLength(dataUrl, 'utf8');
-
-        if (!smallestCandidate || payloadBytes < smallestCandidate.payloadBytes) {
-          smallestCandidate = { dataUrl, payloadBytes };
-        }
-
-        if (payloadBytes <= SCREENSHOT_MAX_DATA_URL_BYTES) {
-          return dataUrl;
-        }
-      } catch {
-        // Keep trying smaller variants.
-      }
-    }
+  } catch {
+    // Fall through to PNG encoding if JPEG conversion fails.
   }
 
-  if (smallestCandidate) {
-    console.warn('[desktop-tracker] screenshot payload exceeded preferred size, using smallest available variant', {
-      payloadBytes: smallestCandidate.payloadBytes,
-      maxPayloadBytes: SCREENSHOT_MAX_DATA_URL_BYTES,
-      sourceWidth: originalSize.width,
-      sourceHeight: originalSize.height,
-    });
-    return smallestCandidate.dataUrl;
+  try {
+    return thumbnail.toDataURL();
+  } catch {
+    return null;
   }
-
-  return null;
 };
 
 const resolveUpdateConfig = () => {
