@@ -261,9 +261,10 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledWith(
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadScreenshotMock).toHaveBeenNthCalledWith(
+      1,
       55,
       'data:image/png;base64,ZmFrZQ==',
       expect.stringMatching(/^capture-\d+\.png$/)
@@ -281,9 +282,10 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledWith(
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadScreenshotMock).toHaveBeenNthCalledWith(
+      1,
       55,
       'data:image/png;base64,ZmFrZQ==',
       expect.stringMatching(/^capture-\d+\.png$/)
@@ -302,8 +304,8 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
   });
 
   it('recovers future screenshots when one screenshot capture call hangs', async () => {
@@ -360,6 +362,55 @@ describe('useDesktopTracker', () => {
       type: 'url',
       name: 'Instagram',
       duration: 5,
+    }));
+  });
+
+  it('reuses the last reliable external context when active window lookup temporarily falls back to the app shell', async () => {
+    document.title = 'CareVance HRMS Workspace';
+    mocks.getActiveWindowContextMock
+      .mockResolvedValueOnce({
+        app: 'Google Chrome',
+        title: 'GitHub - Google Chrome',
+        url: null,
+      })
+      .mockResolvedValueOnce({
+        app: 'CareVance',
+        title: 'CareVance HRMS Workspace',
+        url: null,
+      });
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 1000);
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 1000);
+    });
+
+    expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'url',
+      name: 'GitHub',
+      duration: 5,
+    }));
+    expect(mocks.createActivityMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      name: 'CareVance HRMS Workspace',
+    }));
+  });
+
+  it('does not create misleading self-tracker activity rows before a reliable external context exists', async () => {
+    document.title = 'CareVance HRMS Workspace';
+    mocks.getActiveWindowContextMock.mockResolvedValue(null);
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 1000);
+    });
+
+    expect(mocks.createActivityMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      name: 'CareVance HRMS Workspace',
     }));
   });
 });
