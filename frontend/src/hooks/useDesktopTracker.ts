@@ -408,10 +408,6 @@ export const useDesktopTracker = () => {
       if (inFlight || !isCurrentRun()) return;
       const now = Date.now();
       const previousTickAt = lastTickAtRef.current ?? now;
-      const elapsedSeconds = Math.max(
-        1,
-        Math.round((now - previousTickAt) / 1000)
-      );
       lastTickAtRef.current = now;
       inFlight = true;
       try {

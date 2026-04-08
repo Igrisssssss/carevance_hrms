@@ -73,10 +73,10 @@ export default function Tasks() {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupModalSource, setGroupModalSource] = useState<'workspace' | 'task-form'>('workspace');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | SavedTaskStatus>('all');
+  const [searchQuery] = useState('');
+  const [statusFilter] = useState<'all' | SavedTaskStatus>('all');
   const [groupFilter, setGroupFilter] = useState('all');
-  const [assigneeFilter, setAssigneeFilter] = useState('all');
+  const [assigneeFilter] = useState('all');
   const [groupDirectoryQuery, setGroupDirectoryQuery] = useState('');
   const [groupDirectoryFilter, setGroupDirectoryFilter] = useState('all');
   const [memberDrafts, setMemberDrafts] = useState<Record<number, number[]>>({});

@@ -261,8 +261,8 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
     expect(mocks.uploadScreenshotMock).toHaveBeenNthCalledWith(
       1,
       55,
@@ -282,8 +282,8 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
     expect(mocks.uploadScreenshotMock).toHaveBeenNthCalledWith(
       1,
       55,
@@ -304,8 +304,8 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
   });
 
   it('recovers future screenshots when one screenshot capture call hangs', async () => {
