@@ -6,7 +6,10 @@ use App\Mail\IdleTimerStoppedMail;
 use App\Models\Activity;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
+use App\Models\Group;
 use App\Models\Organization;
+use App\Models\Project;
+use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -117,6 +120,104 @@ class AttendanceAndTimerFlowTest extends TestCase
             'id' => $entry->id,
             'end_time' => null,
         ]);
+    }
+
+    public function test_timer_start_with_task_moves_task_to_in_progress(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $user = User::create([
+            'name' => 'Employee',
+            'email' => 'task-timer@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $group = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'Delivery',
+            'is_active' => true,
+        ]);
+        $group->users()->attach($user->id);
+
+        $project = Project::create([
+            'organization_id' => $organization->id,
+            'name' => 'Client Rollout',
+            'status' => 'active',
+        ]);
+
+        $task = Task::create([
+            'group_id' => $group->id,
+            'project_id' => $project->id,
+            'assignee_id' => $user->id,
+            'title' => 'Prepare rollout plan',
+            'status' => 'todo',
+            'priority' => 'medium',
+        ]);
+
+        $headers = $this->apiHeadersFor($user);
+
+        $this->postJson('/api/time-entries/start', [
+            'task_id' => $task->id,
+            'timer_slot' => 'primary',
+        ], $headers)
+            ->assertCreated()
+            ->assertJsonPath('task_id', $task->id)
+            ->assertJsonPath('project_id', $project->id);
+
+        $task->refresh();
+        $this->assertSame('in_progress', $task->status);
+    }
+
+    public function test_profile360_current_project_falls_back_to_active_task_title(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $admin = User::create([
+            'name' => 'Admin',
+            'email' => 'admin-task-profile@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+        $employee = User::create([
+            'name' => 'Employee',
+            'email' => 'employee-task-profile@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $group = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'Delivery',
+            'is_active' => true,
+        ]);
+        $group->users()->attach($employee->id);
+
+        $task = Task::create([
+            'group_id' => $group->id,
+            'project_id' => null,
+            'assignee_id' => $employee->id,
+            'title' => 'Prepare rollout plan',
+            'status' => 'in_progress',
+            'priority' => 'medium',
+        ]);
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'project_id' => null,
+            'task_id' => $task->id,
+            'start_time' => now()->subMinutes(20),
+            'end_time' => null,
+            'duration' => 0,
+            'billable' => true,
+            'timer_slot' => 'primary',
+        ]);
+
+        $this->getJson("/api/users/{$employee->id}/profile-360", $this->apiHeadersFor($admin))
+            ->assertOk()
+            ->assertJsonPath('status.is_working', true)
+            ->assertJsonPath('status.current_project', 'Prepare rollout plan');
     }
 
     public function test_idle_auto_stop_stop_request_sends_email_to_employee(): void

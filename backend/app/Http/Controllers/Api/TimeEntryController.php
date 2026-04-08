@@ -113,6 +113,7 @@ class TimeEntryController extends Controller
             'timer_slot' => $request->get('timer_slot', 'primary'),
         ]);
 
+        $this->markTaskInProgress($taskId);
         $timeEntry->load(['project', 'task.group']);
         return response()->json($timeEntry, 201);
     }
@@ -173,6 +174,7 @@ class TimeEntryController extends Controller
         }
 
         $timeEntry->update($payload);
+        $this->markTaskInProgress($taskId);
 
         return response()->json($timeEntry->fresh()->load(['project', 'task.group']));
     }
@@ -232,6 +234,7 @@ class TimeEntryController extends Controller
             'timer_slot' => $slot,
         ]);
 
+        $this->markTaskInProgress($taskId);
         $timeEntry->load(['project', 'task.group']);
         return response()->json($timeEntry, 201);
     }
@@ -659,5 +662,21 @@ class TimeEntryController extends Controller
     private function idleAutoStopThresholdSeconds(): int
     {
         return max(60, (int) config('time_tracking.idle_auto_stop_threshold_seconds', 300));
+    }
+
+    private function markTaskInProgress(?int $taskId): void
+    {
+        if (! $taskId) {
+            return;
+        }
+
+        $task = Task::query()->find($taskId);
+        if (! $task) {
+            return;
+        }
+
+        if ($task->status !== 'in_progress') {
+            $task->update(['status' => 'in_progress']);
+        }
     }
 }

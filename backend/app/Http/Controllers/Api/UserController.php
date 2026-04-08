@@ -68,7 +68,7 @@ class UserController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        $activeEntries = TimeEntry::with('project')
+        $activeEntries = TimeEntry::with(['project:id,name', 'task:id,title,project_id', 'task.project:id,name'])
             ->whereIn('user_id', $users->pluck('id'))
             ->whereNull('end_time')
             ->get()
@@ -101,7 +101,7 @@ class UserController extends Controller
             return array_merge($user->toArray(), [
                 'is_working' => $isWorking,
                 'current_duration' => (int) $currentDuration,
-                'current_project' => $activeEntry?->project?->name,
+                'current_project' => $this->resolveCurrentProjectLabel($activeEntry),
                 'total_duration' => $storedTotalDuration,
                 'total_elapsed_duration' => $storedTotalDuration + (int) $currentDuration,
                 'timezone' => $timezone,
@@ -424,7 +424,7 @@ class UserController extends Controller
 
         $latestAttendance = $attendanceRecords->first();
         $activeEntry = TimeEntry::query()
-            ->with('project:id,name')
+            ->with(['project:id,name', 'task:id,title,project_id', 'task.project:id,name'])
             ->where('user_id', $user->id)
             ->whereNull('end_time')
             ->latest('start_time')
@@ -448,7 +448,7 @@ class UserController extends Controller
             ] + $timeBreakdown,
             'status' => [
                 'is_working' => (bool) $activeEntry,
-                'current_project' => $activeEntry?->project?->name,
+                'current_project' => $this->resolveCurrentProjectLabel($activeEntry),
                 'current_timer_started_at' => $activeEntry?->start_time,
                 'last_seen_at' => $user->last_seen_at,
                 'latest_attendance' => $latestAttendance,
@@ -504,6 +504,17 @@ class UserController extends Controller
                 'report_group_id' => $groupIds[0] ?? null,
             ]
         );
+    }
+
+    private function resolveCurrentProjectLabel(?TimeEntry $activeEntry): ?string
+    {
+        if (! $activeEntry) {
+            return null;
+        }
+
+        return $activeEntry->project?->name
+            ?: $activeEntry->task?->project?->name
+            ?: $activeEntry->task?->title;
     }
 
     private function resolvePeriodRange(string $period, string $timezone, ?string $startDate = null, ?string $endDate = null): ?array
