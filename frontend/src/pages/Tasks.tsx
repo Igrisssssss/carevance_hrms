@@ -8,7 +8,9 @@ import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
+import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { queryKeys } from '@/lib/queryKeys';
+import { buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
 import { groupApi, taskApi, userApi } from '@/services/api';
 import type { Group, Task, User } from '@/types';
 import { cn } from '@/utils/cn';
@@ -77,7 +79,9 @@ export default function Tasks() {
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [groupDirectoryQuery, setGroupDirectoryQuery] = useState('');
   const [groupDirectoryFilter, setGroupDirectoryFilter] = useState('all');
-  const [memberDrafts, setMemberDrafts] = useState<Record<number, string>>({});
+  const [memberDrafts, setMemberDrafts] = useState<Record<number, number[]>>({});
+  const [memberSearchDrafts, setMemberSearchDrafts] = useState<Record<number, string>>({});
+  const [memberSearchSelectionDrafts, setMemberSearchSelectionDrafts] = useState<Record<number, number | null>>({});
   const [memberMoveDrafts, setMemberMoveDrafts] = useState<Record<string, string>>({});
   const [deletingGroupId, setDeletingGroupId] = useState<number | null>(null);
   const [taskForm, setTaskForm] = useState<TaskFormState>(createTaskFormState());
@@ -104,6 +108,7 @@ export default function Tasks() {
     () => users.filter((member) => member.role !== 'client'),
     [users]
   );
+  const canManageGroupMember = (member: User) => member.role === 'employee' || (member.role === 'manager' && user?.role === 'admin');
   const selectedGroupId = taskForm.group_id ? Number(taskForm.group_id) : null;
   const availableAssignees = useMemo(
     () => users.filter((member) => !selectedGroupId || member.groups?.some((group) => group.id === selectedGroupId)),
@@ -163,6 +168,39 @@ export default function Tasks() {
     onError: (error: any) => {
       const fieldError = Object.values(error?.response?.data?.errors || {}).flat().find(Boolean);
       setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to update group membership.') });
+    },
+  });
+
+  const addMembersToGroupMutation = useMutation({
+    mutationFn: async ({ group, members }: { group: Group; members: User[] }) => {
+      await Promise.all(
+        members.map((member) => {
+          const nextGroupIds = Array.from(new Set([...(member.groups || []).map((currentGroup) => currentGroup.id), group.id]));
+          return userApi.update(member.id, { group_ids: nextGroupIds });
+        })
+      );
+
+      return { group, members };
+    },
+    onSuccess: async ({ group, members }) => {
+      setFeedback({
+        tone: 'success',
+        message: members.length === 1
+          ? `${members[0].name} was added to ${group.name}.`
+          : `${members.length} members were added to ${group.name}.`,
+      });
+      setMemberDrafts((current) => ({ ...current, [group.id]: [] }));
+      setMemberSearchDrafts((current) => ({ ...current, [group.id]: '' }));
+      setMemberSearchSelectionDrafts((current) => ({ ...current, [group.id]: null }));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.groups }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.users({ period: 'all' }) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.tasks }),
+      ]);
+    },
+    onError: (error: any) => {
+      const fieldError = Object.values(error?.response?.data?.errors || {}).flat().find(Boolean);
+      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to add members to the group.') });
     },
   });
 
@@ -243,27 +281,22 @@ export default function Tasks() {
   const findUserById = (userId: number) => users.find((candidate) => candidate.id === userId);
 
   const handleAddMemberToGroup = (group: Group) => {
-    const selectedUserId = Number(memberDrafts[group.id] || 0);
-    if (!selectedUserId) {
-      setFeedback({ tone: 'error', message: `Select a team member to add into ${group.name}.` });
+    const selectedUserIds = memberDrafts[group.id] || [];
+    if (selectedUserIds.length === 0) {
+      setFeedback({ tone: 'error', message: `Select at least one eligible member to add into ${group.name}.` });
       return;
     }
 
-    const member = findUserById(selectedUserId);
-    if (!member) {
-      setFeedback({ tone: 'error', message: 'Selected team member could not be found.' });
+    const members = selectedUserIds
+      .map((userId) => findUserById(userId))
+      .filter((member): member is User => Boolean(member) && canManageGroupMember(member));
+
+    if (members.length === 0) {
+      setFeedback({ tone: 'error', message: 'Selected team members could not be found.' });
       return;
     }
 
-    const nextGroupIds = Array.from(new Set([...(member.groups || []).map((currentGroup) => currentGroup.id), group.id]));
-
-    syncMembershipMutation.mutate({
-      userId: member.id,
-      groupIds: nextGroupIds,
-      successMessage: `${member.name} was added to ${group.name}.`,
-    });
-
-    setMemberDrafts((current) => ({ ...current, [group.id]: '' }));
+    addMembersToGroupMutation.mutate({ group, members });
   };
 
   const handleMoveEmployeeToGroup = (member: User, currentGroup: Group) => {
@@ -452,7 +485,26 @@ export default function Tasks() {
                 const members = (group.users || [])
                   .map((member) => findUserById(member.id) || null)
                   .filter((member): member is User => Boolean(member) && member.role !== 'client');
-                const availableMembers = internalUsers.filter((member) => !(member.groups || []).some((assignedGroup) => assignedGroup.id === group.id));
+                const selectedMemberIds = memberDrafts[group.id] || [];
+                const memberSearchQuery = memberSearchDrafts[group.id] || '';
+                const selectedSearchMemberId = memberSearchSelectionDrafts[group.id] ?? null;
+                const availableMembers = internalUsers
+                  .filter((member) => canManageGroupMember(member))
+                  .filter((member) => !(member.groups || []).some((assignedGroup) => assignedGroup.id === group.id));
+                const availableMemberSuggestions = buildSearchSuggestions(availableMembers, (member) => ({
+                  id: member.id,
+                  label: member.name,
+                  description: `${member.email} • ${titleCase(member.role)}`,
+                  searchValues: [member.name, member.email, member.role],
+                  payload: member,
+                }));
+                const filteredAvailableMembers = availableMembers.filter((member) => {
+                  if (selectedSearchMemberId) {
+                    return Number(member.id) === Number(selectedSearchMemberId);
+                  }
+
+                  return matchesSearchFilter(memberSearchQuery, [member.name, member.email, member.role]);
+                });
 
                 return (
                   <div key={group.id} className="rounded-[28px] border border-slate-200/90 bg-white/90 p-5 shadow-[0_18px_44px_-34px_rgba(15,23,42,0.18)]">
@@ -490,33 +542,100 @@ export default function Tasks() {
                     </div>
 
                     <div className="mt-5 rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                      <div className="flex flex-col gap-3">
                         <div className="min-w-0 flex-1">
-                          <FieldLabel>Add Existing Member</FieldLabel>
-                          <SelectInput
-                            aria-label={`Add existing member to ${group.name}`}
-                            value={memberDrafts[group.id] || ''}
-                            onChange={(event) => setMemberDrafts((current) => ({ ...current, [group.id]: event.target.value }))}
-                            disabled={availableMembers.length === 0 || syncMembershipMutation.isPending}
-                          >
-                            <option value="">{availableMembers.length === 0 ? 'All available members are already assigned' : 'Select a team member'}</option>
-                            {availableMembers.map((member) => (
-                              <option key={member.id} value={member.id}>
-                                {member.name} ({titleCase(member.role)})
-                              </option>
-                            ))}
-                          </SelectInput>
+                          <FieldLabel hint={`${selectedMemberIds.length} selected`}>Add Existing Member</FieldLabel>
+                          <SearchSuggestInput
+                            aria-label={`Search eligible members for ${group.name}`}
+                            value={memberSearchQuery}
+                            onValueChange={(value) => {
+                              setMemberSearchDrafts((current) => ({ ...current, [group.id]: value }));
+                              const selectedMemberName = availableMembers.find((member) => Number(member.id) === Number(selectedSearchMemberId))?.name || '';
+                              if (!value.trim() || normalizeSearchValue(value) !== normalizeSearchValue(selectedMemberName)) {
+                                setMemberSearchSelectionDrafts((current) => ({ ...current, [group.id]: null }));
+                              }
+                            }}
+                            onSuggestionSelect={(suggestion) => {
+                              const nextMemberId = Number((suggestion.payload as User | undefined)?.id || suggestion.id || 0);
+                              setMemberSearchDrafts((current) => ({ ...current, [group.id]: getSuggestionDisplayValue(suggestion) }));
+                              setMemberSearchSelectionDrafts((current) => ({
+                                ...current,
+                                [group.id]: Number.isFinite(nextMemberId) && nextMemberId > 0 ? nextMemberId : null,
+                              }));
+                            }}
+                            suggestions={availableMemberSuggestions}
+                            placeholder={availableMembers.length === 0 ? 'All eligible members are already assigned' : 'Search eligible members'}
+                            className="border-slate-200 bg-white shadow-none focus:bg-white"
+                            icon={<Search className="h-4 w-4" />}
+                            emptyMessage="No eligible members match this search."
+                            disabled={availableMembers.length === 0 || addMembersToGroupMutation.isPending}
+                          />
                         </div>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          iconLeft={<UserPlus2 className="h-4 w-4" />}
-                          aria-label={`Add member to ${group.name}`}
-                          disabled={!memberDrafts[group.id] || syncMembershipMutation.isPending}
-                          onClick={() => handleAddMemberToGroup(group)}
-                        >
-                          {syncMembershipMutation.isPending ? 'Saving...' : 'Add Member'}
-                        </Button>
+                        {availableMembers.length === 0 ? (
+                          <div className="rounded-[20px] border border-dashed border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-500">
+                            All eligible members are already assigned to this group.
+                          </div>
+                        ) : (
+                          <div className="max-h-56 space-y-2 overflow-auto pr-1">
+                            {filteredAvailableMembers.map((member) => {
+                              const checked = selectedMemberIds.includes(member.id);
+
+                              return (
+                                <label
+                                  key={member.id}
+                                  className={`flex cursor-pointer items-start gap-3 rounded-[20px] border px-3 py-3 transition ${
+                                    checked ? 'border-sky-300 bg-sky-50/70' : 'border-slate-200/80 bg-white/80 hover:border-slate-300'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="mt-1"
+                                    checked={checked}
+                                    onChange={(event) =>
+                                      setMemberDrafts((current) => ({
+                                        ...current,
+                                        [group.id]: event.target.checked
+                                          ? [...selectedMemberIds, member.id]
+                                          : selectedMemberIds.filter((id) => id !== member.id),
+                                      }))
+                                    }
+                                    disabled={addMembersToGroupMutation.isPending}
+                                  />
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="text-sm font-semibold text-slate-950">{member.name}</p>
+                                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                                        {titleCase(member.role)}
+                                      </span>
+                                    </div>
+                                    <p className="mt-1 text-xs text-slate-500">{member.email}</p>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                            {filteredAvailableMembers.length === 0 ? (
+                              <div className="rounded-[20px] border border-dashed border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-500">
+                                No eligible members match this search.
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+                        <div className="flex justify-end">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            iconLeft={<UserPlus2 className="h-4 w-4" />}
+                            aria-label={`Add members to ${group.name}`}
+                            disabled={selectedMemberIds.length === 0 || addMembersToGroupMutation.isPending}
+                            onClick={() => handleAddMemberToGroup(group)}
+                          >
+                            {addMembersToGroupMutation.isPending
+                              ? 'Saving...'
+                              : selectedMemberIds.length > 1
+                                ? 'Add Members'
+                                : 'Add Member'}
+                          </Button>
+                        </div>
                       </div>
                     </div>
 
