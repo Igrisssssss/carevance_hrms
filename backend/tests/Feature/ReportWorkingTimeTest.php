@@ -3,6 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Activity;
+use App\Models\AttendancePunch;
+use App\Models\AttendanceRecord;
+use App\Models\AttendanceTimeEditRequest;
+use App\Models\LeaveRequest;
 use App\Models\Organization;
 use App\Models\TimeEntry;
 use App\Models\User;
@@ -449,6 +453,50 @@ class ReportWorkingTimeTest extends TestCase
                 ->assertOk()
                 ->assertJsonPath('data.0.user.id', $employee->id)
                 ->assertJsonPath('data.0.is_working', true);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_attendance_report_counts_live_worked_seconds_for_open_punches(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-03-21 10:15:00'));
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+            $record = AttendanceRecord::create([
+                'organization_id' => $employee->organization_id,
+                'user_id' => $employee->id,
+                'attendance_date' => '2026-03-21',
+                'check_in_at' => '2026-03-21 09:30:00',
+                'check_out_at' => null,
+                'worked_seconds' => 0,
+                'manual_adjustment_seconds' => 600,
+                'late_minutes' => 0,
+                'status' => 'present',
+            ]);
+
+            AttendancePunch::create([
+                'organization_id' => $employee->organization_id,
+                'user_id' => $employee->id,
+                'attendance_record_id' => $record->id,
+                'punch_in_at' => '2026-03-21 09:30:00',
+                'punch_out_at' => null,
+                'worked_seconds' => 0,
+            ]);
+
+            $query = http_build_query([
+                'start_date' => '2026-03-21',
+                'end_date' => '2026-03-21',
+                'user_id' => $employee->id,
+            ]);
+
+            $this->getJson("/api/reports/attendance?{$query}", $headers)
+                ->assertOk()
+                ->assertJsonPath('data.0.user.id', $employee->id)
+                ->assertJsonPath('data.0.worked_seconds', 3300)
+                ->assertJsonPath('data.0.worked_hours', 0.92);
         } finally {
             Carbon::setTestNow();
         }

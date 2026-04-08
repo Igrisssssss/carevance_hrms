@@ -690,12 +690,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   useEffect(() => {
     if (mode !== 'full') return;
     fetchAttendance();
-  }, [startDate, endDate, mode]);
-
-  useEffect(() => {
-    if (mode !== 'full' || !isAdmin) return;
-    fetchAttendance();
-  }, [countryFilter, isAdmin, mode]);
+  }, [countryFilter, endDate, isAdmin, mode, selectedFilterUserId, startDate]);
 
   useEffect(() => {
     fetchTimeEditRequests();
@@ -739,6 +734,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   useEffect(() => {
     if (!isAdmin) return;
+    if (selectedFilterUserId) {
+      setSelectedUserId(Number(selectedFilterUserId));
+      return;
+    }
+
     if (rows.length === 0) {
       setSelectedUserId(null);
       return;
@@ -1073,7 +1073,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     <div className="space-y-6 animate-fade-in">
       <PageHeader eyebrow="Attendance operations" title="Attendance" description={isAdmin ? 'Track attendance, punches, leave, and overtime requests across the team.' : 'Review your attendance, punches, leave requests, and overtime history.'} />
 
-      <FilterPanel className={`grid grid-cols-1 gap-3 ${isAdmin ? 'md:grid-cols-7' : 'md:grid-cols-4'}`}>
+      <FilterPanel className={`grid grid-cols-1 gap-3 ${isAdmin ? 'md:grid-cols-6' : 'md:grid-cols-3'}`}>
         <DateRangeFields
           datePreset={datePreset}
           onDatePresetChange={handleDatePresetChange}
@@ -1118,9 +1118,6 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             </SelectInput>
           </div>
         )}
-        <div className="flex items-end">
-          <Button onClick={fetchAttendance} className="w-full">Apply</Button>
-        </div>
       </FilterPanel>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

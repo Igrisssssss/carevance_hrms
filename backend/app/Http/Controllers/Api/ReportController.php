@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\AttendanceHoliday;
+use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\LeaveRequest;
 use App\Models\Project;
@@ -44,6 +45,32 @@ class ReportController extends Controller
     private function restrictMonitoringToEmployees(?User $user): bool
     {
         return $user?->role === 'manager';
+    }
+
+    private function calculateAttendanceWorkedSeconds(AttendanceRecord $record): int
+    {
+        if (!$record->relationLoaded('punches')) {
+            $record->load('punches');
+        }
+
+        $closedWorkedSeconds = (int) $record->punches
+            ->filter(fn (AttendancePunch $punch) => (bool) $punch->punch_out_at)
+            ->sum(fn (AttendancePunch $punch) => max(
+                (int) $punch->worked_seconds,
+                (int) Carbon::parse($punch->punch_in_at)->diffInSeconds(Carbon::parse($punch->punch_out_at))
+            ));
+
+        $openWorkedSeconds = 0;
+        $openPunch = $record->punches->first(fn (AttendancePunch $punch) => !$punch->punch_out_at);
+        if ($openPunch) {
+            $openWorkedSeconds = max(0, Carbon::parse($openPunch->punch_in_at)->diffInSeconds(now()));
+        }
+
+        return (int) max(
+            0,
+            max((int) ($record->worked_seconds ?? 0), $closedWorkedSeconds + $openWorkedSeconds)
+            + (int) ($record->manual_adjustment_seconds ?? 0)
+        );
     }
 
     public function dashboard(Request $request)
@@ -687,7 +714,8 @@ class ReportController extends Controller
                 ->where('organization_id', $currentUser->organization_id)
                 ->where('user_id', $user->id)
                 ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
-                ->get(['attendance_date', 'check_in_at', 'check_out_at', 'worked_seconds', 'manual_adjustment_seconds']);
+                ->with('punches')
+                ->get(['id', 'attendance_date', 'check_in_at', 'check_out_at', 'worked_seconds', 'manual_adjustment_seconds']);
 
             $recordByDate = $records->keyBy(fn ($record) => Carbon::parse($record->attendance_date)->toDateString());
             $presentDates = $workingDates
@@ -714,9 +742,7 @@ class ReportController extends Controller
                 ->filter(fn (string $date) => !$presentDates->contains($date))
                 ->values();
 
-            $workedSeconds = (int) $records->sum(function ($record) {
-                return (int) ($record->worked_seconds ?? 0) + (int) ($record->manual_adjustment_seconds ?? 0);
-            });
+            $workedSeconds = (int) $records->sum(fn (AttendanceRecord $record) => $this->calculateAttendanceWorkedSeconds($record));
             $daysPresent = $presentDates->count();
             $leaveDays = $approvedLeaveDates->count();
             $attendanceRate = (float) round(($daysPresent / $workingDaysCount) * 100, 2);
