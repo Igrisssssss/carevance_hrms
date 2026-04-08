@@ -88,6 +88,7 @@ type ReliableTrackingContext = {
   contextName: string;
   activityType: 'app' | 'url';
   capturedAtMs: number;
+  appFamily: string | null;
 };
 
 const isSelfTrackerContext = (context: { app?: string | null; title?: string | null; url?: string | null }) => {
@@ -112,6 +113,20 @@ const isGenericBrowserContext = (contextName: string, activityType: 'app' | 'url
   return GENERIC_BROWSER_CONTEXT_PATTERNS.some((pattern) => pattern.test(normalized));
 };
 
+const resolveAppFamily = (appName: string, activityType: 'app' | 'url') => {
+  const normalized = String(appName || '').trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (activityType === 'url') {
+    const browserKeyword = BROWSER_APP_KEYWORDS.find((keyword) => normalized.includes(keyword));
+    return browserKeyword || 'browser';
+  }
+
+  return normalized;
+};
+
 export const useDesktopTracker = () => {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id ?? null;
@@ -129,6 +144,7 @@ export const useDesktopTracker = () => {
   const idleStopInFlightRef = useRef(false);
   const idleStopBlockedUntilMsRef = useRef(0);
   const lastReliableTrackingContextRef = useRef<ReliableTrackingContext | null>(null);
+  const pendingTrackedSecondsRef = useRef(0);
 
   const clearTrackerIntervals = () => {
     if (activityIntervalRef.current !== null) {
@@ -190,6 +206,7 @@ export const useDesktopTracker = () => {
       idleStopInFlightRef.current = false;
       idleStopBlockedUntilMsRef.current = 0;
       lastReliableTrackingContextRef.current = null;
+      pendingTrackedSecondsRef.current = 0;
       return;
     }
 
@@ -208,6 +225,7 @@ export const useDesktopTracker = () => {
     idleStopInFlightRef.current = false;
     idleStopBlockedUntilMsRef.current = 0;
     lastReliableTrackingContextRef.current = null;
+    pendingTrackedSecondsRef.current = 0;
 
     const scheduleInitialScreenshotCapture = () => {
       if (screenshotInitialTimeoutRef.current !== null) {
@@ -328,6 +346,7 @@ export const useDesktopTracker = () => {
           activeSegmentRef.current = null;
           activeEntryRef.current = null;
           pendingIdleRewindRef.current.clear();
+          pendingTrackedSecondsRef.current = 0;
           syncScreenshotInterval(null);
           idleStopBlockedUntilMsRef.current = 0;
           return true;
@@ -349,6 +368,7 @@ export const useDesktopTracker = () => {
           }
           activeSegmentRef.current = null;
           pendingIdleRewindRef.current.clear();
+          pendingTrackedSecondsRef.current = 0;
           lastInputRef.current = Date.now();
           console.info('[desktop-tracker] idle auto-stop rejected by backend validation', {
             session_id: activeEntry.id,
@@ -370,6 +390,7 @@ export const useDesktopTracker = () => {
       activeSegmentRef.current = null;
       activeEntryRef.current = null;
       pendingIdleRewindRef.current.clear();
+      pendingTrackedSecondsRef.current = 0;
       syncScreenshotInterval(null);
       idleStopBlockedUntilMsRef.current = 0;
 
@@ -406,6 +427,7 @@ export const useDesktopTracker = () => {
           activeSegmentRef.current = null;
           activeEntryRef.current = null;
           lastAutoStoppedEntryIdRef.current = null;
+          pendingTrackedSecondsRef.current = 0;
           syncScreenshotInterval(null);
           return;
         }
@@ -431,6 +453,7 @@ export const useDesktopTracker = () => {
         const rawIsBrowserApp = BROWSER_APP_KEYWORDS.some((keyword) => rawAppName.toLowerCase().includes(keyword));
         const rawContextName = buildTrackedContextName(activeContext || {});
         const rawActivityType: 'app' | 'url' = rawUrl || rawIsBrowserApp ? 'url' : 'app';
+        const rawAppFamily = resolveAppFamily(rawAppName, rawActivityType);
         const hasReliableDesktopContext = Boolean(rawContextName)
           && !isSelfTrackerContext(activeContext || {})
           && !isGenericBrowserContext(rawContextName, rawActivityType);
@@ -440,6 +463,7 @@ export const useDesktopTracker = () => {
             contextName: rawContextName,
             activityType: rawActivityType,
             capturedAtMs: now,
+            appFamily: rawAppFamily,
           };
         }
 
@@ -450,7 +474,19 @@ export const useDesktopTracker = () => {
           && (now - lastReliableTrackingContextRef.current.capturedAtMs) <= RELIABLE_CONTEXT_REUSE_WINDOW_MS
             ? lastReliableTrackingContextRef.current
             : null;
+        const compatibleReliableTrackingContext = !hasReliableDesktopContext
+          && lastReliableTrackingContextRef.current
+          && rawAppFamily
+          && lastReliableTrackingContextRef.current.appFamily
+          && rawAppFamily === lastReliableTrackingContextRef.current.appFamily
+          && (
+            isGenericBrowserContext(rawContextName, rawActivityType)
+            || (!rawContextName && rawActivityType === lastReliableTrackingContextRef.current.activityType)
+          )
+            ? lastReliableTrackingContextRef.current
+            : null;
         const fallbackTrackingContext = recentReliableTrackingContext
+          || compatibleReliableTrackingContext
           || (currentTrackedSegment?.contextName && currentTrackedSegment.activityType
             ? {
                 contextName: currentTrackedSegment.contextName,
@@ -467,6 +503,7 @@ export const useDesktopTracker = () => {
         const activityType: 'app' | 'url' = resolvedTrackingContext?.activityType || 'app';
 
         if (idleSeconds >= IDLE_THRESHOLD_SECONDS) {
+          pendingTrackedSecondsRef.current = 0;
           const idleName = (`System Idle - ${contextName}`).slice(0, 255);
           const idleSignature = `${activeEntry.id}:idle:${lastActivityAtMs}`;
           const currentSegment = activeSegmentRef.current;
@@ -521,14 +558,18 @@ export const useDesktopTracker = () => {
               || isGenericBrowserContext(rawContextName || fallbackTitle, rawActivityType)
             )
           ) {
+            pendingTrackedSecondsRef.current += trackedSecondsThisTick;
             return;
           }
+
+          const attributedTrackedSeconds = trackedSecondsThisTick + pendingTrackedSecondsRef.current;
+          pendingTrackedSecondsRef.current = 0;
 
           const payload = {
             time_entry_id: activeEntry.id,
             type: activityType,
             name: contextName,
-            duration: trackedSecondsThisTick,
+            duration: attributedTrackedSeconds,
             recorded_at: recordedAt,
           };
           const signature = `${payload.time_entry_id}:${payload.type}:${payload.name}`;
@@ -536,7 +577,7 @@ export const useDesktopTracker = () => {
 
           if (currentSegment?.kind === 'tracked' && currentSegment.signature === signature) {
             const baselineDuration = currentSegment.durationSeconds;
-            const nextDuration = baselineDuration + trackedSecondsThisTick;
+            const nextDuration = baselineDuration + attributedTrackedSeconds;
             await activityApi.update(currentSegment.activityId, {
               duration: nextDuration,
               recorded_at: recordedAt,
@@ -549,7 +590,7 @@ export const useDesktopTracker = () => {
             const response = await activityApi.create(payload);
             activeSegmentRef.current = {
               activityId: response.data.id,
-              durationSeconds: trackedSecondsThisTick,
+              durationSeconds: attributedTrackedSeconds,
               signature,
               kind: 'tracked',
               contextName: payload.name,
@@ -644,6 +685,9 @@ export const useDesktopTracker = () => {
       }
 
       activeEntryRef.current = null;
+      activeSegmentRef.current = null;
+      pendingIdleRewindRef.current.clear();
+      pendingTrackedSecondsRef.current = 0;
       syncScreenshotInterval(null);
     };
 
@@ -659,10 +703,14 @@ export const useDesktopTracker = () => {
 
     return () => {
       clearTrackerIntervals();
+      activeSegmentRef.current = null;
       activeEntryRef.current = null;
+      pendingIdleRewindRef.current.clear();
+      pendingTrackedSecondsRef.current = 0;
       activeScreenshotEntryIdRef.current = null;
       idleStopInFlightRef.current = false;
       idleStopBlockedUntilMsRef.current = 0;
+      lastReliableTrackingContextRef.current = null;
       sessionStorage.removeItem(DESKTOP_SCREENSHOT_SCHEDULER_KEY);
       clearDesktopScreenshotCaptureLock();
       window.removeEventListener(DESKTOP_TIMER_STARTED_EVENT, handleTimerStarted as EventListener);

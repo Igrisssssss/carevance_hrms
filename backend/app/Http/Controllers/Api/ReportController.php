@@ -14,7 +14,6 @@ use App\Models\Screenshot;
 use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Reports\ActivityProductivityService;
-use App\Services\Reports\ActivityDurationNormalizer;
 use App\Services\Reports\DashboardSummaryService;
 use App\Services\Reports\ReportPayloadBuilder;
 use App\Services\Reports\TimeBreakdownService;
@@ -28,7 +27,6 @@ class ReportController extends Controller
 {
     public function __construct(
         private readonly ActivityProductivityService $activityProductivityService,
-        private readonly ActivityDurationNormalizer $activityDurationNormalizer,
         private readonly DashboardSummaryService $dashboardSummaryService,
         private readonly ReportPayloadBuilder $reportPayloadBuilder,
         private readonly TimeBreakdownService $timeBreakdownService,
@@ -227,11 +225,10 @@ class ReportController extends Controller
             ->get();
 
         $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries);
-        $idleActivities = Activity::where('user_id', $user->id)
-            ->where('type', 'idle')
+        $activities = Activity::where('user_id', $user->id)
             ->whereBetween('recorded_at', [$startDate, $endDate])
             ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
-        $idleDuration = $this->activityDurationNormalizer->sumIdleDuration($idleActivities);
+        $idleDuration = $this->usageProcessingService->calculateIdleTime($activities);
         $timeBreakdown = $this->timeBreakdownService->build($trackedDuration, $idleDuration);
         $score = $this->timeBreakdownService->productivityScore($trackedDuration, $idleDuration);
 
@@ -370,7 +367,6 @@ class ReportController extends Controller
         $activities = Activity::whereIn('user_id', $userIds)
             ->whereBetween('recorded_at', [$startDate, $endDate])
             ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
-        $idleActivities = $this->activityDurationNormalizer->collapseIdle($activities)->values();
 
         $activeUserIds = TimeEntry::whereIn('user_id', $userIds)
             ->whereNull('end_time')
@@ -380,16 +376,22 @@ class ReportController extends Controller
 
         $entriesByUser = $entries->groupBy('user_id');
         $activitiesByUser = $activities->groupBy('user_id');
-        $idleActivitiesByUser = $idleActivities->groupBy('user_id');
+        $activitiesByUserAndDay = collect($activities)
+            ->groupBy(fn ($activity) => sprintf(
+                '%d|%s',
+                (int) data_get($activity, 'user_id', 0),
+                Carbon::parse((string) data_get($activity, 'recorded_at'))->toDateString()
+            ));
 
         $resolvedNow = now();
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $activitiesByUser, $idleActivitiesByUser, $activeUserIds, $resolvedNow) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $activitiesByUser, $activeUserIds, $resolvedNow) {
             $userEntries = $entriesByUser->get($user->id, collect());
             $userActivities = $activitiesByUser->get($user->id, collect());
+            $idleDuration = $this->usageProcessingService->calculateIdleTime($userActivities);
             $timeBreakdown = $this->timeBreakdownService->build(
                 $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow),
-                (int) $idleActivitiesByUser->get($user->id, collect())->sum('duration')
+                $idleDuration
             );
 
             return [
@@ -416,15 +418,8 @@ class ReportController extends Controller
             $dayUserBuckets[$key]['total_duration'] += $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
         }
 
-        foreach ($idleActivities as $activity) {
-            $recordedAt = data_get($activity, 'recorded_at');
-            if (!$recordedAt) {
-                continue;
-            }
-
-            $date = Carbon::parse($recordedAt)->toDateString();
-            $key = (string) data_get($activity, 'user_id', 0).'|'.$date;
-
+        foreach ($activitiesByUserAndDay as $key => $dayActivities) {
+            [, $date] = explode('|', (string) $key, 2);
             if (! isset($dayUserBuckets[$key])) {
                 $dayUserBuckets[$key] = [
                     'date' => $date,
@@ -433,7 +428,7 @@ class ReportController extends Controller
                 ];
             }
 
-            $dayUserBuckets[$key]['idle_duration'] += (int) data_get($activity, 'duration', 0);
+            $dayUserBuckets[$key]['idle_duration'] = $this->usageProcessingService->calculateIdleTime($dayActivities);
         }
 
         $byDay = collect($dayUserBuckets)
@@ -499,11 +494,10 @@ class ReportController extends Controller
             ->get();
         $idleDuration = 0;
         if ($entries->isNotEmpty()) {
-            $idleActivities = Activity::query()
+            $activities = Activity::query()
                 ->whereIn('time_entry_id', $entries->pluck('id'))
-                ->where('type', 'idle')
                 ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
-            $idleDuration = $this->activityDurationNormalizer->sumIdleDuration($idleActivities);
+            $idleDuration = $this->usageProcessingService->calculateIdleTime($activities);
         }
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries),

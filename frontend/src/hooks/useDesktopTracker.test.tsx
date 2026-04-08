@@ -378,6 +378,41 @@ describe('useDesktopTracker', () => {
     }));
   });
 
+  it('buffers active seconds during unreliable self context and attributes them once a reliable context returns', async () => {
+    document.title = 'CareVance HRMS Workspace';
+    mocks.getActiveWindowContextMock
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        app: 'Google Chrome',
+        title: 'GitHub - Google Chrome',
+        url: null,
+      });
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 1000);
+    });
+
+    expect(mocks.createActivityMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      name: 'CareVance HRMS Workspace',
+    }));
+    expect(mocks.createActivityMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      name: 'GitHub',
+    }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 1000);
+    });
+
+    expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'url',
+      name: 'GitHub',
+      duration: 10,
+    }));
+  });
+
   it('reuses the last reliable website context when the browser briefly reports a generic new tab', async () => {
     mocks.getActiveWindowContextMock
       .mockResolvedValueOnce({
