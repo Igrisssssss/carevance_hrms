@@ -5,8 +5,8 @@ import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess } from '@/lib/permissions';
 import { deriveDateRangeFromPreset, getDateRangePresetLabel, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
-import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { resolvePersistedDateRange } from '@/lib/dateRange';
+import { coercePositiveNumberArray, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import DataTable from '@/components/dashboard/DataTable';
@@ -45,10 +45,10 @@ type PersistedReportsPageFilters = {
 };
 
 const REPORTS_PAGE_FILTER_STORAGE_KEY = 'reports-page-filters';
-const reportsDefaultDateRange = deriveDateRangeFromPreset('30d');
+const reportsDefaultDateRange = deriveDateRangeFromPreset('today');
 
 const getDefaultReportsPageFilters = (isAdmin: boolean): PersistedReportsPageFilters => ({
-  datePreset: '30d',
+  datePreset: 'today',
   startDate: reportsDefaultDateRange.startDate,
   endDate: reportsDefaultDateRange.endDate,
   reportType: 'monthly',
@@ -78,8 +78,8 @@ const readPersistedReportsPageFilters = (isAdmin: boolean): PersistedReportsPage
     endDate: resolvedRange.endDate,
     reportType: parsed.reportType === 'daily' || parsed.reportType === 'weekly' ? parsed.reportType : fallback.reportType,
     filterMode: parsed.filterMode === 'group' || parsed.filterMode === 'user' ? parsed.filterMode : fallback.filterMode,
-    selectedUserIds: Array.isArray(parsed.selectedUserIds) ? parsed.selectedUserIds.map(Number).filter((id) => Number.isFinite(id) && id > 0) : fallback.selectedUserIds,
-    selectedGroupIds: Array.isArray(parsed.selectedGroupIds) ? parsed.selectedGroupIds.map(Number).filter((id) => Number.isFinite(id) && id > 0) : fallback.selectedGroupIds,
+    selectedUserIds: coercePositiveNumberArray(parsed.selectedUserIds),
+    selectedGroupIds: coercePositiveNumberArray(parsed.selectedGroupIds),
   };
 };
 

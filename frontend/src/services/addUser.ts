@@ -70,6 +70,15 @@ export interface CsvParseResult {
   errors: string[];
 }
 
+interface BulkInviteRowPayload {
+  email: string;
+  role: InviteUserRole;
+  group_ids?: number[];
+  project_ids?: number[];
+}
+
+type TabularRow = unknown[];
+
 const INVITE_DEFAULTS_KEY = 'carevance-add-user-defaults';
 
 const roleAliasMap: Partial<Record<string, InviteUserRole>> = {
@@ -152,7 +161,24 @@ const parseCsvLine = (line: string) => {
   return result;
 };
 
+const chunkItems = <T>(items: T[], chunkSize: number): T[][] => {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+
+  return chunks;
+};
+
+const normalizeCell = (value: unknown) => String(value ?? '').trim();
+
 export const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+
+const supportedImportExtensions = ['.csv', '.xlsx'];
+
+const hasSupportedImportExtension = (fileName: string) =>
+  supportedImportExtensions.some((extension) => fileName.toLowerCase().endsWith(extension));
 
 export function normalizeEmails(rawValue: string) {
   const entries = rawValue
@@ -289,18 +315,21 @@ export const addUserService = {
     textArea.remove();
   },
 
-  parseCsv(content: string, groups: InviteOption[], projects: InviteOption[]): CsvParseResult {
-    const lines = content
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
+  isSupportedImportFile(fileName: string) {
+    return hasSupportedImportExtension(fileName);
+  },
 
-    if (lines.length === 0) {
-      return { rows: [], errors: ['CSV file is empty.'] };
+  parseTableRows(tableRows: TabularRow[], groups: InviteOption[], projects: InviteOption[]): CsvParseResult {
+    const normalizedRows = tableRows
+      .map((row) => row.map((cell) => normalizeCell(cell)))
+      .filter((row) => row.some((cell) => cell !== ''));
+
+    if (normalizedRows.length === 0) {
+      return { rows: [], errors: ['Import file is empty.'] };
     }
 
-    const [headerLine, ...dataLines] = lines;
-    const headers = parseCsvLine(headerLine).map((header) => toSlug(header));
+    const [headerRow, ...dataRows] = normalizedRows;
+    const headers = headerRow.map((header) => toSlug(header));
     const rows: CsvParseRow[] = [];
     const errors: string[] = [];
 
@@ -311,11 +340,10 @@ export const addUserService = {
     const projectIndex = headers.findIndex((header) => ['projects', 'project', 'project ids'].includes(header));
 
     if (emailIndex < 0) {
-      return { rows: [], errors: ['CSV must include an email column.'] };
+      return { rows: [], errors: ['Import file must include an email column.'] };
     }
 
-    dataLines.forEach((line, index) => {
-      const columns = parseCsvLine(line);
+    dataRows.forEach((columns, index) => {
       const email = (columns[emailIndex] || '').trim().toLowerCase();
       const rawRole = (columns[roleIndex] || '').trim();
       const roleValue = toSlug(rawRole || 'employee');
@@ -343,14 +371,64 @@ export const addUserService = {
     return { rows, errors };
   },
 
-  async processCsvInvite(
+  parseCsv(content: string, groups: InviteOption[], projects: InviteOption[]): CsvParseResult {
+    const tableRows = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (tableRows.length === 0) {
+      return { rows: [], errors: ['CSV file is empty.'] };
+    }
+
+    return this.parseTableRows(tableRows.map((line) => parseCsvLine(line)), groups, projects);
+  },
+
+  async parseImportFile(file: File, groups: InviteOption[], projects: InviteOption[]): Promise<CsvParseResult> {
+    const lowerName = file.name.toLowerCase();
+
+    if (lowerName.endsWith('.csv')) {
+      const content = await file.text();
+      return this.parseCsv(content, groups, projects);
+    }
+
+    if (lowerName.endsWith('.xlsx')) {
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+
+      if (!firstSheetName) {
+        return { rows: [], errors: ['XLSX file is empty.'] };
+      }
+
+      const worksheet = workbook.Sheets[firstSheetName];
+      const tableRows = XLSX.utils.sheet_to_json<TabularRow>(worksheet, {
+        header: 1,
+        raw: false,
+        defval: '',
+      });
+
+      return this.parseTableRows(tableRows, groups, projects);
+    }
+
+    return {
+      rows: [],
+      errors: ['Unsupported file format. Please upload a CSV or XLSX file.'],
+    };
+  },
+
+  async processImportFile(
     file: File,
-    basePayload: Omit<InviteSubmissionPayload, 'emails' | 'role' | 'groupIds' | 'projectIds'>,
+    basePayload: {
+      organizationId: number;
+      defaultGroupIds: number[];
+      defaultProjectIds: number[];
+      settings: AdditionalInviteSettings;
+    },
     groups: InviteOption[],
     projects: InviteOption[]
   ) {
-    const content = await file.text();
-    const parsed = this.parseCsv(content, groups, projects);
+    const parsed = await this.parseImportFile(file, groups, projects);
 
     if (parsed.rows.length === 0) {
       return {
@@ -366,15 +444,20 @@ export const addUserService = {
     let invitedCount = 0;
     const failed = parsed.errors.map((message) => ({ email: 'csv', message }));
     const deferredAssignments = new Set<string>();
+    const rows: BulkInviteRowPayload[] = parsed.rows.map((row) => ({
+      email: row.email,
+      role: row.role,
+      group_ids: row.groupIds,
+      project_ids: row.projectIds,
+    }));
+    const rowChunks = chunkItems<BulkInviteRowPayload>(rows, 250);
 
-    for (const row of parsed.rows) {
+    for (const rowChunk of rowChunks) {
       try {
-        await invitationApi.create({
-          email: row.email,
-          role: row.role,
-          delivery: 'email',
-          group_ids: row.groupIds,
-          project_ids: row.projectIds,
+        const response = await invitationApi.importCsv({
+          rows: rowChunk,
+          default_group_ids: basePayload.defaultGroupIds,
+          default_project_ids: basePayload.defaultProjectIds,
           settings: {
             monitoring_interval_minutes: basePayload.settings.monitoringInterval,
             can_edit_time: basePayload.settings.canEditTime,
@@ -383,18 +466,28 @@ export const addUserService = {
             task_assignment_access: basePayload.settings.taskAssignmentAccess,
           },
         });
-        invitedCount += 1;
-        if (row.projectIds.length > 0) {
-          deferredAssignments.add('CSV project IDs are stored for future provisioning, but project-access automation is not wired yet.');
-        }
+
+        invitedCount += response.data.invited_count || 0;
+        failed.push(...(response.data.failed || []));
       } catch (error: any) {
+        const responseFailed = error?.response?.data?.failed;
+
+        if (Array.isArray(responseFailed) && responseFailed.length > 0) {
+          failed.push(...responseFailed);
+          continue;
+        }
+
         failed.push({
-          email: row.email,
-          message: error?.response?.data?.message || 'Unable to import this row.',
+          email: 'csv',
+          message: error?.response?.data?.message || 'Unable to import this CSV batch.',
         });
       }
     }
-    
+
+    if (parsed.rows.some((row) => row.projectIds.length > 0) || basePayload.defaultProjectIds.length > 0) {
+      deferredAssignments.add('CSV project IDs are stored for future provisioning, but project-access automation is not wired yet.');
+    }
+
 
     return {
       parsed,

@@ -136,6 +136,34 @@ class UsageProcessingServiceTest extends TestCase
         $this->assertSame(180, $summary['tools']['unproductive'][0]['total_duration']);
     }
 
+    public function test_unknown_active_tools_default_to_productive_in_web_app_usage(): void
+    {
+        $service = app(UsageProcessingService::class);
+
+        $summary = $service->buildWebAppUsageSummary([
+            $this->log(1, 1, 'app', 'Internal Dashboard', 180, '2026-03-16 10:03:00'),
+        ]);
+
+        $this->assertSame(180, $summary['metrics']['total_time']);
+        $this->assertSame(180, $summary['metrics']['productive_time']);
+        $this->assertSame('productive', $summary['tools']['productive'][0]['classification']);
+    }
+
+    public function test_browser_site_titles_merge_app_and_url_rows_into_one_website_tool(): void
+    {
+        $service = app(UsageProcessingService::class);
+
+        $summary = $service->buildWebAppUsageSummary([
+            $this->log(1, 1, 'app', 'Google Chrome - WhatsApp', 300, '2026-03-16 10:05:00'),
+            $this->log(2, 1, 'url', 'https://web.whatsapp.com', 180, '2026-03-16 10:08:00'),
+        ]);
+
+        $this->assertCount(1, $summary['tools']['unproductive']);
+        $this->assertSame('web.whatsapp.com', $summary['tools']['unproductive'][0]['label']);
+        $this->assertSame('website', $summary['tools']['unproductive'][0]['type']);
+        $this->assertSame(480, $summary['tools']['unproductive'][0]['total_duration']);
+    }
+
     private function log(int $id, int $timeEntryId, string $type, string $name, int $duration, string $recordedAt): array
     {
         return [

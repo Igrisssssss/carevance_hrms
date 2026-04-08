@@ -119,8 +119,8 @@ export default function DesktopTimerDashboard() {
   const [teamMembersCount, setTeamMembersCount] = useState(0);
   const [newMembersThisWeek, setNewMembersThisWeek] = useState(0);
   const [productivityScore, setProductivityScore] = useState(0);
-  const [activeProjectsCount, setActiveProjectsCount] = useState(0);
-  const [totalProjectsCount, setTotalProjectsCount] = useState(0);
+  const [activeTasksCount, setActiveTasksCount] = useState(0);
+  const [totalTasksCount, setTotalTasksCount] = useState(0);
   const [todayDeltaLabel, setTodayDeltaLabel] = useState('No change from yesterday');
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
@@ -239,8 +239,8 @@ export default function DesktopTimerDashboard() {
         setTeamMembersCount(Number(data?.team_members_count) || 0);
         setNewMembersThisWeek(Number(data?.new_members_this_week) || 0);
         setProductivityScore(Number(data?.productivity_score) || 0);
-        setActiveProjectsCount(Number(data?.active_projects_count) || 0);
-        setTotalProjectsCount(Number(data?.total_projects_count) || 0);
+        setActiveTasksCount(Number(data?.active_tasks_count) || 0);
+        setTotalTasksCount(Number(data?.total_tasks_count) || 0);
 
         const pct = data?.today_change_percent;
         if (typeof pct === 'number') {
@@ -263,6 +263,10 @@ export default function DesktopTimerDashboard() {
       if (tasksSucceeded) {
         const fetchedTasks = (tasksResult.value.data || []).filter((task) => task.status !== 'done');
         setAllowedTasks(fetchedTasks);
+        if (!dashboardSucceeded) {
+          setActiveTasksCount(fetchedTasks.length);
+          setTotalTasksCount(fetchedTasks.length);
+        }
       }
 
       const attendanceRecord = attendancePayload?.record || attendanceToday || null;
@@ -587,6 +591,7 @@ export default function DesktopTimerDashboard() {
   const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - effectiveWorkedSeconds);
   const overtimeSeconds = Math.max(0, effectiveWorkedSeconds - shiftTargetSeconds);
   const availableTasks = allowedTasks.filter((task) => task.status !== 'done');
+  const activeTasksHint = `${totalTasksCount} total task${totalTasksCount === 1 ? '' : 's'}`;
 
   const submitOvertimeProof = async () => {
     if (overtimeSeconds <= 0) {
@@ -760,7 +765,7 @@ export default function DesktopTimerDashboard() {
           icon={Clock}
           accent="sky"
         />
-        <MetricCard label="Active Projects" value={activeProjectsCount} hint={`${totalProjectsCount} total projects`} icon={FolderKanban} accent="violet" />
+        <MetricCard label="Active Tasks" value={activeTasksCount} hint={activeTasksHint} icon={FolderKanban} accent="violet" />
         <MetricCard label="Team Members" value={teamMembersCount} hint={`${newMembersThisWeek} new this week`} icon={Users} accent="emerald" />
         <MetricCard label="Productivity" value={`${productivityScore}%`} hint="Based on working ratio this week" icon={TrendingUp} accent="amber" />
       </div>

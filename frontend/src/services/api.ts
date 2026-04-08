@@ -163,6 +163,20 @@ export const invitationApi = {
     settings?: Record<string, any>;
   }) => api.post<InvitationCreateResponse>('/invitations', data),
 
+  importCsv: (data: {
+    rows: Array<{
+      email: string;
+      role: User['role'];
+      group_ids?: number[];
+      project_ids?: number[];
+      settings?: Record<string, any>;
+    }>;
+    default_group_ids?: number[];
+    default_project_ids?: number[];
+    settings?: Record<string, any>;
+    expires_in_hours?: number;
+  }) => api.post<InvitationCreateResponse>('/invitations/import', data),
+
   getByToken: (token: string) =>
     api.get<{ invitation: InvitationSummary }>(`/invitations/${token}`),
 
@@ -970,7 +984,7 @@ export const settingsApi = {
       can_manage_org: boolean;
     }>('/settings/me'),
 
-  updateProfile: (data: { name: string; email: string; avatar?: string | null }) =>
+  updateProfile: (data: { name: string; email?: string; avatar?: string | null }) =>
     api.put<{ message: string; user: User }>('/settings/profile', data),
 
   updatePassword: (data: { current_password: string; new_password: string; new_password_confirmation: string }) =>

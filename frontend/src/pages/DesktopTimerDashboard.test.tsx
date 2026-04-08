@@ -77,8 +77,8 @@ describe('DesktopTimerDashboard', () => {
           team_members_count: 4,
           new_members_this_week: 1,
           productivity_score: 82,
-          active_projects_count: 1,
-          total_projects_count: 1,
+          active_tasks_count: 1,
+          total_tasks_count: 1,
         },
       })
       .mockResolvedValue({
@@ -101,8 +101,8 @@ describe('DesktopTimerDashboard', () => {
           team_members_count: 4,
           new_members_this_week: 1,
           productivity_score: 82,
-          active_projects_count: 1,
-          total_projects_count: 1,
+          active_tasks_count: 1,
+          total_tasks_count: 1,
         },
       });
 
@@ -224,8 +224,8 @@ describe('DesktopTimerDashboard', () => {
         team_members_count: 4,
         new_members_this_week: 1,
         productivity_score: 82,
-        active_projects_count: 1,
-        total_projects_count: 1,
+        active_tasks_count: 1,
+        total_tasks_count: 1,
       },
     };
     const runningSummary = {
@@ -248,8 +248,8 @@ describe('DesktopTimerDashboard', () => {
         team_members_count: 4,
         new_members_this_week: 1,
         productivity_score: 82,
-        active_projects_count: 1,
-        total_projects_count: 1,
+        active_tasks_count: 1,
+        total_tasks_count: 1,
       },
     };
 
@@ -380,8 +380,8 @@ describe('DesktopTimerDashboard', () => {
         team_members_count: 4,
         new_members_this_week: 1,
         productivity_score: 82,
-        active_projects_count: 1,
-        total_projects_count: 1,
+        active_tasks_count: 1,
+        total_tasks_count: 1,
       },
     });
 
@@ -421,8 +421,8 @@ describe('DesktopTimerDashboard', () => {
         team_members_count: 4,
         new_members_this_week: 1,
         productivity_score: 82,
-        active_projects_count: 1,
-        total_projects_count: 1,
+        active_tasks_count: 1,
+        total_tasks_count: 1,
       },
     });
 
@@ -474,8 +474,8 @@ describe('DesktopTimerDashboard', () => {
         team_members_count: 4,
         new_members_this_week: 1,
         productivity_score: 82,
-        active_projects_count: 1,
-        total_projects_count: 1,
+        active_tasks_count: 1,
+        total_tasks_count: 1,
       },
     });
 

@@ -16,7 +16,16 @@ const parseError = (error: any) => {
     ? Object.values(fieldErrors).flat().find(Boolean)
     : null;
 
-  return firstFieldError || error?.response?.data?.message || 'Unable to accept this invitation right now.';
+  const responseMessage = String(error?.response?.data?.message || '');
+
+  if (
+    responseMessage.includes('No query results for model [App\\Models\\Invitation]')
+    || responseMessage.includes('This invitation is no longer available.')
+  ) {
+    return 'This invitation is no longer available.';
+  }
+
+  return firstFieldError || responseMessage || 'Unable to accept this invitation right now.';
 };
 
 export default function AcceptInvitePage() {

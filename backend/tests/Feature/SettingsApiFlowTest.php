@@ -135,4 +135,44 @@ class SettingsApiFlowTest extends TestCase
             ->assertJsonPath('plan.code', 'starter')
             ->assertJsonPath('workspace.id', $organization->id);
     }
+
+    public function test_non_admin_cannot_change_email_from_settings_but_can_update_other_profile_fields(): void
+    {
+        $organization = Organization::create([
+            'name' => 'Manager Settings Org',
+            'slug' => 'manager-settings-org',
+        ]);
+
+        $manager = User::create([
+            'name' => 'Manager Settings',
+            'email' => 'manager.settings@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+
+        $headers = $this->apiHeadersFor($manager);
+
+        $this->putJson('/api/settings/profile', [
+            'name' => 'Manager Settings Updated',
+            'email' => 'manager.changed@example.com',
+            'avatar' => 'https://example.com/manager-avatar.png',
+        ], $headers)
+            ->assertStatus(422)
+            ->assertJsonPath('errors.email.0', 'Only admins can change their own email from settings.');
+
+        $manager->refresh();
+
+        $this->assertSame('manager.settings@example.com', $manager->email);
+
+        $this->putJson('/api/settings/profile', [
+            'name' => 'Manager Settings Updated',
+            'email' => 'manager.settings@example.com',
+            'avatar' => 'https://example.com/manager-avatar.png',
+        ], $headers)
+            ->assertOk()
+            ->assertJsonPath('user.name', 'Manager Settings Updated')
+            ->assertJsonPath('user.email', 'manager.settings@example.com')
+            ->assertJsonPath('user.avatar', 'https://example.com/manager-avatar.png');
+    }
 }

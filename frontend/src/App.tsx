@@ -42,7 +42,6 @@ const VerifyEmailPage = lazyWithChunkRetry(() => import('@/pages/VerifyEmailPage
 const Dashboard = lazyWithChunkRetry(() => import('@/pages/Dashboard'));
 const AdminDashboard = lazyWithChunkRetry(() => import('@/pages/AdminDashboard'));
 const DesktopTimerDashboard = lazyWithChunkRetry(() => import('@/pages/DesktopTimerDashboard'));
-const Projects = lazyWithChunkRetry(() => import('@/pages/Projects'));
 const Tasks = lazyWithChunkRetry(() => import('@/pages/Tasks'));
 const Reports = lazyWithChunkRetry(() => import('@/pages/Reports'));
 const Invoices = lazyWithChunkRetry(() => import('@/pages/Invoices'));
@@ -296,7 +295,7 @@ function App() {
             }
           >
             <Route path="dashboard" element={effectiveDashboardElement} />
-            <Route path="projects" element={<Projects />} />
+            <Route path="projects" element={<Navigate to="/tasks" replace />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="chat" element={<Chat />} />
             <Route path="attendance" element={<Attendance />} />

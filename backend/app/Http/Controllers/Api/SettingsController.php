@@ -50,18 +50,25 @@ class SettingsController extends Controller
 
         $validated = $request->validated();
 
-        $user->update([
+        $profileUpdates = [
             'name' => $validated['name'],
-            'email' => $validated['email'],
             'avatar' => $validated['avatar'] ?? null,
-        ]);
+        ];
+        $changedFields = ['name', 'avatar'];
+
+        if ($user->role === 'admin' && array_key_exists('email', $validated)) {
+            $profileUpdates['email'] = $validated['email'];
+            $changedFields[] = 'email';
+        }
+
+        $user->update($profileUpdates);
 
         $this->auditLogService->log(
             action: 'settings.profile_updated',
             actor: $user,
             target: $user,
             metadata: [
-                'changed_fields' => ['name', 'email', 'avatar'],
+                'changed_fields' => $changedFields,
             ],
             request: $request
         );

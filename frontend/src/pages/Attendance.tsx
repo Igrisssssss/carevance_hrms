@@ -161,7 +161,6 @@ const readPersistedAttendanceFilters = (): PersistedAttendanceFilters => {
     typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
     typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate
   );
-
   return {
     selectedFilterUserId: coercePositiveNumber(parsed.selectedFilterUserId) ?? '',
     countryFilter: typeof parsed.countryFilter === 'string' && parsed.countryFilter ? parsed.countryFilter : fallback.countryFilter,
@@ -954,21 +953,21 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         icon: Layers3,
       },
       {
-        label: 'Current Project',
-        value: employeeProfile?.status.current_project || 'No active project',
+        label: 'Current Task',
+        value: employeeProfile?.status.current_task || employeeProfile?.status.current_project || 'No active task',
         hint: employeeProfile?.status.is_working ? 'You are currently working' : 'No active timer right now',
         icon: Briefcase,
       },
       {
-        label: 'Recent Projects',
-        value: String(new Set((employeeProfile?.recent_time_entries || []).map((entry) => entry.project?.id).filter(Boolean)).size),
+        label: 'Recent Tasks',
+        value: String(new Set((employeeProfile?.recent_time_entries || []).map((entry) => entry.task?.id || entry.project?.id).filter(Boolean)).size),
         hint:
           (employeeProfile?.recent_time_entries || [])
-            .map((entry) => entry.project?.name)
+            .map((entry) => entry.task?.title || entry.project?.name)
             .filter(Boolean)
             .filter((value, index, list) => list.indexOf(value) === index)
             .slice(0, 3)
-            .join(', ') || 'Projects will appear here after time is tracked',
+            .join(', ') || 'Tasks will appear here after time is tracked',
         icon: FolderKanban,
       },
     ],

@@ -263,14 +263,16 @@ class EmployeeWorkspaceService
         $lateDays = \App\Models\AttendanceRecord::query()
             ->where('organization_id', $employee->organization_id)
             ->where('user_id', $employee->id)
-            ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
+            ->whereDate('attendance_date', '>=', $start->toDateString())
+            ->whereDate('attendance_date', '<=', $end->toDateString())
             ->where('late_minutes', '>', 0)
             ->count();
 
         $exceptions = \App\Models\AttendanceTimeEditRequest::query()
             ->where('organization_id', $employee->organization_id)
             ->where('user_id', $employee->id)
-            ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
+            ->whereDate('attendance_date', '>=', $start->toDateString())
+            ->whereDate('attendance_date', '<=', $end->toDateString())
             ->where('status', 'pending')
             ->count();
 

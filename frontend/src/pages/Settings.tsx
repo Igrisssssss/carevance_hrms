@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { hasAdminAccess, isEmployeeUser } from '@/lib/permissions';
+import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { settingsApi } from '@/services/api';
 import { User, Bell, Lock, CreditCard, Building } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
@@ -38,6 +38,7 @@ export default function SettingsPage() {
 
   const isEmployee = isEmployeeUser(user);
   const isOrgEditable = canManageOrg && hasAdminAccess(user) && !isEmployee;
+  const canEditEmail = hasStrictAdminAccess(user);
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
@@ -119,11 +120,16 @@ export default function SettingsPage() {
     setError('');
     setMessage('');
     try {
-      const res = await settingsApi.updateProfile({
+      const payload: { name: string; avatar: string | null; email?: string } = {
         name: profileName.trim(),
-        email: profileEmail.trim(),
         avatar: profileAvatar.trim() || null,
-      });
+      };
+
+      if (canEditEmail) {
+        payload.email = profileEmail.trim();
+      }
+
+      const res = await settingsApi.updateProfile(payload);
       const updated = (res.data as any)?.user;
       if (updated) updateUser(updated);
       setMessage((res.data as any)?.message || 'Profile updated');
@@ -250,7 +256,14 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <FieldLabel>Email</FieldLabel>
-                  <TextInput type="email" value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} />
+                  <TextInput
+                    type="email"
+                    value={profileEmail}
+                    onChange={(e) => setProfileEmail(e.target.value)}
+                    disabled={!canEditEmail}
+                    className={!canEditEmail ? 'bg-slate-50 text-slate-500' : ''}
+                  />
+                  {!canEditEmail ? <p className="mt-2 text-sm text-gray-500">Only admins can change their own email from settings.</p> : null}
                 </div>
                 <div>
                   <FieldLabel>Role</FieldLabel>

@@ -4,8 +4,10 @@ namespace App\Services\Reports;
 
 use App\Models\Activity;
 use App\Models\Project;
+use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\User;
+use App\Services\Authorization\GroupAccessService;
 use Carbon\Carbon;
 
 class DashboardSummaryService
@@ -13,6 +15,7 @@ class DashboardSummaryService
     public function __construct(
         private readonly TimeBreakdownService $timeBreakdownService,
         private readonly UsageProcessingService $usageProcessingService,
+        private readonly GroupAccessService $groupAccessService,
     ) {
     }
 
@@ -77,6 +80,8 @@ class DashboardSummaryService
         $newMembersThisWeek = 0;
         $activeProjectsCount = 0;
         $totalProjectsCount = 0;
+        $activeTasksCount = 0;
+        $totalTasksCount = 0;
 
         if ($user->organization_id) {
             $teamMembersCount = User::where('organization_id', $user->organization_id)->count();
@@ -88,6 +93,13 @@ class DashboardSummaryService
                 ->where('status', 'active')
                 ->count();
             $totalProjectsCount = Project::where('organization_id', $user->organization_id)->count();
+
+            $visibleTasksQuery = Task::query();
+            $this->groupAccessService->applyTaskVisibilityScope($visibleTasksQuery, $user);
+            $activeTasksCount = (clone $visibleTasksQuery)
+                ->where('status', '!=', 'done')
+                ->count();
+            $totalTasksCount = (clone $visibleTasksQuery)->count();
         }
 
         $weekEntries = TimeEntry::where('user_id', $user->id)
@@ -111,6 +123,8 @@ class DashboardSummaryService
             'today_change_percent' => $todayChangePercent,
             'active_projects_count' => $activeProjectsCount,
             'total_projects_count' => $totalProjectsCount,
+            'active_tasks_count' => $activeTasksCount,
+            'total_tasks_count' => $totalTasksCount,
             'team_members_count' => $teamMembersCount,
             'new_members_this_week' => $newMembersThisWeek,
             'productivity_score' => $productivityScore,

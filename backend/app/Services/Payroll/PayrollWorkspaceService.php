@@ -223,7 +223,8 @@ class PayrollWorkspaceService
         $records = AttendanceRecord::query()
             ->where('organization_id', $organizationId)
             ->where('user_id', $userId)
-            ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
+            ->whereDate('attendance_date', '>=', $start->toDateString())
+            ->whereDate('attendance_date', '<=', $end->toDateString())
             ->get();
 
         $approvedLeaves = LeaveRequest::query()
@@ -245,7 +246,8 @@ class PayrollWorkspaceService
             ->where('organization_id', $organizationId)
             ->where('user_id', $userId)
             ->where('status', 'approved')
-            ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
+            ->whereDate('attendance_date', '>=', $start->toDateString())
+            ->whereDate('attendance_date', '<=', $end->toDateString())
             ->sum('extra_seconds');
 
         $workedSeconds = (int) $records->sum(fn (AttendanceRecord $record) => (int) ($record->worked_seconds ?? 0) + (int) ($record->manual_adjustment_seconds ?? 0));

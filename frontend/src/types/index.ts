@@ -756,6 +756,8 @@ export interface UserProfile360 {
     idle_duration?: number;
     attendance_days: number;
     present_days: number;
+    absent_days?: number;
+    late_days?: number;
     approved_leave_days: number;
     approved_time_edit_seconds: number;
     payslips_count: number;

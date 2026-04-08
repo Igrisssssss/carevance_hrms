@@ -26,8 +26,8 @@ export default function Dashboard() {
   const [teamMembersCount, setTeamMembersCount] = useState(0);
   const [newMembersThisWeek, setNewMembersThisWeek] = useState(0);
   const [productivityScore, setProductivityScore] = useState(0);
-  const [activeProjectsCount, setActiveProjectsCount] = useState(0);
-  const [totalProjectsCount, setTotalProjectsCount] = useState(0);
+  const [activeTasksCount, setActiveTasksCount] = useState(0);
+  const [totalTasksCount, setTotalTasksCount] = useState(0);
   const [todayDeltaLabel, setTodayDeltaLabel] = useState('No change from yesterday');
   const [isLoading, setIsLoading] = useState(true);
   const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
@@ -54,8 +54,8 @@ export default function Dashboard() {
         setTeamMembersCount(Number(data?.team_members_count) || 0);
         setNewMembersThisWeek(Number(data?.new_members_this_week) || 0);
         setProductivityScore(Number(data?.productivity_score) || 0);
-        setActiveProjectsCount(Number(data?.active_projects_count) || 0);
-        setTotalProjectsCount(Number(data?.total_projects_count) || 0);
+        setActiveTasksCount(Number(data?.active_tasks_count ?? data?.active_projects_count) || 0);
+        setTotalTasksCount(Number(data?.total_tasks_count ?? data?.total_projects_count) || 0);
         setAttendanceToday(attendanceRecord);
         setShiftTargetSeconds(Number(attendancePayload?.shift_target_seconds || attendanceRecord?.shift_target_seconds || 8 * 3600));
         setWorkedSeconds(Number(attendanceRecord?.worked_seconds || data?.today_total_elapsed_duration || data?.today_total_duration || 0) || 0);
@@ -232,7 +232,7 @@ export default function Dashboard() {
         <MetricCard label="Worked Today" value={formatDuration(workedSeconds)} hint={todayDeltaLabel} icon={Clock} accent="sky" />
         <MetricCard label="Time Left Today" value={formatDuration(remainingShiftSeconds)} hint={`Target ${formatDuration(shiftTargetSeconds)}`} icon={Hourglass} accent="violet" />
         <MetricCard label="Productivity" value={`${productivityScore}%`} hint="Based on this week's working ratio" icon={TrendingUp} accent="amber" />
-        <MetricCard label="Projects in Workspace" value={activeProjectsCount} hint={`${totalProjectsCount} total projects`} icon={FolderKanban} accent="emerald" />
+        <MetricCard label="Active Tasks" value={activeTasksCount} hint={`${totalTasksCount} total tasks`} icon={FolderKanban} accent="emerald" />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.95fr]">
@@ -308,7 +308,7 @@ export default function Dashboard() {
               <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Workspace context</p>
               <p className="mt-2 text-lg font-semibold text-slate-950">{teamMembersCount} people in your organization</p>
               <p className="mt-1 text-sm text-slate-600">
-                {newMembersThisWeek} joined this week and {activeProjectsCount} active projects are open right now.
+                {newMembersThisWeek} joined this week and {activeTasksCount} active tasks are open right now.
               </p>
             </div>
           </div>

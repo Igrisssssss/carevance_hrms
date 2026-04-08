@@ -706,8 +706,6 @@ export const useDesktopTracker = () => {
       idleStopInFlightRef.current = false;
       idleStopBlockedUntilMsRef.current = 0;
       lastReliableTrackingContextRef.current = null;
-      sessionStorage.removeItem(DESKTOP_SCREENSHOT_SCHEDULER_KEY);
-      clearDesktopScreenshotCaptureLock();
       window.removeEventListener(DESKTOP_TIMER_STARTED_EVENT, handleTimerStarted as EventListener);
       window.removeEventListener(DESKTOP_TIMER_STOPPED_EVENT, handleTimerStopped as EventListener);
       if (desktopTrackerRunSequence === runId) {

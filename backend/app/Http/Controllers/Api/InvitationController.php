@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Api\Concerns\InteractsWithApiResponses;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Invitations\AcceptInvitationRequest;
+use App\Http\Requests\Api\Invitations\StoreInvitationImportRequest;
 use App\Http\Requests\Api\Invitations\StoreInvitationRequest;
 use App\Models\Invitation;
 use App\Models\Organization;
@@ -61,6 +62,44 @@ class InvitationController extends Controller
         $organization = $user->organization()->firstOrFail();
 
         return $this->storeForOrganization($request, $organization);
+    }
+
+    public function import(StoreInvitationImportRequest $request)
+    {
+        $user = $request->user();
+
+        if (!$user || !$user->organization_id) {
+            abort(422, 'Organization context is required.');
+        }
+
+        $organization = $user->organization()->firstOrFail();
+        $payload = $request->validated();
+        $result = $this->invitationService->createBulk($user, $organization, $payload['rows'], [
+            'group_ids' => $payload['default_group_ids'] ?? [],
+            'project_ids' => $payload['default_project_ids'] ?? [],
+            'settings' => $payload['settings'] ?? null,
+            'expires_in_hours' => $payload['expires_in_hours'] ?? null,
+        ]);
+        $createdCount = count($result['created']);
+
+        if ($createdCount === 0) {
+            $firstFailure = $result['failed'][0]['message'] ?? null;
+            return response()->json([
+                'success' => false,
+                'message' => $firstFailure ?: 'No invitations were created.',
+                'error_code' => 'VALIDATION_ERROR',
+                'failed' => $result['failed'],
+                'errors' => [
+                    'rows' => collect($result['failed'])->pluck('message')->values()->all(),
+                ],
+            ], 422);
+        }
+
+        return $this->createdResponse([
+            'invitations' => $result['created'],
+            'failed' => $result['failed'],
+            'invited_count' => $createdCount,
+        ], $createdCount === 1 ? 'Invitation created successfully.' : 'Invitations created successfully.');
     }
 
     public function storeLegacy(StoreInvitationRequest $request, int $organizationId)

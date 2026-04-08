@@ -19,13 +19,14 @@ class UsageProcessingService
         $label = $resolvedType === 'idle'
             ? 'idle'
             : $this->canonicalizeToolLabel((string) $tool, $resolvedType);
+        $toolType = $resolvedType === 'idle'
+            ? 'idle'
+            : $this->resolveToolType($resolvedType, (string) $tool, $label);
 
         return [
             'label' => $label,
-            'type' => $resolvedType === 'idle'
-                ? 'idle'
-                : $this->activityProductivityService->guessToolType($resolvedType),
-            'classification' => $this->classifyUsage($label, (string) $tool),
+            'type' => $toolType,
+            'classification' => $this->classifyUsage($label, (string) $tool, $resolvedType),
         ];
     }
 
@@ -103,12 +104,13 @@ class UsageProcessingService
         ];
     }
 
-    public function classifyUsage(?string $tool, ?string $url = null): string
+    public function classifyUsage(?string $tool, ?string $url = null, ?string $activityType = null): string
     {
         $haystack = strtolower(trim(implode(' ', array_filter([
             (string) $tool,
             (string) $url,
         ]))));
+        $normalizedType = strtolower(trim((string) $activityType));
 
         if ($haystack === '') {
             return 'neutral';
@@ -121,6 +123,14 @@ class UsageProcessingService
                     return $classification;
                 }
             }
+        }
+
+        if ($normalizedType === 'idle') {
+            return 'neutral';
+        }
+
+        if (in_array($normalizedType, ['url', 'app'], true)) {
+            return 'productive';
         }
 
         return 'neutral';
@@ -149,7 +159,11 @@ class UsageProcessingService
         $focusedUnproductiveLogs = $normalizedLogs
             ->reject(fn (array $row) => $row['type'] === 'idle')
             ->map(function (array $row) {
-                $row['classification'] = $this->classifyUsage((string) ($row['label'] ?? ''), (string) ($row['raw_name'] ?? ''));
+                $row['classification'] = $this->classifyUsage(
+                    (string) ($row['label'] ?? ''),
+                    (string) ($row['raw_name'] ?? ''),
+                    (string) ($row['type'] ?? 'app'),
+                );
 
                 return $row;
             })
@@ -182,7 +196,11 @@ class UsageProcessingService
         $normalizedLogs = $this->normalizeUsageLogs($logs);
         $idleResult = $this->detectAndFilterIdleTime($normalizedLogs, $activityEvents);
         $classifiedActiveLogs = $idleResult['active_logs']->map(function (array $row) {
-            $row['classification'] = $this->classifyUsage((string) ($row['label'] ?? ''), (string) ($row['raw_name'] ?? ''));
+            $row['classification'] = $this->classifyUsage(
+                (string) ($row['label'] ?? ''),
+                (string) ($row['raw_name'] ?? ''),
+                (string) ($row['type'] ?? 'app'),
+            );
 
             return $row;
         })->values();
@@ -232,13 +250,21 @@ class UsageProcessingService
         $idleResult = $this->detectAndFilterIdleTime($normalizedLogs, $activityEvents);
 
         $classifiedActiveLogs = $idleResult['active_logs']->map(function (array $row) {
-            $row['classification'] = $this->classifyUsage((string) ($row['label'] ?? ''), (string) ($row['raw_name'] ?? ''));
+            $row['classification'] = $this->classifyUsage(
+                (string) ($row['label'] ?? ''),
+                (string) ($row['raw_name'] ?? ''),
+                (string) ($row['type'] ?? 'app'),
+            );
 
             return $row;
         })->values();
 
         $classifiedFocusedLogs = $focusedActiveLogs->map(function (array $row) {
-            $row['classification'] = $this->classifyUsage((string) ($row['label'] ?? ''), (string) ($row['raw_name'] ?? ''));
+            $row['classification'] = $this->classifyUsage(
+                (string) ($row['label'] ?? ''),
+                (string) ($row['raw_name'] ?? ''),
+                (string) ($row['type'] ?? 'app'),
+            );
 
             return $row;
         })->values();
@@ -573,7 +599,7 @@ class UsageProcessingService
             'type' => $type,
             'raw_name' => $rawName,
             'label' => $label,
-            'tool_type' => $type === 'idle' ? 'idle' : $this->activityProductivityService->guessToolType($type),
+            'tool_type' => $type === 'idle' ? 'idle' : $this->resolveToolType($type, $rawName, $label),
             'start_at' => $startAt,
             'end_at' => $recordedAt,
             'start_timestamp' => $startAt->getTimestamp(),
@@ -979,6 +1005,47 @@ class UsageProcessingService
             'unproductive' => $tools->where('classification', 'unproductive')->values()->all(),
             'neutral' => $tools->where('classification', 'neutral')->values()->all(),
         ];
+    }
+
+    private function resolveToolType(string $activityType, string $rawName, string $label): string
+    {
+        $normalizedType = strtolower(trim($activityType));
+        if ($normalizedType === 'idle') {
+            return 'idle';
+        }
+
+        if ($normalizedType === 'url') {
+            return 'website';
+        }
+
+        $normalizedRaw = strtolower(trim($rawName));
+        $normalizedLabel = strtolower(trim($label));
+        $browserKeywords = [
+            'google chrome',
+            'chrome',
+            'microsoft edge',
+            'edge',
+            'mozilla firefox',
+            'firefox',
+            'brave',
+            'opera',
+            'safari',
+            'vivaldi',
+        ];
+
+        $isBrowserContext = collect($browserKeywords)->contains(
+            fn (string $keyword) => $normalizedRaw !== '' && str_contains($normalizedRaw, $keyword)
+        );
+        $isBrowserLabel = collect($browserKeywords)->contains(
+            fn (string $keyword) => $normalizedLabel === $keyword
+        );
+        $looksLikeWebsite = (bool) preg_match('/([a-z0-9-]+\.)+[a-z]{2,}$/i', $normalizedLabel);
+
+        if ($looksLikeWebsite || ($isBrowserContext && $normalizedLabel !== '' && ! $isBrowserLabel)) {
+            return 'website';
+        }
+
+        return $this->activityProductivityService->guessToolType($normalizedType);
     }
 
     private function canonicalizeToolLabel(string $tool, string $activityType): string

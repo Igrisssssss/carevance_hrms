@@ -68,7 +68,7 @@ describe('Layout navigation', () => {
 
     expect((await screen.findAllByText('Reports')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Payroll').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Task').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Tasks').length).toBeGreaterThan(0);
     expect(screen.queryByText('Add Employee')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /settings/i }));

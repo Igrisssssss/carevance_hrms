@@ -132,9 +132,6 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
   const [isDeletingScreenshots, setIsDeletingScreenshots] = useState(false);
   const [refreshedScreenshotPaths, setRefreshedScreenshotPaths] = useState<Record<number, string>>({});
-  const hasExplicitEmployeeSelection = selectedUserId !== '';
-  const screenshotTotalQueryEnabled =
-    hasExplicitEmployeeSelection && (mode === 'productive-time' || mode === 'unproductive-time');
 
   useEffect(() => {
     const persisted = readPersistedMonitoringWorkspaceFilters(mode);
@@ -209,9 +206,24 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
       return response.data || [];
     },
   });
+  const users = useMemo(
+    () => (usersQuery.data || []).filter((employee: any) => user?.role !== 'manager' || employee.role === 'employee'),
+    [user?.role, usersQuery.data]
+  );
+  const effectiveSelectedUserId = useMemo<number | ''>(() => {
+    if (selectedUserId === '' || !usersQuery.isSuccess) {
+      return selectedUserId;
+    }
+
+    return users.some((employee: any) => Number(employee.id) === Number(selectedUserId)) ? selectedUserId : '';
+  }, [selectedUserId, users, usersQuery.isSuccess]);
+  const hasExplicitEmployeeSelection = effectiveSelectedUserId !== '';
+  const screenshotTotalQueryEnabled =
+    usersQuery.isSuccess && hasExplicitEmployeeSelection && (mode === 'productive-time' || mode === 'unproductive-time');
 
   const dataQuery = useQuery({
-    queryKey: ['monitoring-workspace-data', mode, startDate, endDate, query, selectedUserId, screenshotPage],
+    queryKey: ['monitoring-workspace-data', mode, startDate, endDate, query, effectiveSelectedUserId, screenshotPage],
+    enabled: usersQuery.isSuccess,
     placeholderData: (previousData) => previousData,
     refetchOnWindowFocus: mode === 'screenshots',
     refetchInterval: mode === 'screenshots' ? SCREENSHOT_REFRESH_INTERVAL_MS : false,
@@ -221,7 +233,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
           start_date: startDate,
           end_date: endDate,
           q: query || undefined,
-          user_id: selectedUserId ? Number(selectedUserId) : undefined,
+          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
         });
         return response.data;
       }
@@ -229,7 +241,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
       if (mode === 'screenshots') {
         const [screenshotsResponse, insightsResponse] = await Promise.all([
           screenshotApi.getAll({
-            user_id: selectedUserId ? Number(selectedUserId) : undefined,
+            user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
             start_date: startDate,
             end_date: endDate,
             page: screenshotPage,
@@ -239,7 +251,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
             start_date: startDate,
             end_date: endDate,
             q: query || undefined,
-            user_id: selectedUserId ? Number(selectedUserId) : undefined,
+            user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
           }),
         ]);
 
@@ -251,7 +263,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
 
       const [activityResponse, insightsResponse] = await Promise.all([
         activityApi.getAll({
-          user_id: selectedUserId ? Number(selectedUserId) : undefined,
+          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
           type: mode === 'app-usage' ? 'app' : 'url',
           start_date: startDate,
           end_date: endDate,
@@ -261,7 +273,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
           start_date: startDate,
           end_date: endDate,
           q: query || undefined,
-          user_id: selectedUserId ? Number(selectedUserId) : undefined,
+          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
         }),
       ]);
 
@@ -273,11 +285,11 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   });
 
   const screenshotTotalQuery = useQuery({
-    queryKey: ['monitoring-screenshot-total', selectedUserId, startDate, endDate],
+    queryKey: ['monitoring-screenshot-total', effectiveSelectedUserId, startDate, endDate],
     enabled: screenshotTotalQueryEnabled,
     queryFn: async () => {
       const response = await screenshotApi.getAll({
-        user_id: Number(selectedUserId),
+        user_id: Number(effectiveSelectedUserId),
         start_date: startDate,
         end_date: endDate,
         page: 1,
@@ -292,18 +304,36 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
 
   const isLoading = usersQuery.isLoading || (dataQuery.isLoading && !dataQuery.data);
   const isError = usersQuery.isError || dataQuery.isError;
-  const users = useMemo(
-    () => (usersQuery.data || []).filter((employee: any) => user?.role !== 'manager' || employee.role === 'employee'),
-    [user?.role, usersQuery.data]
-  );
   const usersById = useMemo(
     () => new Map(users.map((employee: any) => [Number(employee.id), employee])),
     [users]
   );
   const pageTitle = modeCopy[mode];
-  const selectedEmployeeLabel = selectedUserId
-    ? users.find((employee: any) => Number(employee.id) === Number(selectedUserId))?.name || 'Selected employee'
+  const selectedEmployeeLabel = effectiveSelectedUserId
+    ? users.find((employee: any) => Number(employee.id) === Number(effectiveSelectedUserId))?.name || 'Selected employee'
     : 'All employees';
+
+  useEffect(() => {
+    if (!usersQuery.isSuccess || selectedUserId === '' || effectiveSelectedUserId !== '') {
+      return;
+    }
+
+    setSelectedUserId('');
+
+    const params = new URLSearchParams(location.search);
+    if (!params.has('user')) {
+      return;
+    }
+
+    params.delete('user');
+    navigate(
+      {
+        pathname: location.pathname,
+        search: params.toString() ? `?${params.toString()}` : '',
+      },
+      { replace: true }
+    );
+  }, [effectiveSelectedUserId, location.pathname, location.search, navigate, selectedUserId, usersQuery.isSuccess]);
 
   const insights =
     mode === 'productive-time' || mode === 'unproductive-time'
@@ -472,12 +502,12 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const unproductiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.unproductive || [] : organizationTools.unproductive || [];
 
   const openScreenshotGallery = () => {
-    if (!hasExplicitEmployeeSelection || !selectedUserId || screenshotTotal <= 0) {
+    if (!hasExplicitEmployeeSelection || !effectiveSelectedUserId || screenshotTotal <= 0) {
       return;
     }
 
     const params = new URLSearchParams();
-    params.set('user', String(selectedUserId));
+    params.set('user', String(effectiveSelectedUserId));
     params.set('start', startDate);
     params.set('end', endDate);
 
@@ -542,7 +572,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   };
 
   const handleDeleteAllScreenshotsInRange = async () => {
-    if (!hasExplicitEmployeeSelection || !selectedUserId || screenshotTotal <= 0) {
+    if (!hasExplicitEmployeeSelection || !effectiveSelectedUserId || screenshotTotal <= 0) {
       return;
     }
 
@@ -556,7 +586,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     try {
       const response = await screenshotApi.bulkDelete({
         delete_all_in_range: true,
-        user_id: Number(selectedUserId),
+        user_id: Number(effectiveSelectedUserId),
         start_date: startDate,
         end_date: endDate,
       });
@@ -600,7 +630,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
         />
         <div>
           <FieldLabel>Employee</FieldLabel>
-          <EmployeeSelect employees={users} value={selectedUserId} onChange={handleEmployeeFilterChange} includeAllOption />
+          <EmployeeSelect employees={users} value={effectiveSelectedUserId} onChange={handleEmployeeFilterChange} includeAllOption />
         </div>
       </FilterPanel>
 
@@ -1064,9 +1094,9 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
 
           {mode === 'website-usage' ? (
             <DataTable
-              title={selectedUserId ? 'Selected Employee Website Breakdown' : 'Website Usage By Employee'}
+              title={hasExplicitEmployeeSelection ? 'Selected Employee Website Breakdown' : 'Website Usage By Employee'}
               description={
-                selectedUserId
+                hasExplicitEmployeeSelection
                   ? 'Website-by-website productivity view for the selected employee.'
                   : 'All employees, which websites they used, and whether each site was productive or not.'
               }

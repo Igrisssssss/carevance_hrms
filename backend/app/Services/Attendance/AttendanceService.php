@@ -176,7 +176,8 @@ class AttendanceService
 
         $records = AttendanceRecord::where('organization_id', $currentUser->organization_id)
             ->where('user_id', $targetUserId)
-            ->whereBetween('attendance_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+            ->whereDate('attendance_date', '>=', $monthStart->toDateString())
+            ->whereDate('attendance_date', '<=', $monthEnd->toDateString())
             ->orderBy('attendance_date')
             ->with('punches')
             ->get()
@@ -362,7 +363,8 @@ class AttendanceService
         $records = AttendanceRecord::query()
             ->where('organization_id', $currentUser->organization_id)
             ->whereIn('user_id', $userIds->all())
-            ->whereBetween('attendance_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+            ->whereDate('attendance_date', '>=', $monthStart->toDateString())
+            ->whereDate('attendance_date', '<=', $monthEnd->toDateString())
             ->get(['attendance_date', 'check_in_at', 'check_out_at', 'worked_seconds', 'manual_adjustment_seconds', 'late_minutes']);
 
         $recordsByDate = $records->groupBy(fn (AttendanceRecord $record) => Carbon::parse($record->attendance_date)->toDateString());
@@ -520,7 +522,8 @@ class AttendanceService
         $rows = $users->map(function (User $user) use ($currentUser, $start, $end) {
             $records = AttendanceRecord::where('organization_id', $currentUser->organization_id)
                 ->where('user_id', $user->id)
-                ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
+                ->whereDate('attendance_date', '>=', $start->toDateString())
+                ->whereDate('attendance_date', '<=', $end->toDateString())
                 ->with('punches')
                 ->get();
 

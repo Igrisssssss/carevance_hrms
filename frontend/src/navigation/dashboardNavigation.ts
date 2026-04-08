@@ -58,7 +58,7 @@ export const topNavigation: NavGroup[] = [
     items: [
       { label: 'Attendance', to: '/reports/attendance', icon: CalendarClock, adminOnly: true },
       { label: 'Hours Tracked', to: '/reports/hours-tracked', icon: Clock3, adminOnly: true },
-      { label: 'Projects & Tasks', to: '/reports/projects-tasks', icon: FolderKanban, adminOnly: true },
+      { label: 'Task Overview', to: '/reports/projects-tasks', icon: FolderKanban, adminOnly: true },
       { label: 'Timeline', to: '/reports/timeline', icon: Waypoints, adminOnly: true },
       { label: 'Web & App Usage', to: '/reports/web-app-usage', icon: Activity, adminOnly: true },
       { label: 'Productivity', to: '/reports/productivity', icon: LineChart, adminOnly: true },
@@ -92,7 +92,7 @@ export const topNavigation: NavGroup[] = [
     ],
   },
   {
-    label: 'Task',
+    label: 'Tasks',
     to: '/tasks',
     icon: SquareKanban,
   },

@@ -34,8 +34,22 @@ class ActivityProductivityService
         'espncricinfo.com' => ['espncricinfo'],
         'github.com' => ['github'],
         'gitlab.com' => ['gitlab'],
+        'bitbucket.org' => ['bitbucket'],
         'stackoverflow.com' => ['stackoverflow'],
+        'figma.com' => ['figma'],
+        'miro.com' => ['miro'],
+        'canva.com' => ['canva'],
+        'trello.com' => ['trello'],
+        'asana.com' => ['asana'],
+        'linear.app' => ['linear'],
+        'clickup.com' => ['clickup'],
+        'developer.mozilla.org' => ['developer.mozilla'],
+        'learn.microsoft.com' => ['learn.microsoft'],
         'chat.openai.com' => ['chat.openai', 'chatgpt'],
+        'claude.ai' => ['claude.ai'],
+        'gemini.google' => ['gemini.google'],
+        'snapchat.com' => ['snapchat'],
+        '9gag.com' => ['9gag'],
     ];
 
     public function guessToolType(string $activityType): string

@@ -4,8 +4,8 @@ import { reportGroupApi, userApi } from '@/services/api';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import { useAuth } from '@/contexts/AuthContext';
 import { deriveDateRangeFromPreset, getDateRangePresetLabel, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
-import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { resolvePersistedDateRange } from '@/lib/dateRange';
+import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
@@ -42,10 +42,10 @@ type PersistedUserManagementFilters = {
 };
 
 const USER_MANAGEMENT_FILTER_STORAGE_KEY = 'user-management-filters';
-const userManagementDefaultDateRange = deriveDateRangeFromPreset('30d');
+const userManagementDefaultDateRange = deriveDateRangeFromPreset('today');
 
 const getDefaultUserManagementFilters = (defaultTimezone: string): PersistedUserManagementFilters => ({
-  datePreset: '30d',
+  datePreset: 'today',
   country: 'India',
   timezone: defaultTimezone,
   startDate: userManagementDefaultDateRange.startDate,
@@ -414,8 +414,8 @@ export default function UserManagement() {
         <div className="flex items-end">
           <button
             onClick={() => {
-              const nextRange = deriveDateRangeFromPreset('30d');
-              setDatePreset('30d');
+              const nextRange = deriveDateRangeFromPreset('today');
+              setDatePreset('today');
               setStartDate(nextRange.startDate);
               setEndDate(nextRange.endDate);
             }}
@@ -563,7 +563,7 @@ export default function UserManagement() {
                   ) : profile360Query.data.recent_time_entries.map((entry) => (
                     <div key={entry.id} className="rounded-xl border border-slate-100 px-3 py-2">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-medium text-slate-950">{entry.project?.name || 'No project'}</p>
+                        <p className="text-sm font-medium text-slate-950">{entry.task?.title || entry.project?.name || 'No task'}</p>
                         <p className="text-xs text-slate-500">{formatDuration(entry.duration)}</p>
                       </div>
                       <p className="mt-1 text-xs text-slate-500">{entry.description || 'No description'}</p>

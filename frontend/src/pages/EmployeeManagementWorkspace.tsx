@@ -325,7 +325,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               { key: 'employee', header: 'Employee', render: (row: any) => <div><Link to={`/employees/${row.id}`} className="font-medium text-slate-950 hover:text-sky-700">{row.name}</Link><p className="text-xs text-slate-500">{row.email}</p></div> },
               { key: 'role', header: 'Role', render: (row: any) => row.role },
               { key: 'working', header: 'Working', render: (row: any) => (row.is_working ? 'Yes' : 'No') },
-              { key: 'project', header: 'Current Project', render: (row: any) => row.current_project || 'No active timer' },
+              { key: 'project', header: 'Current Task', render: (row: any) => row.current_task || row.current_project || 'No active timer' },
               { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.total_elapsed_duration || row.total_duration || 0) },
               {
                 key: 'profile',
@@ -408,7 +408,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                 rows={profile.recent_time_entries || []}
                 emptyMessage="No recent time entries found."
                 columns={[
-                  { key: 'project', header: 'Project', render: (row: any) => row.project?.name || 'No project' },
+                  { key: 'project', header: 'Task', render: (row: any) => row.task?.title || row.project?.name || 'No task' },
                   { key: 'description', header: 'Description', render: (row: any) => row.description || 'No description' },
                   { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
                   { key: 'start', header: 'Start', render: (row: any) => new Date(row.start_time).toLocaleString() },

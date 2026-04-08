@@ -58,6 +58,76 @@ if (process.platform === 'win32') {
   app.setAppUserModelId(APP_ID);
 }
 
+const hasReadWriteAccess = (targetPath) => {
+  try {
+    fs.accessSync(targetPath, fs.constants.R_OK | fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const ensureDirectory = (targetPath) => {
+  fs.mkdirSync(targetPath, { recursive: true });
+  return targetPath;
+};
+
+const resolveWritableUserDataPath = () => {
+  const candidates = [];
+
+  try {
+    candidates.push(app.getPath('userData'));
+  } catch {
+    // Fall through to explicit candidates.
+  }
+
+  try {
+    candidates.push(path.join(app.getPath('appData'), APP_ID));
+  } catch {
+    // Fall through to home-based candidate.
+  }
+
+  try {
+    candidates.push(path.join(app.getPath('home'), `.${APP_ID}`));
+  } catch {
+    // No-op.
+  }
+
+  for (const candidate of candidates.filter(Boolean)) {
+    try {
+      ensureDirectory(candidate);
+      if (hasReadWriteAccess(candidate)) {
+        return candidate;
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  return null;
+};
+
+const configureRuntimeStorage = () => {
+  const userDataPath = resolveWritableUserDataPath();
+  if (!userDataPath) {
+    console.warn('[desktop-tracker] unable to resolve a writable userData path; Electron will use its default paths');
+    return;
+  }
+
+  const sessionDataPath = ensureDirectory(path.join(userDataPath, 'SessionData'));
+  const cachePath = ensureDirectory(path.join(sessionDataPath, 'Cache'));
+  ensureDirectory(path.join(sessionDataPath, 'GPUCache'));
+  ensureDirectory(path.join(sessionDataPath, 'Code Cache'));
+  ensureDirectory(path.join(sessionDataPath, 'DawnCache'));
+
+  app.setPath('userData', userDataPath);
+  app.setPath('sessionData', sessionDataPath);
+  app.commandLine.appendSwitch('disk-cache-dir', cachePath);
+  app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+};
+
+configureRuntimeStorage();
+
 const parseIntEnv = (key, fallback, min, max) => {
   const parsed = Number.parseInt(String(process.env[key] || ''), 10);
   if (!Number.isFinite(parsed)) {

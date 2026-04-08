@@ -34,7 +34,7 @@ class InvitationFlowTest extends TestCase
             ->assertJsonPath('invitations.0.role', 'employee')
             ->assertJsonPath('invitations.0.mail_delivery', 'sent');
 
-        Mail::assertQueued(CareVanceInvitationMail::class);
+        Mail::assertSent(CareVanceInvitationMail::class);
 
         $inviteUrl = (string) $inviteResponse->json('invitations.0.invite_url');
         $token = basename(parse_url($inviteUrl, PHP_URL_PATH) ?: '');
@@ -134,6 +134,23 @@ class InvitationFlowTest extends TestCase
         ])->assertStatus(422);
     }
 
+    public function test_missing_invitation_token_returns_friendly_not_found_message(): void
+    {
+        $missingToken = Invitation::generatePublicToken();
+
+        $this->getJson("/api/invitations/{$missingToken}")
+            ->assertStatus(404)
+            ->assertJsonPath('message', 'This invitation is no longer available.');
+
+        $this->postJson("/api/invitations/{$missingToken}/accept", [
+            'name' => 'Missing Invite User',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ])
+            ->assertStatus(404)
+            ->assertJsonPath('message', 'This invitation is no longer available.');
+    }
+
     public function test_manager_can_only_invite_employee_role(): void
     {
         [$organization] = $this->createWorkspaceOwner();
@@ -192,6 +209,38 @@ class InvitationFlowTest extends TestCase
             'password' => 'short',
             'password_confirmation' => 'short',
         ])->assertStatus(429);
+    }
+
+    public function test_owner_can_bulk_import_csv_invitations_with_row_roles(): void
+    {
+        Mail::fake();
+
+        [, $owner] = $this->createWorkspaceOwner();
+
+        $rows = collect(range(1, 120))
+            ->map(fn (int $index) => [
+                'email' => "bulk-user-{$index}@example.com",
+                'role' => $index % 3 === 0 ? 'admin' : ($index % 2 === 0 ? 'manager' : 'employee'),
+                'group_ids' => [],
+            ])
+            ->all();
+
+        $response = $this->postJson('/api/invitations/import', [
+            'rows' => $rows,
+            'settings' => [
+                'attendance_monitoring' => true,
+            ],
+        ], $this->apiHeadersFor($owner));
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('invited_count', 120)
+            ->assertJsonCount(120, 'invitations')
+            ->assertJsonCount(0, 'failed');
+
+        Mail::assertSent(CareVanceInvitationMail::class, 120);
+
+        $this->assertDatabaseCount('invitations', 120);
     }
 
     private function createWorkspaceOwner(): array

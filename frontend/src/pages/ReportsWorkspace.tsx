@@ -1,14 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   activityApi,
-  projectApi,
   reportApi,
   reportGroupApi,
   taskApi,
   timeEntryApi,
   userApi,
 } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
 import FilterPanel from '@/components/dashboard/FilterPanel';
@@ -17,18 +17,17 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
+import TaskSelect from '@/components/ui/TaskSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput } from '@/components/ui/FormField';
 import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
-import { buildSearchSuggestions, matchesSearchFilter } from '@/lib/searchSuggestions';
-import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
+import { matchesSearchFilter } from '@/lib/searchSuggestions';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
   Activity,
   CalendarDays,
   Download,
-  FolderKanban,
   LineChart,
   ListFilter,
   RefreshCw,
@@ -50,8 +49,7 @@ type PersistedReportsWorkspaceFilters = {
   datePreset: DateRangePreset;
   startDate: string;
   endDate: string;
-  projectTaskSearchQuery: string;
-  selectedProjectId: number | '';
+  selectedTaskId: number | '';
   selectedUserId: number | '';
   selectedGroupId: number | '';
 };
@@ -64,8 +62,7 @@ const getDefaultReportsWorkspaceFilters = (): PersistedReportsWorkspaceFilters =
   datePreset: 'today',
   startDate: defaultDateRange.startDate,
   endDate: defaultDateRange.endDate,
-  projectTaskSearchQuery: '',
-  selectedProjectId: '',
+  selectedTaskId: '',
   selectedUserId: '',
   selectedGroupId: '',
 });
@@ -97,8 +94,7 @@ const readPersistedReportsWorkspaceFilters = (mode: ReportsWorkspaceMode): Persi
     datePreset,
     startDate: resolvedRange.startDate,
     endDate: resolvedRange.endDate,
-    projectTaskSearchQuery: typeof parsed.projectTaskSearchQuery === 'string' ? parsed.projectTaskSearchQuery : fallback.projectTaskSearchQuery,
-    selectedProjectId: coercePositiveNumber(parsed.selectedProjectId) ?? '',
+    selectedTaskId: coercePositiveNumber(parsed.selectedTaskId) ?? '',
     selectedUserId: coercePositiveNumber(parsed.selectedUserId) ?? '',
     selectedGroupId: coercePositiveNumber(parsed.selectedGroupId) ?? '',
   };
@@ -134,8 +130,6 @@ const formatPreviewList = (items: unknown[], emptyLabel: string, limit = 3) => {
   const preview = normalizedItems.slice(0, limit).join(', ');
   return normalizedItems.length > limit ? `${preview} +${normalizedItems.length - limit} more` : preview;
 };
-const matchesWorkspaceSearch = (search: string, values: unknown[]) => matchesSearchFilter(search, values);
-
 const fetchTimeEntriesForUsers = async (userIds: number[], startDate: string, endDate: string) => {
   const uniqueUserIds = Array.from(new Set(userIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
   if (!uniqueUserIds.length) return [];
@@ -184,8 +178,8 @@ const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: strin
   },
   'projects-tasks': {
     eyebrow: 'Reports',
-    title: 'Projects & Tasks',
-    description: 'Project delivery, task allocation, and time consumed across active work items.',
+    title: 'Task Overview',
+    description: 'Task allocation, assignee coverage, and time consumed across active work items.',
   },
 
   timeline: {
@@ -211,11 +205,11 @@ const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: strin
 };
 
 export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode }) {
+  const { user } = useAuth();
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedReportsWorkspaceFilters(mode).datePreset);
   const [startDate, setStartDate] = useState(() => readPersistedReportsWorkspaceFilters(mode).startDate);
   const [endDate, setEndDate] = useState(() => readPersistedReportsWorkspaceFilters(mode).endDate);
-  const [projectTaskSearchQuery, setProjectTaskSearchQuery] = useState(() => readPersistedReportsWorkspaceFilters(mode).projectTaskSearchQuery);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedProjectId);
+  const [selectedTaskId, setSelectedTaskId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedTaskId);
   const [selectedUserId, setSelectedUserId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedUserId);
   const [selectedGroupId, setSelectedGroupId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedGroupId);
   const [exportMessage, setExportMessage] = useState('');
@@ -226,8 +220,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     setDatePreset(persisted.datePreset);
     setStartDate(persisted.startDate);
     setEndDate(persisted.endDate);
-    setProjectTaskSearchQuery(persisted.projectTaskSearchQuery);
-    setSelectedProjectId(persisted.selectedProjectId);
+    setSelectedTaskId(persisted.selectedTaskId);
     setSelectedUserId(persisted.selectedUserId);
     setSelectedGroupId(persisted.selectedGroupId);
   }, [mode]);
@@ -239,13 +232,12 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         datePreset,
         startDate,
         endDate,
-        projectTaskSearchQuery,
-        selectedProjectId,
+        selectedTaskId,
         selectedUserId,
         selectedGroupId,
       } satisfies PersistedReportsWorkspaceFilters
     );
-  }, [datePreset, endDate, mode, projectTaskSearchQuery, selectedGroupId, selectedProjectId, selectedUserId, startDate]);
+  }, [datePreset, endDate, mode, selectedGroupId, selectedTaskId, selectedUserId, startDate]);
 
   const handleDatePresetChange = (preset: DateRangePreset) => {
     setDatePreset(preset);
@@ -272,16 +264,25 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       return response.data?.data || [];
     },
   });
-  const users = usersQuery.data || [];
+  const users = useMemo(
+    () => (usersQuery.data || []).filter((employee: any) => user?.role !== 'manager' || employee.role === 'employee'),
+    [user?.role, usersQuery.data]
+  );
   const groups = groupsQuery.data || [];
-  const projectsTaskTextSearch = projectTaskSearchQuery.trim().toLowerCase();
+  const effectiveSelectedUserId = useMemo<number | ''>(() => {
+    if (selectedUserId === '') {
+      return '';
+    }
+
+    return users.some((employee: any) => Number(employee.id) === Number(selectedUserId))
+      ? Number(selectedUserId)
+      : '';
+  }, [selectedUserId, users]);
   const selectedEmployee = useMemo(
-    () => users.find((employee: any) => Number(employee.id) === Number(selectedUserId)) || null,
-    [selectedUserId, users]
+    () => users.find((employee: any) => Number(employee.id) === Number(effectiveSelectedUserId)) || null,
+    [effectiveSelectedUserId, users]
   );
   const projectsEmployeeNameSearch = mode === 'projects-tasks' && selectedEmployee ? String(selectedEmployee.name || '').trim() : '';
-  const hasSelectedProject = selectedProjectId !== '';
-  const selectedProjectIdNumber = hasSelectedProject ? Number(selectedProjectId) : null;
   const selectedGroup = selectedGroupId ? groups.find((group: any) => Number(group.id) === Number(selectedGroupId)) : null;
   const scopedUserIds = useMemo(() => {
     let ids = users.map((user: any) => Number(user.id));
@@ -291,15 +292,26 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       ids = ids.filter((id) => groupUserIds.has(id));
     }
 
-    if (selectedUserId) {
-      ids = ids.filter((id) => id === Number(selectedUserId));
+    if (effectiveSelectedUserId) {
+      ids = ids.filter((id) => id === Number(effectiveSelectedUserId));
     }
 
     return Array.from(new Set(ids));
-  }, [selectedGroup, selectedUserId, users]);
+  }, [effectiveSelectedUserId, selectedGroup, users]);
+
+  useEffect(() => {
+    if (!usersQuery.isSuccess || selectedUserId === '') {
+      return;
+    }
+
+    const hasSelectedUser = users.some((employee: any) => Number(employee.id) === Number(selectedUserId));
+    if (!hasSelectedUser) {
+      setSelectedUserId('');
+    }
+  }, [selectedUserId, users, usersQuery.isSuccess]);
 
   const dataQuery = useQuery({
-    queryKey: ['report-workspace-data', mode, startDate, endDate, selectedUserId, selectedGroupId],
+    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, selectedGroupId],
     enabled: usersQuery.isSuccess && groupsQuery.isSuccess,
     placeholderData: (previousData) => previousData,
     refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 10000 : false,
@@ -309,7 +321,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         const response = await reportApi.attendance({
           start_date: startDate,
           end_date: endDate,
-          user_id: selectedUserId ? Number(selectedUserId) : undefined,
+          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
         });
         return response.data;
       }
@@ -318,21 +330,19 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         const response = await reportApi.overall({
           start_date: startDate,
           end_date: endDate,
-          user_ids: selectedUserId ? [Number(selectedUserId)] : undefined,
+          user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
         });
         return response.data;
       }
 
       if (mode === 'projects-tasks') {
-        const [projectsResponse, tasksResponse, timeEntries] = await Promise.all([
-          projectApi.getAll(),
+        const [tasksResponse, timeEntries] = await Promise.all([
           taskApi.getAll(),
           fetchTimeEntriesForUsers(scopedUserIds, startDate, endDate),
         ]);
 
         return {
-          projects: projectsResponse.data || [],
           tasks: tasksResponse.data || [],
           timeEntries,
         };
@@ -340,7 +350,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
       if (mode === 'timeline') {
         const response = await activityApi.getAll({
-          user_id: selectedUserId ? Number(selectedUserId) : undefined,
+          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
           start_date: startDate,
           end_date: endDate,
@@ -354,7 +364,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         const response = await reportApi.employeeInsights({
           start_date: startDate,
           end_date: endDate,
-          user_id: selectedUserId ? Number(selectedUserId) : undefined,
+          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
         });
         return response.data;
@@ -390,47 +400,54 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const shouldScrollByDay = byDay.length > 5;
 
   const projectsData = dataQuery.data as any;
-  const projects = projectsData?.projects || [];
   const tasks = projectsData?.tasks || [];
   const projectTimeEntries = projectsData?.timeEntries || [];
-  const hasProjectsTasksScope = selectedUserId !== '' || selectedGroupId !== '';
+  const hasProjectsTasksScope = effectiveSelectedUserId !== '' || selectedGroupId !== '';
   const scopedUserIdSet = useMemo(() => new Set(scopedUserIds), [scopedUserIds]);
-  const projectsById = useMemo(() => new Map<number, any>(projects.map((project: any) => [Number(project.id), project])), [projects]);
-  const tasksById = useMemo(() => new Map<number, any>(tasks.map((task: any) => [Number(task.id), task])), [tasks]);
   const usersById = useMemo(() => new Map<number, any>(users.map((user: any) => [Number(user.id), user])), [users]);
+  const groupsById = useMemo(() => new Map<number, any>(groups.map((group: any) => [Number(group.id), group])), [groups]);
+  const taskFilterOptions = useMemo(() => {
+    if (mode !== 'projects-tasks') {
+      return [];
+    }
+
+    return tasks.filter((task: any) => {
+      const matchesSelectedGroup = !selectedGroupId || Number(task.group_id) === Number(selectedGroupId);
+      const matchesSelectedUser = !effectiveSelectedUserId || Number(task.assignee_id) === Number(effectiveSelectedUserId);
+      return !hasProjectsTasksScope || (matchesSelectedGroup && matchesSelectedUser);
+    });
+  }, [effectiveSelectedUserId, hasProjectsTasksScope, mode, selectedGroupId, tasks]);
+  const effectiveSelectedTaskId = useMemo<number | ''>(() => {
+    if (selectedTaskId === '') {
+      return '';
+    }
+
+    return taskFilterOptions.some((task: any) => Number(task.id) === Number(selectedTaskId))
+      ? Number(selectedTaskId)
+      : '';
+  }, [selectedTaskId, taskFilterOptions]);
+  const hasSelectedTask = effectiveSelectedTaskId !== '';
   const filteredTasks = useMemo(() => {
     if (mode !== 'projects-tasks') return [];
 
     return tasks.filter((task: any) => {
-      const project = projectsById.get(Number(task.project_id));
       const assignee = usersById.get(Number(task.assignee_id));
       const matchesSelectedGroup = !selectedGroupId || Number(task.group_id) === Number(selectedGroupId);
       const matchesSelectedUser = !effectiveSelectedUserId || Number(task.assignee_id) === Number(effectiveSelectedUserId);
       const matchesScope = !hasProjectsTasksScope || (matchesSelectedGroup && matchesSelectedUser);
-      const matchesSelectedProject = !hasSelectedProject || Number(task.project_id) === selectedProjectIdNumber;
-      const matchesTaskProjectSearch = matchesWorkspaceSearch(projectsTaskTextSearch, [
-        task.title,
-        task.description,
-        task.status,
-        task.priority,
-        project?.name,
-        project?.description,
-      ]);
+      const matchesSelectedTask = !hasSelectedTask || Number(task.id) === Number(effectiveSelectedTaskId);
       const matchesEmployeeSearch = matchesSearchFilter(projectsEmployeeNameSearch, [assignee?.name]);
 
-      return matchesScope && matchesSelectedProject && matchesTaskProjectSearch && matchesEmployeeSearch;
+      return matchesScope && matchesSelectedTask && matchesEmployeeSearch;
     });
   }, [
+    effectiveSelectedTaskId,
     hasProjectsTasksScope,
-    hasSelectedProject,
+    hasSelectedTask,
     mode,
     effectiveSelectedUserId,
-    projectsById,
     projectsEmployeeNameSearch,
-    projectsTaskTextSearch,
-    scopedUserIdSet,
     selectedGroupId,
-    selectedProjectIdNumber,
     tasks,
     usersById,
   ]);
@@ -441,125 +458,27 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       const projectId = Number(entry.project_id);
       if (!projectId) return false;
 
-      const project = projectsById.get(projectId);
-      const task = tasksById.get(Number(entry.task_id));
       const user = usersById.get(Number(entry.user_id));
       const matchesScope = !hasProjectsTasksScope || scopedUserIdSet.has(Number(entry.user_id));
-      const matchesSelectedProject = !hasSelectedProject || projectId === selectedProjectIdNumber;
-      const matchesTaskProjectSearch = matchesWorkspaceSearch(projectsTaskTextSearch, [
-        project?.name,
-        project?.description,
-        task?.title,
-        task?.description,
-        entry.description,
-      ]);
+      const matchesSelectedTask = !hasSelectedTask || Number(entry.task_id) === Number(effectiveSelectedTaskId);
       const matchesEmployeeSearch = matchesSearchFilter(projectsEmployeeNameSearch, [user?.name]);
 
-      return matchesScope && matchesSelectedProject && matchesTaskProjectSearch && matchesEmployeeSearch;
+      return matchesScope && matchesSelectedTask && matchesEmployeeSearch;
     });
   }, [
+    effectiveSelectedTaskId,
     hasProjectsTasksScope,
-    hasSelectedProject,
+    hasSelectedTask,
     mode,
     projectTimeEntries,
-    projectsById,
     projectsEmployeeNameSearch,
-    projectsTaskTextSearch,
     scopedUserIdSet,
-    selectedProjectIdNumber,
-    tasksById,
     usersById,
   ]);
-  const filteredProjectIds = useMemo(() => new Set([
-    ...filteredTasks.map((task: any) => Number(task.project_id)),
-    ...filteredProjectTimeEntries.map((entry: any) => Number(entry.project_id)),
-  ]), [filteredProjectTimeEntries, filteredTasks]);
-  const filteredProjects = useMemo(() => {
-    if (mode !== 'projects-tasks') return [];
-    if (!hasProjectsTasksScope && !hasSelectedProject && !projectsTaskTextSearch && !projectsEmployeeNameSearch) return projects;
-
-    return projects.filter((project: any) => {
-      const projectId = Number(project.id);
-      const matchesSelectedProject = !hasSelectedProject || projectId === selectedProjectIdNumber;
-      const matchesSearch = matchesWorkspaceSearch(projectsTaskTextSearch, [project.name, project.description, project.status]);
-      if (!matchesSelectedProject) {
-        return false;
-      }
-
-      if (hasProjectsTasksScope || Boolean(projectsEmployeeNameSearch)) {
-        return hasSelectedProject ? true : filteredProjectIds.has(projectId);
-      }
-
-      return filteredProjectIds.has(projectId) || matchesSearch;
-    });
-  }, [
-    filteredProjectIds,
-    hasProjectsTasksScope,
-    hasSelectedProject,
-    mode,
-    projects,
-    projectsEmployeeNameSearch,
-    projectsTaskTextSearch,
-    selectedProjectIdNumber,
-  ]);
-  const projectTaskSearchSuggestions = useMemo(() => {
-    if (mode !== 'projects-tasks') {
-      return [];
-    }
-
-    return buildSearchSuggestions(
-      [
-        ...projects.map((project: any) => ({
-          id: `project:${project.id}`,
-          label: project.name,
-          description: project.description || 'Project',
-          keywords: [project.status].filter(Boolean),
-        })),
-        ...tasks.map((task: any) => ({
-          id: `task:${task.id}`,
-          label: task.title,
-          description: projectsById.get(Number(task.project_id))?.name || 'Task',
-          keywords: [task.description, task.priority, task.status].filter(Boolean),
-        })),
-      ],
-      (item) => item
-    );
-  }, [mode, projects, projectsById, tasks]);
-  const selectedProject = useMemo(() => {
-    if (!hasSelectedProject || mode !== 'projects-tasks') {
-      return null;
-    }
-
-    return projectsById.get(Number(selectedProjectId)) || null;
-  }, [hasSelectedProject, mode, projectsById, selectedProjectId]);
-  const filteredTasksByProjectId = useMemo(() => {
-    const groupedTasks = new Map<number, any[]>();
-
-    filteredTasks.forEach((task: any) => {
-      const projectId = Number(task.project_id);
-      if (!projectId) return;
-
-      const existingTasks = groupedTasks.get(projectId) || [];
-      existingTasks.push(task);
-      groupedTasks.set(projectId, existingTasks);
-    });
-
-    return groupedTasks;
-  }, [filteredTasks]);
-  const filteredProjectTimeEntriesByProjectId = useMemo(() => {
-    const groupedEntries = new Map<number, any[]>();
-
-    filteredProjectTimeEntries.forEach((entry: any) => {
-      const projectId = Number(entry.project_id);
-      if (!projectId) return;
-
-      const existingEntries = groupedEntries.get(projectId) || [];
-      existingEntries.push(entry);
-      groupedEntries.set(projectId, existingEntries);
-    });
-
-    return groupedEntries;
-  }, [filteredProjectTimeEntries]);
+  const filteredTaskGroupIds = useMemo(
+    () => Array.from(new Set(filteredTasks.map((task: any) => Number(task.group_id)).filter((groupId) => groupId > 0))),
+    [filteredTasks]
+  );
   const filteredTasksByAssigneeId = useMemo(() => {
     const groupedTasks = new Map<number, any[]>();
 
@@ -600,47 +519,13 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     return visibleUsers.filter((employee: any) => matchesSearchFilter(projectsEmployeeNameSearch, [employee.name]));
   }, [hasProjectsTasksScope, mode, projectsEmployeeNameSearch, scopedUserIdSet, users]);
 
-  const projectRows = useMemo(() => {
-    if (mode !== 'projects-tasks') return [];
-    return filteredProjects.map((project: any) => {
-      const projectId = Number(project.id);
-      const projectTasks = filteredTasksByProjectId.get(projectId) || [];
-      const projectEntries = filteredProjectTimeEntriesByProjectId.get(projectId) || [];
-      const trackedSeconds = projectEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0);
-      const completedTaskCount = projectTasks.filter((task: any) => task.status === 'done').length;
-      const inProgressTaskCount = projectTasks.filter((task: any) => task.status === 'in_progress' || task.status === 'in_review').length;
-      const todoTaskCount = projectTasks.filter((task: any) => task.status === 'todo').length;
-      const openTaskCount = projectTasks.filter((task: any) => task.status !== 'done').length;
-      const completionRate = projectTasks.length > 0 ? Math.round((completedTaskCount / projectTasks.length) * 100) : 0;
-      const assignedEmployees = Array.from(
-        new Set(
-          projectTasks
-            .map((task: any) => usersById.get(Number(task.assignee_id))?.name || task.assignee?.name)
-            .filter(Boolean)
-        )
-      );
-
-      return {
-        ...project,
-        task_count: projectTasks.length,
-        open_tasks: openTaskCount,
-        completed_tasks: completedTaskCount,
-        in_progress_tasks: inProgressTaskCount,
-        todo_tasks: todoTaskCount,
-        completion_rate: completionRate,
-        tracked_seconds: trackedSeconds,
-        assigned_employee_count: assignedEmployees.length,
-        assigned_employees: assignedEmployees,
-      };
-    });
-  }, [filteredProjectTimeEntriesByProjectId, filteredProjects, filteredTasksByProjectId, mode, usersById]);
   const taskAllocationRows = useMemo(() => {
     if (mode !== 'projects-tasks') {
       return [];
     }
 
     return filteredTasks.map((task: any) => {
-      const project = projectsById.get(Number(task.project_id)) || task.project;
+      const group = groupsById.get(Number(task.group_id)) || task.group;
       const assigneeName = usersById.get(Number(task.assignee_id))?.name || task.assignee?.name || 'Unassigned';
       const taskEntries = filteredProjectTimeEntries
         .filter((entry: any) => Number(entry.task_id) === Number(task.id));
@@ -649,13 +534,13 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
       return {
         ...task,
-        project_name: project?.name || 'No project',
+        group_name: group?.name || 'No group',
         assignee_name: assigneeName,
         completion_label: completionLabel,
         tracked_seconds: trackedSeconds,
       };
     });
-  }, [filteredProjectTimeEntries, filteredTasks, mode, projectsById, usersById]);
+  }, [filteredProjectTimeEntries, filteredTasks, groupsById, mode, usersById]);
   const employeeFocusRows = useMemo(() => {
     if (mode !== 'projects-tasks' || !projectsEmployeeNameSearch) {
       return [];
@@ -676,102 +561,24 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         completed_task_count: completedTaskCount,
         completion_rate: completionRate,
         assigned_task_names: employeeTasks.map((task: any) => task.title),
-        assigned_project_names: Array.from(
+        assigned_group_names: Array.from(
           new Set(
             employeeTasks
-              .map((task: any) => projectsById.get(Number(task.project_id))?.name || task.project?.name)
+              .map((task: any) => groupsById.get(Number(task.group_id))?.name || task.group?.name)
               .filter(Boolean)
           )
         ),
         tracked_seconds: employeeEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0),
       };
     });
-  }, [filteredProjectTimeEntriesByUserId, filteredTasksByAssigneeId, matchedProjectEmployees, mode, projectsById, projectsEmployeeNameSearch]);
-  const selectedProjectRow = useMemo(() => {
-    if (!hasSelectedProject || mode !== 'projects-tasks') {
+  }, [filteredProjectTimeEntriesByUserId, filteredTasksByAssigneeId, groupsById, matchedProjectEmployees, mode, projectsEmployeeNameSearch]);
+  const selectedTaskOverviewRow = useMemo(() => {
+    if (!hasSelectedTask || mode !== 'projects-tasks') {
       return null;
     }
 
-    const selectedRow = projectRows.find((row: any) => Number(row.id) === selectedProjectIdNumber);
-    if (selectedRow) {
-      return selectedRow;
-    }
-
-    if (!selectedProject) {
-      return null;
-    }
-
-    return {
-      ...selectedProject,
-      task_count: 0,
-      open_tasks: 0,
-      completed_tasks: 0,
-      in_progress_tasks: 0,
-      todo_tasks: 0,
-      completion_rate: 0,
-      tracked_seconds: 0,
-      assigned_employee_count: 0,
-      assigned_employees: [],
-    };
-  }, [hasSelectedProject, mode, projectRows, selectedProject, selectedProjectIdNumber]);
-  const selectedProjectEmployeeRows = useMemo(() => {
-    if (mode !== 'projects-tasks' || !selectedProjectRow) {
-      return [];
-    }
-
-    const selectedId = Number(selectedProjectRow.id);
-    const projectTasks = filteredTasksByProjectId.get(selectedId) || [];
-    const projectEntries = filteredProjectTimeEntriesByProjectId.get(selectedId) || [];
-    const tasksByAssignee = new Map<number, any[]>();
-    const trackedSecondsByAssignee = new Map<number, number>();
-
-    projectTasks.forEach((task: any) => {
-      const assigneeId = Number(task.assignee_id || task.assignee?.id);
-      if (!assigneeId) {
-        return;
-      }
-
-      const existingTasks = tasksByAssignee.get(assigneeId) || [];
-      existingTasks.push(task);
-      tasksByAssignee.set(assigneeId, existingTasks);
-    });
-
-    projectEntries.forEach((entry: any) => {
-      const userId = Number(entry.user_id || entry.user?.id);
-      if (!userId || !tasksByAssignee.has(userId)) {
-        return;
-      }
-
-      trackedSecondsByAssignee.set(userId, (trackedSecondsByAssignee.get(userId) || 0) + Number(entry.duration || 0));
-    });
-
-    return Array.from(tasksByAssignee.entries())
-      .map(([assigneeId, employeeTasks]) => {
-        const employee = usersById.get(assigneeId);
-        const completedTaskCount = employeeTasks.filter((task: any) => task.status === 'done').length;
-        const openTaskCount = employeeTasks.filter((task: any) => task.status !== 'done').length;
-        const completionRate = employeeTasks.length > 0 ? Math.round((completedTaskCount / employeeTasks.length) * 100) : 0;
-
-        return {
-          id: assigneeId,
-          employee_name: employee?.name || `Employee #${assigneeId}`,
-          employee_email: employee?.email || '',
-          assigned_task_count: employeeTasks.length,
-          open_task_count: openTaskCount,
-          completed_task_count: completedTaskCount,
-          completion_rate: completionRate,
-          tracked_seconds: trackedSecondsByAssignee.get(assigneeId) || 0,
-          assigned_task_names: employeeTasks.map((task: any) => task.title),
-        };
-      })
-      .sort((left, right) => {
-        if (right.assigned_task_count !== left.assigned_task_count) {
-          return right.assigned_task_count - left.assigned_task_count;
-        }
-
-        return right.tracked_seconds - left.tracked_seconds;
-      });
-  }, [filteredProjectTimeEntriesByProjectId, filteredTasksByProjectId, mode, selectedProjectRow, usersById]);
+    return taskAllocationRows.find((row: any) => Number(row.id) === Number(effectiveSelectedTaskId)) || null;
+  }, [effectiveSelectedTaskId, hasSelectedTask, mode, taskAllocationRows]);
 
   const timelineRows = (dataQuery.data as any[]) || [];
   const timelineSummary = useMemo(() => {
@@ -790,10 +597,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const orgSummary = usageData?.organization_summary || {};
   const usageOrganizationTools = usageData?.organization_tools || { productive: [], unproductive: [] };
   const employeeRankings = usageData?.employee_rankings?.by_productive_duration || [];
-  const hasSelectedEmployee = selectedUserId !== '';
+  const hasSelectedEmployee = effectiveSelectedUserId !== '';
   const usageWorkedDuration = hasSelectedEmployee
-    ? Number(usageStats.total_duration || 0)
-    : Number(orgSummary.productive_duration || 0) + Number(orgSummary.unproductive_duration || 0) + Number(orgSummary.neutral_duration || 0);
+    ? getWorkingDuration(usageStats)
+    : getWorkingDuration(orgSummary);
   const usageProductiveRows = hasSelectedEmployee ? usageSelectedTools.productive || [] : usageOrganizationTools.productive || [];
   const usageUnproductiveRows = hasSelectedEmployee ? usageSelectedTools.unproductive || [] : usageOrganizationTools.unproductive || [];
 
@@ -804,7 +611,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       const response = await reportApi.export({
         start_date: startDate,
         end_date: endDate,
-        user_ids: selectedUserId ? [Number(selectedUserId)] : undefined,
+        user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
         group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -829,6 +636,17 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const handleEmployeeFilterChange = (value: number | '') => {
     setSelectedUserId(value);
   };
+
+  useEffect(() => {
+    if (mode !== 'projects-tasks' || selectedTaskId === '') {
+      return;
+    }
+
+    const hasSelectedTaskOption = taskFilterOptions.some((task: any) => Number(task.id) === Number(selectedTaskId));
+    if (!hasSelectedTaskOption) {
+      setSelectedTaskId('');
+    }
+  }, [mode, selectedTaskId, taskFilterOptions]);
 
   if (isLoading) {
     return <PageLoadingState label={`Loading ${pageTitle.title.toLowerCase()}...`} />;
@@ -869,7 +687,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       {exportMessage ? <FeedbackBanner tone="success" message={exportMessage} /> : null}
       {exportError ? <FeedbackBanner tone="error" message={exportError} /> : null}
 
-      <FilterPanel className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${mode === 'projects-tasks' ? 'xl:grid-cols-9' : 'xl:grid-cols-5'}`}>
+      <FilterPanel className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${mode === 'projects-tasks' ? 'xl:grid-cols-8' : 'xl:grid-cols-5'}`}>
         <DateRangeFields
           datePreset={datePreset}
           onDatePresetChange={handleDatePresetChange}
@@ -887,34 +705,25 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         {mode === 'projects-tasks' ? (
           <>
             <div className="xl:col-span-2">
-              <FieldLabel><span className="whitespace-nowrap">Task / Project</span></FieldLabel>
-              <SearchSuggestInput
-                value={projectTaskSearchQuery}
-                onValueChange={setProjectTaskSearchQuery}
-                suggestions={projectTaskSearchSuggestions}
-                placeholder="Search tasks or projects"
-                emptyMessage="No tasks or projects match this search."
+              <FieldLabel><span className="whitespace-nowrap">Task</span></FieldLabel>
+              <TaskSelect
+                tasks={taskFilterOptions}
+                value={effectiveSelectedTaskId}
+                onChange={setSelectedTaskId}
+                includeAllOption
+                allOptionLabel="All tasks"
+                searchPlaceholder="Search task title"
+                emptyMessage="No task matched the current search."
               />
             </div>
             <div className="xl:col-span-2">
               <FieldLabel><span className="whitespace-nowrap">Employee</span></FieldLabel>
               <EmployeeSelect
                 employees={users}
-                value={selectedUserId}
+                value={effectiveSelectedUserId}
                 onChange={handleEmployeeFilterChange}
                 includeAllOption
               />
-            </div>
-            <div>
-              <FieldLabel>Project</FieldLabel>
-              <SelectInput value={selectedProjectId} onChange={(event) => setSelectedProjectId(event.target.value ? Number(event.target.value) : '')}>
-                <option value="">All projects</option>
-                {projects.map((project: any) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </SelectInput>
             </div>
           </>
         ) : (
@@ -922,7 +731,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             <FieldLabel>Employee</FieldLabel>
             <EmployeeSelect
               employees={users}
-              value={selectedUserId}
+              value={effectiveSelectedUserId}
               onChange={handleEmployeeFilterChange}
               includeAllOption
             />
@@ -1034,10 +843,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       {mode === 'projects-tasks' && (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Projects" value={filteredProjects.length} hint="Projects in scope" icon={FolderKanban} accent="sky" />
+            <MetricCard label="Groups" value={filteredTaskGroupIds.length} hint="Groups with matching tasks" icon={Users} accent="sky" />
             <MetricCard label="Tasks" value={filteredTasks.length} hint="Tasks in scope" icon={ListFilter} accent="violet" />
             <MetricCard label="Open Tasks" value={filteredTasks.filter((task: any) => task.status !== 'done').length} hint="Todo and in-progress tasks" icon={Waypoints} accent="amber" />
-            <MetricCard label="Tracked Time" value={formatDuration(filteredProjectTimeEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0))} hint="Project-linked time in scope" icon={TimerReset} accent="emerald" />
+            <MetricCard label="Tracked Time" value={formatDuration(filteredProjectTimeEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0))} hint="Task-linked time in scope" icon={TimerReset} accent="emerald" />
           </div>
 
           {projectsEmployeeNameSearch ? (
@@ -1045,7 +854,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               title="Employee Work Focus"
               description="Assigned task and completion stats for the current employee search."
               rows={employeeFocusRows}
-              emptyMessage="No employees in this search have assigned work or tracked project activity in the selected range."
+              emptyMessage="No employees in this search have assigned work or tracked task activity in the selected range."
               headerAction={renderPanelRefreshButton()}
               columns={[
                 {
@@ -1079,9 +888,9 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                   ),
                 },
                 {
-                  key: 'projects',
-                  header: 'Projects',
-                  render: (row: any) => formatPreviewList(row.assigned_project_names, 'No linked project'),
+                  key: 'groups',
+                  header: 'Groups',
+                  render: (row: any) => formatPreviewList(row.assigned_group_names, 'No linked group'),
                 },
                 {
                   key: 'tracked',
@@ -1092,92 +901,52 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             />
           ) : null}
 
-          {selectedProjectRow ? (
+          {selectedTaskOverviewRow ? (
             <DataTable
-              title="Selected Project - Employee Details"
-              description="Employee-level assignment and completion stats for the selected project."
-              rows={selectedProjectEmployeeRows}
-              emptyMessage="No assigned employees found for the selected project."
+              title="Selected Task Details"
+              description="Current task status, assignee, group, and tracked duration for the selected task."
+              rows={[selectedTaskOverviewRow]}
+              emptyMessage="No task details found for the selected task."
               headerAction={renderPanelRefreshButton()}
               columns={[
                 {
-                  key: 'employee',
-                  header: 'Employee',
+                  key: 'task',
+                  header: 'Task',
                   render: (row: any) => (
                     <div>
-                      <p className="font-medium text-slate-950">{row.employee_name}</p>
-                      <p className="text-xs text-slate-500">{row.employee_email || 'No email available'}</p>
+                      <p className="font-medium text-slate-950">{row.title}</p>
+                      <p className="text-xs text-slate-500">{row.description || 'No description'}</p>
                     </div>
                   ),
                 },
+                { key: 'group', header: 'Group', render: (row: any) => row.group_name || 'No group' },
+                { key: 'status', header: 'Status', render: (row: any) => row.status },
+                { key: 'priority', header: 'Priority', render: (row: any) => row.priority },
                 {
-                  key: 'assigned_tasks',
-                  header: 'Assigned Tasks',
+                  key: 'assignee',
+                  header: 'Assignee',
                   render: (row: any) => (
                     <div>
-                      <p className="font-medium text-slate-950">{row.assigned_task_count}</p>
-                      <p className="text-xs text-slate-500">{formatPreviewList(row.assigned_task_names, 'No assigned tasks')}</p>
-                    </div>
-                  ),
-                },
-                {
-                  key: 'task_stats',
-                  header: 'Task Stats',
-                  render: (row: any) => (
-                    <div>
-                      <p className="font-medium text-slate-950">{row.completed_task_count} done / {row.open_task_count} open</p>
-                      <p className="text-xs text-slate-500">{row.completion_rate}% completion</p>
+                      <p className="font-medium text-slate-950">{row.assignee_name}</p>
+                      <p className="text-xs text-slate-500">{row.completion_label}</p>
                     </div>
                   ),
                 },
                 { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.tracked_seconds || 0) },
+                { key: 'due', header: 'Due Date', render: (row: any) => row.due_date ? row.due_date.split('T')[0] : 'No due date' },
               ]}
             />
           ) : null}
 
           <DataTable
-            title="Project Overview"
-            description="Project details, assignment coverage, and completion stats."
-            rows={hasSelectedProject && selectedProjectRow ? [selectedProjectRow] : projectRows}
-            emptyMessage="No project data found."
+            title="Task Overview"
+            description="Task status, assignees, group coverage, and tracked duration."
+            rows={hasSelectedTask && selectedTaskOverviewRow ? [selectedTaskOverviewRow] : taskAllocationRows}
+            emptyMessage="No task data found."
             headerAction={renderPanelRefreshButton()}
             columns={[
-              { key: 'project', header: 'Project', render: (row: any) => <div><p className="font-medium text-slate-950">{row.name}</p><p className="text-xs text-slate-500">{row.description || 'No description'}</p></div> },
-              { key: 'status', header: 'Status', render: (row: any) => row.status },
-              {
-                key: 'assigned_employees',
-                header: 'Assigned Employees',
-                render: (row: any) => (
-                  <div>
-                    <p className="font-medium text-slate-950">{row.assigned_employee_count} employee{row.assigned_employee_count === 1 ? '' : 's'}</p>
-                    <p className="text-xs text-slate-500">{formatPreviewList(row.assigned_employees, 'No one assigned')}</p>
-                  </div>
-                ),
-              },
-              {
-                key: 'task_stats',
-                header: 'Task Stats',
-                render: (row: any) => (
-                  <div>
-                    <p className="font-medium text-slate-950">{row.completed_tasks} done / {row.open_tasks} open</p>
-                    <p className="text-xs text-slate-500">Todo {row.todo_tasks} and in-progress {row.in_progress_tasks}</p>
-                  </div>
-                ),
-              },
-              { key: 'completion', header: 'Completion', render: (row: any) => `${row.completion_rate}%` },
-              { key: 'tasks', header: 'Tasks', render: (row: any) => row.task_count },
-              { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.tracked_seconds || 0) },
-            ]}
-          />
-
-          <DataTable
-            title="Task Allocation"
-            description="Task status, assignees, and tracked duration mapped to projects."
-            rows={taskAllocationRows}
-            emptyMessage="No tasks found."
-            headerAction={renderPanelRefreshButton()}
-            columns={[
-              { key: 'title', header: 'Task', render: (row: any) => <div><p className="font-medium text-slate-950">{row.title}</p><p className="text-xs text-slate-500">{row.project_name}</p></div> },
+              { key: 'task', header: 'Task', render: (row: any) => <div><p className="font-medium text-slate-950">{row.title}</p><p className="text-xs text-slate-500">{row.description || 'No description'}</p></div> },
+              { key: 'group', header: 'Group', render: (row: any) => row.group_name || 'No group' },
               { key: 'status', header: 'Status', render: (row: any) => row.status },
               { key: 'priority', header: 'Priority', render: (row: any) => row.priority },
               {
@@ -1234,7 +1003,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               icon={Users}
               accent="sky"
             />
-            <MetricCard label="Worked" value={formatDuration(usageWorkedDuration)} hint={hasSelectedEmployee ? 'Tracked duration' : 'Tracked duration across current scope'} icon={TimerReset} accent="emerald" />
+            <MetricCard label="Worked" value={formatDuration(usageWorkedDuration)} hint={hasSelectedEmployee ? 'Tracked time minus measured idle time' : 'Working time across current scope'} icon={TimerReset} accent="emerald" />
             <MetricCard label="Productive Share" value={`${Number(orgSummary.productive_share || 0).toFixed(1)}%`} hint="Organization average" icon={LineChart} accent="violet" />
             <MetricCard
               label={hasSelectedEmployee ? 'Idle' : 'Employees'}
@@ -1309,7 +1078,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Filters</p>
                 <p className="mt-2 text-lg font-semibold text-slate-950">
-                  {selectedUserId ? 'Single employee' : selectedGroupId ? 'Single group' : 'Organization-wide'}
+                  {effectiveSelectedUserId ? 'Single employee' : selectedGroupId ? 'Single group' : 'Organization-wide'}
                 </p>
               </div>
             </div>

@@ -128,9 +128,6 @@ export default function Monitoring() {
         end_date: endDate,
       });
       setData(response.data);
-      if (!selectedUserId && response.data?.selected_user?.id) {
-        setSelectedUserId(response.data.selected_user.id);
-      }
     } catch (error) {
       console.error('Monitoring load failed:', error);
     } finally {
