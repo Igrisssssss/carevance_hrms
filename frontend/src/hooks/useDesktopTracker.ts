@@ -25,6 +25,7 @@ const IDLE_THRESHOLD_SECONDS = idleTrackThresholdSeconds;
 const IDLE_AUTO_STOP_THRESHOLD_SECONDS = Math.max(idleAutoStopThresholdSeconds, IDLE_THRESHOLD_SECONDS);
 const IDLE_GUARD_INTERVAL_MS = idleGuardIntervalMs;
 const BROWSER_APP_KEYWORDS = ['chrome', 'edge', 'firefox', 'brave', 'opera', 'safari', 'vivaldi'];
+const SELF_TRACKER_KEYWORDS = ['carevance', 'carevance hrms', 'timetrackpro'];
 
 const formatIdleDurationLabel = (seconds: number) => {
   const minutes = Math.floor(seconds / 60);
@@ -66,6 +67,22 @@ type ActiveSegment = {
   durationSeconds: number;
   signature: string;
   kind: 'tracked' | 'idle';
+  contextName?: string;
+  activityType?: 'app' | 'url';
+};
+
+type ReliableTrackingContext = {
+  contextName: string;
+  activityType: 'app' | 'url';
+};
+
+const isSelfTrackerContext = (context: { app?: string | null; title?: string | null; url?: string | null }) => {
+  const haystack = [context.app, context.title, context.url]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+    .join(' ');
+
+  return SELF_TRACKER_KEYWORDS.some((keyword) => haystack.includes(keyword));
 };
 
 export const useDesktopTracker = () => {
@@ -84,6 +101,7 @@ export const useDesktopTracker = () => {
   const activeScreenshotEntryIdRef = useRef<number | null>(null);
   const idleStopInFlightRef = useRef(false);
   const idleStopBlockedUntilMsRef = useRef(0);
+  const lastReliableTrackingContextRef = useRef<ReliableTrackingContext | null>(null);
 
   const clearTrackerIntervals = () => {
     if (activityIntervalRef.current !== null) {
@@ -144,6 +162,7 @@ export const useDesktopTracker = () => {
       activeScreenshotEntryIdRef.current = null;
       idleStopInFlightRef.current = false;
       idleStopBlockedUntilMsRef.current = 0;
+      lastReliableTrackingContextRef.current = null;
       return;
     }
 
@@ -161,6 +180,7 @@ export const useDesktopTracker = () => {
     activeScreenshotEntryIdRef.current = null;
     idleStopInFlightRef.current = false;
     idleStopBlockedUntilMsRef.current = 0;
+    lastReliableTrackingContextRef.current = null;
 
     const scheduleInitialScreenshotCapture = () => {
       if (screenshotInitialTimeoutRef.current !== null) {
@@ -377,13 +397,40 @@ export const useDesktopTracker = () => {
         const activeContext = typeof desktopApi.getActiveWindowContext === 'function'
           ? await desktopApi.getActiveWindowContext()
           : null;
-        const appName = String(activeContext?.app || '').trim();
-        const url = String(activeContext?.url || '').trim();
-        const isBrowserApp = BROWSER_APP_KEYWORDS.some((keyword) => appName.toLowerCase().includes(keyword));
         const fallbackTitle = typeof document !== 'undefined' ? document.title : '';
-        const contextName = buildTrackedContextName(activeContext || {}) || fallbackTitle || 'Active Input';
         const recordedAt = new Date(now).toISOString();
-        const activityType: 'app' | 'url' = url || isBrowserApp ? 'url' : 'app';
+        const rawAppName = String(activeContext?.app || '').trim();
+        const rawUrl = String(activeContext?.url || '').trim();
+        const rawIsBrowserApp = BROWSER_APP_KEYWORDS.some((keyword) => rawAppName.toLowerCase().includes(keyword));
+        const rawContextName = buildTrackedContextName(activeContext || {});
+        const rawActivityType: 'app' | 'url' = rawUrl || rawIsBrowserApp ? 'url' : 'app';
+        const hasReliableDesktopContext = Boolean(rawContextName) && !isSelfTrackerContext(activeContext || {});
+
+        if (hasReliableDesktopContext) {
+          lastReliableTrackingContextRef.current = {
+            contextName: rawContextName,
+            activityType: rawActivityType,
+          };
+        }
+
+        const currentTrackedSegment = activeSegmentRef.current?.kind === 'tracked'
+          ? activeSegmentRef.current
+          : null;
+        const fallbackTrackingContext = lastReliableTrackingContextRef.current
+          || (currentTrackedSegment?.contextName && currentTrackedSegment.activityType
+            ? {
+                contextName: currentTrackedSegment.contextName,
+                activityType: currentTrackedSegment.activityType,
+              }
+            : null);
+        const resolvedTrackingContext = hasReliableDesktopContext
+          ? {
+              contextName: rawContextName,
+              activityType: rawActivityType,
+            }
+          : fallbackTrackingContext;
+        const contextName = resolvedTrackingContext?.contextName || fallbackTitle || 'Active Input';
+        const activityType: 'app' | 'url' = resolvedTrackingContext?.activityType || 'app';
 
         if (idleSeconds >= IDLE_THRESHOLD_SECONDS) {
           const idleName = (`System Idle - ${contextName}`).slice(0, 255);
@@ -428,6 +475,14 @@ export const useDesktopTracker = () => {
             return;
           }
 
+          if (!hasReliableDesktopContext && !fallbackTrackingContext && isSelfTrackerContext({
+            app: rawAppName,
+            title: fallbackTitle,
+            url: rawUrl,
+          })) {
+            return;
+          }
+
           const payload = {
             time_entry_id: activeEntry.id,
             type: activityType,
@@ -456,6 +511,8 @@ export const useDesktopTracker = () => {
               durationSeconds: trackedSecondsThisTick,
               signature,
               kind: 'tracked',
+              contextName: payload.name,
+              activityType: payload.type,
             };
             pendingIdleRewindRef.current.set(response.data.id, 0);
           }
