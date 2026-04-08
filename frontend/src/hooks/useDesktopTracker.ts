@@ -24,8 +24,21 @@ const SCREENSHOT_INITIAL_CAPTURE_DELAY_MS = 1500;
 const IDLE_THRESHOLD_SECONDS = idleTrackThresholdSeconds;
 const IDLE_AUTO_STOP_THRESHOLD_SECONDS = Math.max(idleAutoStopThresholdSeconds, IDLE_THRESHOLD_SECONDS);
 const IDLE_GUARD_INTERVAL_MS = idleGuardIntervalMs;
+const RELIABLE_CONTEXT_REUSE_WINDOW_MS = 30 * 1000;
 const BROWSER_APP_KEYWORDS = ['chrome', 'edge', 'firefox', 'brave', 'opera', 'safari', 'vivaldi'];
 const SELF_TRACKER_KEYWORDS = ['carevance', 'carevance hrms', 'timetrackpro'];
+const GENERIC_BROWSER_CONTEXT_PATTERNS = [
+  /^new tab$/i,
+  /^about:blank$/i,
+  /^chrome:\/\/newtab\/?$/i,
+  /^edge:\/\/newtab\/?$/i,
+  /^google chrome$/i,
+  /^microsoft edge$/i,
+  /^mozilla firefox$/i,
+  /^brave$/i,
+  /^opera$/i,
+  /^vivaldi$/i,
+];
 
 const formatIdleDurationLabel = (seconds: number) => {
   const minutes = Math.floor(seconds / 60);
@@ -74,6 +87,7 @@ type ActiveSegment = {
 type ReliableTrackingContext = {
   contextName: string;
   activityType: 'app' | 'url';
+  capturedAtMs: number;
 };
 
 const isSelfTrackerContext = (context: { app?: string | null; title?: string | null; url?: string | null }) => {
@@ -83,6 +97,19 @@ const isSelfTrackerContext = (context: { app?: string | null; title?: string | n
     .join(' ');
 
   return SELF_TRACKER_KEYWORDS.some((keyword) => haystack.includes(keyword));
+};
+
+const isGenericBrowserContext = (contextName: string, activityType: 'app' | 'url') => {
+  if (activityType !== 'url') {
+    return false;
+  }
+
+  const normalized = String(contextName || '').trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+
+  return GENERIC_BROWSER_CONTEXT_PATTERNS.some((pattern) => pattern.test(normalized));
 };
 
 export const useDesktopTracker = () => {
@@ -404,19 +431,26 @@ export const useDesktopTracker = () => {
         const rawIsBrowserApp = BROWSER_APP_KEYWORDS.some((keyword) => rawAppName.toLowerCase().includes(keyword));
         const rawContextName = buildTrackedContextName(activeContext || {});
         const rawActivityType: 'app' | 'url' = rawUrl || rawIsBrowserApp ? 'url' : 'app';
-        const hasReliableDesktopContext = Boolean(rawContextName) && !isSelfTrackerContext(activeContext || {});
+        const hasReliableDesktopContext = Boolean(rawContextName)
+          && !isSelfTrackerContext(activeContext || {})
+          && !isGenericBrowserContext(rawContextName, rawActivityType);
 
         if (hasReliableDesktopContext) {
           lastReliableTrackingContextRef.current = {
             contextName: rawContextName,
             activityType: rawActivityType,
+            capturedAtMs: now,
           };
         }
 
         const currentTrackedSegment = activeSegmentRef.current?.kind === 'tracked'
           ? activeSegmentRef.current
           : null;
-        const fallbackTrackingContext = lastReliableTrackingContextRef.current
+        const recentReliableTrackingContext = lastReliableTrackingContextRef.current
+          && (now - lastReliableTrackingContextRef.current.capturedAtMs) <= RELIABLE_CONTEXT_REUSE_WINDOW_MS
+            ? lastReliableTrackingContextRef.current
+            : null;
+        const fallbackTrackingContext = recentReliableTrackingContext
           || (currentTrackedSegment?.contextName && currentTrackedSegment.activityType
             ? {
                 contextName: currentTrackedSegment.contextName,
@@ -475,11 +509,18 @@ export const useDesktopTracker = () => {
             return;
           }
 
-          if (!hasReliableDesktopContext && !fallbackTrackingContext && isSelfTrackerContext({
-            app: rawAppName,
-            title: fallbackTitle,
-            url: rawUrl,
-          })) {
+          if (
+            !hasReliableDesktopContext
+            && !fallbackTrackingContext
+            && (
+              isSelfTrackerContext({
+                app: rawAppName,
+                title: fallbackTitle,
+                url: rawUrl,
+              })
+              || isGenericBrowserContext(rawContextName || fallbackTitle, rawActivityType)
+            )
+          ) {
             return;
           }
 
