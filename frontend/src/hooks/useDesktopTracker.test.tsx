@@ -413,4 +413,37 @@ describe('useDesktopTracker', () => {
       name: 'CareVance HRMS Workspace',
     }));
   });
+
+  it('reuses the last reliable website context when the browser briefly reports a generic new tab', async () => {
+    mocks.getActiveWindowContextMock
+      .mockResolvedValueOnce({
+        app: 'Google Chrome',
+        title: 'YouTube - Google Chrome',
+        url: null,
+      })
+      .mockResolvedValueOnce({
+        app: 'Google Chrome',
+        title: 'New Tab - Google Chrome',
+        url: null,
+      });
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 1000);
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 1000);
+    });
+
+    expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'url',
+      name: 'YouTube',
+      duration: 5,
+    }));
+    expect(mocks.createActivityMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      name: 'New Tab',
+    }));
+  });
 });

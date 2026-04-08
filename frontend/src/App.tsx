@@ -3,42 +3,64 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess } from '@/lib/permissions';
 
-const LandingPage = lazy(() => import('@/pages/LandingPage'));
-const PricingPage = lazy(() => import('@/pages/PricingPage'));
-const PrivacyPolicyPage = lazy(() => import('@/pages/PrivacyPolicyPage'));
-const TermsPage = lazy(() => import('@/pages/TermsPage'));
-const OwnerSignupPage = lazy(() => import('@/pages/OwnerSignupPage'));
-const InviteSignupPage = lazy(() => import('@/pages/InviteSignupPage'));
-const ContactSalesPage = lazy(() => import('@/pages/ContactSalesPage'));
-const SupportPage = lazy(() => import('@/pages/SupportPage'));
-const AcceptInvitePage = lazy(() => import('@/pages/AcceptInvitePage'));
-const Layout = lazy(() => import('@/components/Layout'));
-const Login = lazy(() => import('@/pages/Login'));
-const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage'));
-const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage'));
-const VerifyEmailPage = lazy(() => import('@/pages/VerifyEmailPage'));
-const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const AdminDashboard = lazy(() => import('@/pages/AdminDashboard'));
-const DesktopTimerDashboard = lazy(() => import('@/pages/DesktopTimerDashboard'));
-const Projects = lazy(() => import('@/pages/Projects'));
-const Tasks = lazy(() => import('@/pages/Tasks'));
-const Reports = lazy(() => import('@/pages/Reports'));
-const Invoices = lazy(() => import('@/pages/Invoices'));
-const Settings = lazy(() => import('@/pages/Settings'));
-const Monitoring = lazy(() => import('@/pages/Monitoring'));
-const Attendance = lazy(() => import('@/pages/Attendance'));
-const Chat = lazy(() => import('@/pages/Chat'));
-const PayrollWorkspace = lazy(() => import('@/pages/PayrollWorkspace'));
-const UserManagement = lazy(() => import('@/pages/UserManagement'));
-const AuditLogs = lazy(() => import('@/pages/AuditLogs'));
-const ApprovalInbox = lazy(() => import('@/pages/ApprovalInbox'));
-const NotificationsCenter = lazy(() => import('@/pages/NotificationsCenter'));
-const ReportsWorkspace = lazy(() => import('@/pages/ReportsWorkspace'));
-const MonitoringWorkspace = lazy(() => import('@/pages/MonitoringWorkspace'));
-const EmployeeManagementWorkspace = lazy(() => import('@/pages/EmployeeManagementWorkspace'));
-const EmployeeDetailWorkspace = lazy(() => import('@/pages/EmployeeDetailWorkspace'));
-const AddUserPage = lazy(() => import('@/pages/AddUserPage'));
-const BillingSettingsPage = lazy(() => import('@/pages/BillingSettingsPage'));
+const lazyWithChunkRetry = <T extends { default: React.ComponentType<any> }>(
+  importer: () => Promise<T>
+) => lazy(async () => {
+  try {
+    return await importer();
+  } catch (error) {
+    if (isChunkLoadFailure(error)) {
+      const currentPath = `${window.location.pathname}${window.location.search}`;
+      const lastRecoveredPath = window.sessionStorage.getItem(CHUNK_RELOAD_KEY);
+
+      if (lastRecoveredPath !== currentPath) {
+        window.sessionStorage.setItem(CHUNK_RELOAD_KEY, currentPath);
+        window.location.reload();
+      } else {
+        window.sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+      }
+    }
+
+    throw error;
+  }
+});
+
+const LandingPage = lazyWithChunkRetry(() => import('@/pages/LandingPage'));
+const PricingPage = lazyWithChunkRetry(() => import('@/pages/PricingPage'));
+const PrivacyPolicyPage = lazyWithChunkRetry(() => import('@/pages/PrivacyPolicyPage'));
+const TermsPage = lazyWithChunkRetry(() => import('@/pages/TermsPage'));
+const OwnerSignupPage = lazyWithChunkRetry(() => import('@/pages/OwnerSignupPage'));
+const InviteSignupPage = lazyWithChunkRetry(() => import('@/pages/InviteSignupPage'));
+const ContactSalesPage = lazyWithChunkRetry(() => import('@/pages/ContactSalesPage'));
+const SupportPage = lazyWithChunkRetry(() => import('@/pages/SupportPage'));
+const AcceptInvitePage = lazyWithChunkRetry(() => import('@/pages/AcceptInvitePage'));
+const Layout = lazyWithChunkRetry(() => import('@/components/Layout'));
+const Login = lazyWithChunkRetry(() => import('@/pages/Login'));
+const ForgotPasswordPage = lazyWithChunkRetry(() => import('@/pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazyWithChunkRetry(() => import('@/pages/ResetPasswordPage'));
+const VerifyEmailPage = lazyWithChunkRetry(() => import('@/pages/VerifyEmailPage'));
+const Dashboard = lazyWithChunkRetry(() => import('@/pages/Dashboard'));
+const AdminDashboard = lazyWithChunkRetry(() => import('@/pages/AdminDashboard'));
+const DesktopTimerDashboard = lazyWithChunkRetry(() => import('@/pages/DesktopTimerDashboard'));
+const Projects = lazyWithChunkRetry(() => import('@/pages/Projects'));
+const Tasks = lazyWithChunkRetry(() => import('@/pages/Tasks'));
+const Reports = lazyWithChunkRetry(() => import('@/pages/Reports'));
+const Invoices = lazyWithChunkRetry(() => import('@/pages/Invoices'));
+const Settings = lazyWithChunkRetry(() => import('@/pages/Settings'));
+const Monitoring = lazyWithChunkRetry(() => import('@/pages/Monitoring'));
+const Attendance = lazyWithChunkRetry(() => import('@/pages/Attendance'));
+const Chat = lazyWithChunkRetry(() => import('@/pages/Chat'));
+const PayrollWorkspace = lazyWithChunkRetry(() => import('@/pages/PayrollWorkspace'));
+const UserManagement = lazyWithChunkRetry(() => import('@/pages/UserManagement'));
+const AuditLogs = lazyWithChunkRetry(() => import('@/pages/AuditLogs'));
+const ApprovalInbox = lazyWithChunkRetry(() => import('@/pages/ApprovalInbox'));
+const NotificationsCenter = lazyWithChunkRetry(() => import('@/pages/NotificationsCenter'));
+const ReportsWorkspace = lazyWithChunkRetry(() => import('@/pages/ReportsWorkspace'));
+const MonitoringWorkspace = lazyWithChunkRetry(() => import('@/pages/MonitoringWorkspace'));
+const EmployeeManagementWorkspace = lazyWithChunkRetry(() => import('@/pages/EmployeeManagementWorkspace'));
+const EmployeeDetailWorkspace = lazyWithChunkRetry(() => import('@/pages/EmployeeDetailWorkspace'));
+const AddUserPage = lazyWithChunkRetry(() => import('@/pages/AddUserPage'));
+const BillingSettingsPage = lazyWithChunkRetry(() => import('@/pages/BillingSettingsPage'));
 
 const CHUNK_RELOAD_KEY = 'carevance:chunk-reload';
 const isChunkLoadFailure = (error: unknown) => {
@@ -205,7 +227,11 @@ function App() {
       : <Dashboard />;
 
   return (
-    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-sky-500" />
+      </div>
+    }>
       <>
         <ChunkRecoveryBridge />
         <PayrollReturnBridge />
