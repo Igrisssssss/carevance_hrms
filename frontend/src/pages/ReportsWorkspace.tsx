@@ -430,7 +430,9 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     return tasks.filter((task: any) => {
       const project = projectsById.get(Number(task.project_id));
       const assignee = usersById.get(Number(task.assignee_id));
-      const matchesScope = !hasProjectsTasksScope || (task.assignee_id ? scopedUserIdSet.has(Number(task.assignee_id)) : false);
+      const matchesSelectedGroup = !selectedGroupId || Number(task.group_id) === Number(selectedGroupId);
+      const matchesSelectedUser = !effectiveSelectedUserId || Number(task.assignee_id) === Number(effectiveSelectedUserId);
+      const matchesScope = !hasProjectsTasksScope || (matchesSelectedGroup && matchesSelectedUser);
       const matchesSelectedProject = !hasSelectedProject || Number(task.project_id) === selectedProjectIdNumber;
       const matchesTaskProjectSearch = matchesWorkspaceSearch(projectsTaskTextSearch, [
         task.title,
@@ -448,10 +450,12 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     hasProjectsTasksScope,
     hasSelectedProject,
     mode,
+    effectiveSelectedUserId,
     projectsById,
     projectsEmployeeNameSearch,
     projectsTaskTextSearch,
     scopedUserIdSet,
+    selectedGroupId,
     selectedProjectIdNumber,
     tasks,
     usersById,
