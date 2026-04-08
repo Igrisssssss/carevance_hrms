@@ -15,8 +15,8 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Authorization\OrganizationRoleService;
 use App\Services\Audit\AuditLogService;
-use App\Services\Reports\ActivityDurationNormalizer;
 use App\Services\Reports\TimeBreakdownService;
+use App\Services\Reports\UsageProcessingService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -27,10 +27,10 @@ class UserController extends Controller
 {
     public function __construct(
         private readonly AuditLogService $auditLogService,
-        private readonly ActivityDurationNormalizer $activityDurationNormalizer,
         private readonly TimeBreakdownService $timeBreakdownService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
         private readonly OrganizationRoleService $organizationRoleService,
+        private readonly UsageProcessingService $usageProcessingService,
     )
     {
     }
@@ -287,19 +287,18 @@ class UserController extends Controller
 
         $entries = $query->get();
         $resolvedNow = now();
-        $idleQuery = Activity::where('user_id', $user->id)
-            ->where('type', 'idle');
+        $activityQuery = Activity::where('user_id', $user->id);
         if ($request->start_date) {
-            $idleQuery->whereDate('recorded_at', '>=', $request->start_date);
+            $activityQuery->whereDate('recorded_at', '>=', $request->start_date);
         }
         if ($request->end_date) {
-            $idleQuery->whereDate('recorded_at', '<=', $request->end_date);
+            $activityQuery->whereDate('recorded_at', '<=', $request->end_date);
         }
 
-        $idleActivities = $idleQuery->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+        $activities = $activityQuery->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
-            $this->activityDurationNormalizer->sumIdleDuration($idleActivities)
+            $this->usageProcessingService->calculateIdleTime($activities)
         );
 
         return response()->json([
@@ -379,14 +378,13 @@ class UserController extends Controller
             ->latest('created_at')
             ->first(['id', 'type', 'title', 'message', 'created_at', 'is_read']);
 
-        $idleActivities = Activity::query()
+        $activities = Activity::query()
             ->where('user_id', $user->id)
-            ->where('type', 'idle')
             ->whereBetween('recorded_at', [$startDate, $endDate])
             ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
-            $this->activityDurationNormalizer->sumIdleDuration($idleActivities)
+            $this->usageProcessingService->calculateIdleTime($activities)
         );
         $approvedLeaveDays = (int) $leaveRequests
             ->where('status', 'approved')

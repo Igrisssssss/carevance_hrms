@@ -165,6 +165,53 @@ class ReportWorkingTimeTest extends TestCase
         }
     }
 
+    public function test_overall_and_employee_insights_share_the_same_normalized_idle_time(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        $entry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-03-16 10:00:00',
+            'end_time' => '2026-03-16 10:03:00',
+            'duration' => 180,
+            'billable' => true,
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'time_entry_id' => $entry->id,
+            'type' => 'app',
+            'name' => 'Visual Studio Code',
+            'duration' => 61,
+            'recorded_at' => '2026-03-16 10:01:00',
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'time_entry_id' => $entry->id,
+            'type' => 'app',
+            'name' => 'Visual Studio Code',
+            'duration' => 180,
+            'recorded_at' => '2026-03-16 10:03:00',
+        ]);
+
+        $overallResponse = $this->getJson('/api/reports/overall?start_date=2026-03-16&end_date=2026-03-16&user_ids[]='.$employee->id, $headers)
+            ->assertOk()
+            ->assertJsonPath('summary.total_duration', 180)
+            ->assertJsonPath('summary.idle_duration', 60)
+            ->assertJsonPath('summary.working_duration', 120)
+            ->assertJsonPath('by_user.0.idle_duration', 60)
+            ->assertJsonPath('by_day.0.idle_duration', 60);
+
+        $this->getJson("/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}", $headers)
+            ->assertOk()
+            ->assertJsonPath('stats.total_duration', 180)
+            ->assertJsonPath('stats.idle_total_duration', 60)
+            ->assertJsonPath('stats.working_duration', 120);
+
+        $this->assertSame(60, (int) $overallResponse->json('summary.idle_duration'));
+    }
+
     public function test_admin_overall_report_counts_live_duration_for_open_time_entries(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-03-16 11:15:00'));

@@ -168,6 +168,15 @@ class UsageProcessingService
         return $this->buildUsageSummary($logs, $activityEvents)['metrics'];
     }
 
+    public function calculateIdleTime(iterable $logs, iterable $activityEvents = []): int
+    {
+        return (int) data_get(
+            $this->buildUsageSummary($logs, $activityEvents),
+            'metrics.idle_time',
+            0
+        );
+    }
+
     public function buildUsageSummary(iterable $logs, iterable $activityEvents = []): array
     {
         $normalizedLogs = $this->normalizeUsageLogs($logs);
