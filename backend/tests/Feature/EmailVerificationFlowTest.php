@@ -30,7 +30,7 @@ class EmailVerificationFlowTest extends TestCase
         ]);
 
         $verificationUrl = URL::temporarySignedRoute(
-            'verification.verify',
+            'api.verification.verify',
             now()->addMinutes(60),
             [
                 'id' => $user->id,
