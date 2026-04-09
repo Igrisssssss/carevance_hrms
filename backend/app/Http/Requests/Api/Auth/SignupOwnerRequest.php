@@ -18,7 +18,7 @@ class SignupOwnerRequest extends ApiFormRequest
             'plan_code' => ['nullable', 'string', Rule::in(array_keys(config('carevance.plans', [])))],
             'billing_cycle' => ['nullable', 'string', Rule::in(['monthly', 'yearly'])],
             'signup_mode' => ['nullable', 'string', Rule::in(['trial', 'paid'])],
-            'terms_accepted' => 'sometimes|accepted',
+            'terms_accepted' => 'required|accepted',
             'role' => ['nullable', 'string', Rule::in(['admin'])],
         ];
     }
