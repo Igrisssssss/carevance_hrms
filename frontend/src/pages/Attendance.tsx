@@ -767,7 +767,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       try {
         const requests: Promise<any>[] = [
           userApi.getProfile360(user.id, { start_date: startDate, end_date: endDate }),
-          reportGroupApi.list(),
+          userApi.getGroups(user.id),
         ];
 
         if (organization?.id) {
@@ -779,18 +779,14 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         if (!active) return;
 
         setEmployeeProfile(profileResponse.data || null);
-        setEmployeeGroups(
-          ((groupsResponse.data?.data || []) as any[])
-            .filter((group) => (group.users || []).some((member: any) => member.id === user.id))
-            .map((group) => ({ id: group.id, name: group.name }))
-        );
-        setOrganizationMembersCount(Array.isArray((membersResponse as any)?.data) ? (membersResponse as any).data.length : 0);
+        setEmployeeGroups(((groupsResponse.data?.data || []) as any[]).map((group) => ({ id: group.id, name: group.name })));
+        setOrganizationMembersCount(Array.isArray((membersResponse as any)?.data) ? (membersResponse as any).data.length : 1);
       } catch (fetchError) {
         console.error('Employee attendance panel fetch failed:', fetchError);
         if (active) {
           setEmployeeProfile(null);
           setEmployeeGroups([]);
-          setOrganizationMembersCount(0);
+          setOrganizationMembersCount(1);
         }
       } finally {
         if (active) {
