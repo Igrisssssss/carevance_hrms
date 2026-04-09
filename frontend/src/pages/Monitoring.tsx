@@ -9,6 +9,7 @@ import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel } from '@/components/ui/FormField';
+import { useAuth } from '@/contexts/AuthContext';
 import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -89,6 +90,8 @@ const readPersistedMonitoringFilters = (): PersistedMonitoringFilters => {
   };
 };
 export default function Monitoring() {
+  const { user } = useAuth();
+  const canDeleteScreenshots = user?.role === 'admin';
   const [query, setQuery] = useState(() => readPersistedMonitoringFilters().query);
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedMonitoringFilters().datePreset);
   const [startDate, setStartDate] = useState(() => readPersistedMonitoringFilters().startDate);
@@ -550,12 +553,14 @@ export default function Monitoring() {
                     <a href={s.path} target="_blank" rel="noreferrer" className="block">
                       <img src={s.path} alt={`Screenshot ${s.id}`} className="w-full h-24 object-cover" />
                     </a>
-                    <button
-                      onClick={() => handleDeleteScreenshot(s.id)}
-                      className="absolute right-1 top-1 rounded-full bg-rose-600 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100"
-                    >
-                      Delete
-                    </button>
+                    {canDeleteScreenshots ? (
+                      <button
+                        onClick={() => handleDeleteScreenshot(s.id)}
+                        className="absolute right-1 top-1 rounded-full bg-rose-600 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100"
+                      >
+                        Delete
+                      </button>
+                    ) : null}
                   </div>
                 ))}
               </div>

@@ -544,6 +544,92 @@ class ScreenshotSecurityTest extends TestCase
         }
     }
 
+    public function test_manager_cannot_bulk_delete_screenshots(): void
+    {
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $manager = User::create([
+            'name' => 'Manager User',
+            'email' => 'manager-delete@example.com',
+            'password' => 'password123',
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+
+        $employee = User::create([
+            'name' => 'Employee User',
+            'email' => 'employee-delete@example.com',
+            'password' => 'password123',
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $timeEntry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-03-16 09:00:00',
+            'end_time' => '2026-03-16 10:00:00',
+            'duration' => 3600,
+            'billable' => true,
+        ]);
+
+        $screenshot = Screenshot::create([
+            'time_entry_id' => $timeEntry->id,
+            'filename' => 'manager-cannot-bulk-delete.png',
+        ]);
+
+        $this->postJson('/api/screenshots/bulk-delete', [
+            'screenshot_ids' => [$screenshot->id],
+        ], $this->apiHeadersFor($manager))
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('screenshots', ['id' => $screenshot->id]);
+    }
+
+    public function test_manager_cannot_delete_individual_screenshot(): void
+    {
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $manager = User::create([
+            'name' => 'Manager User',
+            'email' => 'manager-delete-single@example.com',
+            'password' => 'password123',
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+
+        $employee = User::create([
+            'name' => 'Employee User',
+            'email' => 'employee-delete-single@example.com',
+            'password' => 'password123',
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $timeEntry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-03-16 09:00:00',
+            'end_time' => '2026-03-16 10:00:00',
+            'duration' => 3600,
+            'billable' => true,
+        ]);
+
+        $screenshot = Screenshot::create([
+            'time_entry_id' => $timeEntry->id,
+            'filename' => 'manager-cannot-delete.png',
+        ]);
+
+        $this->deleteJson("/api/screenshots/{$screenshot->id}", [], $this->apiHeadersFor($manager))
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('screenshots', ['id' => $screenshot->id]);
+    }
+
     public function test_manager_screenshot_index_only_returns_employee_screenshots(): void
     {
         try {

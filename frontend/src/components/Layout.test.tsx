@@ -110,6 +110,28 @@ describe('Layout navigation', () => {
     expect(screen.queryByText('Audit Logs')).not.toBeInTheDocument();
   });
 
+  it('hides the add user button for managers', async () => {
+    authState.value = {
+      user: {
+        id: 3,
+        name: 'Manager',
+        email: 'manager@example.com',
+        role: 'manager',
+        organization_id: 1,
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+      logout: vi.fn(),
+      token: 'test-token',
+    };
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    await screen.findAllByText('Reports');
+    expect(screen.queryByRole('button', { name: /add user/i })).not.toBeInTheDocument();
+  });
+
   it('shows the unread chat badge on the chat navigation item', async () => {
     apiMocks.getUnreadSummary.mockResolvedValue({ data: { unread_messages: 4, unread_conversations: 2, unread_senders: 2 } });
 

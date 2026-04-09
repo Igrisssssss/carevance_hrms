@@ -16,18 +16,22 @@ const mocks = vi.hoisted(() => ({
   updateUser: vi.fn(),
 }));
 
+const authState = vi.hoisted(() => ({
+  user: {
+    id: 1,
+    name: 'Admin User',
+    email: 'admin@example.com',
+    role: 'admin',
+    organization_id: 1,
+    is_active: true,
+    created_at: '',
+    updated_at: '',
+  },
+}));
+
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({
-    user: {
-      id: 1,
-      name: 'Admin User',
-      email: 'admin@example.com',
-      role: 'admin',
-      organization_id: 1,
-      is_active: true,
-      created_at: '',
-      updated_at: '',
-    },
+    user: authState.user,
   }),
 }));
 
@@ -56,6 +60,16 @@ vi.mock('@/services/api', async () => {
 describe('Tasks page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.user = {
+      id: 1,
+      name: 'Admin User',
+      email: 'admin@example.com',
+      role: 'admin',
+      organization_id: 1,
+      is_active: true,
+      created_at: '',
+      updated_at: '',
+    };
 
     mocks.getAllTasks.mockResolvedValue({
       data: [
@@ -410,5 +424,25 @@ describe('Tasks page', () => {
     });
 
     vi.unstubAllGlobals();
+  });
+
+  it('hides manager-only create controls for managers', async () => {
+    authState.user = {
+      id: 9,
+      name: 'Manager User',
+      email: 'manager@example.com',
+      role: 'manager',
+      organization_id: 1,
+      is_active: true,
+      created_at: '',
+      updated_at: '',
+    };
+
+    renderWithProviders(<Tasks />);
+
+    expect(await screen.findByText('Build KPI overview')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /new group/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /new task/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/see every group and manage members from this page/i)).not.toBeInTheDocument();
   });
 });
