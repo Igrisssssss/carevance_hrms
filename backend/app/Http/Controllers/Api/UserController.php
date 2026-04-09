@@ -448,6 +448,7 @@ class UserController extends Controller
             ] + $timeBreakdown,
             'status' => [
                 'is_working' => (bool) $activeEntry,
+                'current_task' => $activeEntry?->task?->title,
                 'current_project' => $this->resolveCurrentProjectLabel($activeEntry),
                 'current_timer_started_at' => $activeEntry?->start_time,
                 'last_seen_at' => $user->last_seen_at,
