@@ -39,7 +39,7 @@ class EmailVerificationFlowTest extends TestCase
         );
 
         $this->get($verificationUrl)
-            ->assertRedirect(config('carevance.frontend_url').'/verify-email?status=verified');
+            ->assertRedirect(config('carevance.frontend_url').'/verify-email?status=verified&email=owner%40example.com');
 
         $this->assertNotNull($user->fresh()->email_verified_at);
     }
