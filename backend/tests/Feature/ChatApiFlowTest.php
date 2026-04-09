@@ -61,12 +61,37 @@ class ChatApiFlowTest extends TestCase
         $conversationId = (int) $conversationResponse->json('id');
         $this->assertGreaterThan(0, $conversationId);
 
-        $this->postJson("/api/chat/conversations/{$conversationId}/messages", [
+        $directMessageId = (int) $this->postJson("/api/chat/conversations/{$conversationId}/messages", [
             'body' => 'Daily sync complete',
         ], $adminHeaders)
             ->assertCreated()
             ->assertJsonPath('body', 'Daily sync complete')
-            ->assertJsonPath('sender.id', $admin->id);
+            ->assertJsonPath('sender.id', $admin->id)
+            ->json('id');
+
+        $this->patchJson("/api/chat/conversations/{$conversationId}/messages/{$directMessageId}", [
+            'body' => 'Daily sync completed and shared',
+        ], $adminHeaders)
+            ->assertOk()
+            ->assertJsonPath('body', 'Daily sync completed and shared')
+            ->assertJsonPath('is_edited', true);
+
+        $this->postJson("/api/chat/conversations/{$conversationId}/messages/{$directMessageId}/reactions", [
+            'emoji' => "\u{1F44D}",
+        ], $employeeHeaders)
+            ->assertOk()
+            ->assertJsonPath('reactions.0.emoji', "\u{1F44D}")
+            ->assertJsonPath('reactions.0.count', 1)
+            ->assertJsonPath('reactions.0.reacted_by_me', true);
+
+        $this->postJson("/api/chat/conversations/{$conversationId}/messages/{$directMessageId}/reactions", [
+            'emoji' => "\u{1F602}",
+        ], $employeeHeaders)
+            ->assertOk()
+            ->assertJsonCount(1, 'reactions')
+            ->assertJsonPath('reactions.0.emoji', "\u{1F602}")
+            ->assertJsonPath('reactions.0.count', 1)
+            ->assertJsonPath('reactions.0.reacted_by_me', true);
 
         $this->getJson('/api/chat/unread-summary', $employeeHeaders)
             ->assertOk()
@@ -79,7 +104,24 @@ class ChatApiFlowTest extends TestCase
         $this->getJson("/api/chat/conversations/{$conversationId}/messages", $employeeHeaders)
             ->assertOk()
             ->assertJsonCount(1)
-            ->assertJsonPath('0.body', 'Daily sync complete');
+            ->assertJsonPath('0.body', 'Daily sync completed and shared')
+            ->assertJsonPath('0.is_edited', true)
+            ->assertJsonCount(1, '0.reactions')
+            ->assertJsonPath('0.reactions.0.emoji', "\u{1F602}")
+            ->assertJsonPath('0.reactions.0.count', 1)
+            ->assertJsonPath('0.reactions.0.reacted_by_me', true);
+
+        $this->postJson("/api/chat/conversations/{$conversationId}/messages/{$directMessageId}/reactions", [
+            'emoji' => "\u{1F602}",
+        ], $employeeHeaders)
+            ->assertOk()
+            ->assertJsonPath('reactions', []);
+
+        $this->patchJson("/api/chat/conversations/{$conversationId}/messages/{$directMessageId}", [
+            'body' => 'Employee should not edit admin message',
+        ], $employeeHeaders)
+            ->assertForbidden()
+            ->assertJsonPath('message', 'You can only edit your own messages.');
 
         $this->postJson("/api/chat/conversations/{$conversationId}/typing", [
             'is_typing' => true,
@@ -115,9 +157,35 @@ class ChatApiFlowTest extends TestCase
         $groupId = (int) $groupResponse->json('id');
         $this->assertGreaterThan(0, $groupId);
 
-        $this->postJson("/api/chat/groups/{$groupId}/messages", [
+        $groupMessageId = (int) $this->postJson("/api/chat/groups/{$groupId}/messages", [
             'body' => 'Group update',
-        ], $adminHeaders)->assertCreated();
+        ], $adminHeaders)
+            ->assertCreated()
+            ->json('id');
+
+        $this->patchJson("/api/chat/groups/{$groupId}/messages/{$groupMessageId}", [
+            'body' => 'Updated group announcement',
+        ], $adminHeaders)
+            ->assertOk()
+            ->assertJsonPath('body', 'Updated group announcement')
+            ->assertJsonPath('is_edited', true);
+
+        $this->postJson("/api/chat/groups/{$groupId}/messages/{$groupMessageId}/reactions", [
+            'emoji' => "\u2764\uFE0F",
+        ], $employeeHeaders)
+            ->assertOk()
+            ->assertJsonPath('reactions.0.emoji', "\u2764\uFE0F")
+            ->assertJsonPath('reactions.0.count', 1)
+            ->assertJsonPath('reactions.0.reacted_by_me', true);
+
+        $this->postJson("/api/chat/groups/{$groupId}/messages/{$groupMessageId}/reactions", [
+            'emoji' => "\u{1F389}",
+        ], $employeeHeaders)
+            ->assertOk()
+            ->assertJsonCount(1, 'reactions')
+            ->assertJsonPath('reactions.0.emoji', "\u{1F389}")
+            ->assertJsonPath('reactions.0.count', 1)
+            ->assertJsonPath('reactions.0.reacted_by_me', true);
 
         $this->getJson('/api/chat/unread-summary', $employeeHeaders)
             ->assertOk()
@@ -143,6 +211,15 @@ class ChatApiFlowTest extends TestCase
             ->assertJsonPath('0.id', $groupId)
             ->assertJsonPath('0.member_count', 2);
 
+        $this->getJson("/api/chat/groups/{$groupId}/messages", $employeeHeaders)
+            ->assertOk()
+            ->assertJsonPath('0.body', 'Updated group announcement')
+            ->assertJsonPath('0.is_edited', true)
+            ->assertJsonCount(1, '0.reactions')
+            ->assertJsonPath('0.reactions.0.emoji', "\u{1F389}")
+            ->assertJsonPath('0.reactions.0.count', 1)
+            ->assertJsonPath('0.reactions.0.reacted_by_me', true);
+
         $this->postJson('/api/chat/groups', [
             'name' => 'Invalid Group',
             'user_ids' => [$outsider->id],
@@ -151,7 +228,7 @@ class ChatApiFlowTest extends TestCase
             ->assertJsonPath('message', 'All group members must belong to your organization.');
     }
 
-    public function test_message_requires_body_or_attachment(): void
+    public function test_message_requires_body_or_attachment_and_rejects_blank_edits(): void
     {
         $organization = Organization::create([
             'name' => 'Chat Validation Org',
@@ -187,6 +264,17 @@ class ChatApiFlowTest extends TestCase
         ], $senderHeaders)
             ->assertStatus(422)
             ->assertJsonPath('message', 'Message or attachment is required.');
+
+        $messageId = (int) $this->postJson("/api/chat/conversations/{$conversationId}/messages", [
+            'body' => 'Editable',
+        ], $senderHeaders)
+            ->assertCreated()
+            ->json('id');
+
+        $this->patchJson("/api/chat/conversations/{$conversationId}/messages/{$messageId}", [
+            'body' => '   ',
+        ], $senderHeaders)
+            ->assertStatus(422)
+            ->assertJsonPath('errors.body.0', 'The body field is required.');
     }
 }
-
