@@ -280,6 +280,7 @@ function CompactList({
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const canDeleteScreenshots = user?.role === 'admin';
   const [filters, setFilters] = useState<PersistedFilterState>(() => readPersistedAdminDashboardFilters());
   const [exportFeedback, setExportFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -1956,15 +1957,17 @@ export default function AdminDashboard() {
                             >
                               View all screenshots
                             </Button>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              iconLeft={<Trash2 className="h-4 w-4" />}
-                              onClick={handleDeleteAllScreenshotsInRange}
-                              disabled={employeeScreenshotTotal === 0 || isDeletingScreenshots}
-                            >
-                              Delete all in range
-                            </Button>
+                            {canDeleteScreenshots ? (
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                iconLeft={<Trash2 className="h-4 w-4" />}
+                                onClick={handleDeleteAllScreenshotsInRange}
+                                disabled={employeeScreenshotTotal === 0 || isDeletingScreenshots}
+                              >
+                                Delete all in range
+                              </Button>
+                            ) : null}
                           </div>
                         </div>
 
@@ -2036,42 +2039,48 @@ export default function AdminDashboard() {
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Total in range</p>
                     <p className="mt-2 text-lg font-semibold text-slate-950">{screenshotGalleryTotal}</p>
                   </div>
-                  <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Selected</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-950">{selectedScreenshotIds.length}</p>
-                  </div>
+                  {canDeleteScreenshots ? (
+                    <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Selected</p>
+                      <p className="mt-2 text-lg font-semibold text-slate-950">{selectedScreenshotIds.length}</p>
+                    </div>
+                  ) : null}
                   <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Date range</p>
                     <p className="mt-2 text-sm font-semibold text-slate-950">{filters.startDate} to {filters.endDate}</p>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 lg:justify-end">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={toggleVisibleScreenshotSelection}
-                    disabled={screenshotGalleryItems.length === 0}
-                  >
-                    {allVisibleScreenshotsSelected ? 'Unselect visible' : 'Select visible'}
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    iconLeft={<Trash2 className="h-4 w-4" />}
-                    onClick={handleDeleteSelectedScreenshots}
-                    disabled={selectedScreenshotIds.length === 0 || isDeletingScreenshots}
-                  >
-                    Delete selected
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    iconLeft={<Trash2 className="h-4 w-4" />}
-                    onClick={handleDeleteAllScreenshotsInRange}
-                    disabled={screenshotGalleryTotal === 0 || isDeletingScreenshots}
-                  >
-                    Delete all in range
-                  </Button>
+                  {canDeleteScreenshots ? (
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={toggleVisibleScreenshotSelection}
+                        disabled={screenshotGalleryItems.length === 0}
+                      >
+                        {allVisibleScreenshotsSelected ? 'Unselect visible' : 'Select visible'}
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        iconLeft={<Trash2 className="h-4 w-4" />}
+                        onClick={handleDeleteSelectedScreenshots}
+                        disabled={selectedScreenshotIds.length === 0 || isDeletingScreenshots}
+                      >
+                        Delete selected
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        iconLeft={<Trash2 className="h-4 w-4" />}
+                        onClick={handleDeleteAllScreenshotsInRange}
+                        disabled={screenshotGalleryTotal === 0 || isDeletingScreenshots}
+                      >
+                        Delete all in range
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               </div>
               {screenshotActionFeedback ? (
@@ -2114,15 +2123,17 @@ export default function AdminDashboard() {
                       >
                         <div className="relative">
                           <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-48 w-full object-cover" />
-                          <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-400"
-                              checked={isSelected}
-                              onChange={() => toggleScreenshotSelection(Number(shot.id))}
-                            />
-                            Select
-                          </label>
+                          {canDeleteScreenshots ? (
+                            <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-400"
+                                checked={isSelected}
+                                onChange={() => toggleScreenshotSelection(Number(shot.id))}
+                              />
+                              Select
+                            </label>
+                          ) : null}
                           <a
                             href={shot.path}
                             target="_blank"

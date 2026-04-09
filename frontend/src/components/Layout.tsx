@@ -243,7 +243,7 @@ export default function Layout() {
           onCloseMobileNavigation={() => setMobileNavigationOpen(false)}
           onOpenExternal={openWebDashboard}
           onOpenAddUser={handleOpenAddUser}
-          showAddUserButton={isAdminView && !isDesktopShell}
+          showAddUserButton={isStrictAdminView && !isDesktopShell}
           notificationPanel={
             <div ref={notificationsRef}>
             {notificationsOpen && (

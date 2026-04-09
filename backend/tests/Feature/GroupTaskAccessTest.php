@@ -80,7 +80,7 @@ class GroupTaskAccessTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_manager_can_create_tasks_only_for_managed_groups(): void
+    public function test_manager_cannot_create_tasks_even_for_visible_groups(): void
     {
         $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance']);
 
@@ -101,15 +101,43 @@ class GroupTaskAccessTest extends TestCase
             'priority' => 'medium',
             'assignee_id' => $employee->id,
         ], $headers)
-            ->assertCreated()
-            ->assertJsonPath('group.id', $digitalGroup->id)
-            ->assertJsonPath('assignee.id', $employee->id);
+            ->assertForbidden();
 
         $this->postJson('/api/tasks', [
             'group_id' => $itGroup->id,
             'title' => 'Provision a new laptop',
             'priority' => 'medium',
         ], $headers)
+            ->assertForbidden();
+    }
+
+    public function test_manager_cannot_create_groups(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance']);
+
+        $manager = $this->createUser($organization, 'Group Manager', 'manager-groups@carevance.test', 'manager');
+        $employee = $this->createUser($organization, 'Digital Employee', 'digital-groups@carevance.test', 'employee');
+
+        $this->postJson('/api/report-groups', [
+            'name' => 'Operations',
+            'description' => 'Operations team',
+            'user_ids' => [$employee->id],
+        ], $this->apiHeadersFor($manager))
+            ->assertForbidden();
+    }
+
+    public function test_manager_cannot_create_users_from_users_endpoint(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance']);
+
+        $manager = $this->createUser($organization, 'People Manager', 'people-manager@carevance.test', 'manager');
+
+        $this->postJson('/api/users', [
+            'name' => 'Blocked Employee',
+            'email' => 'blocked-employee@carevance.test',
+            'password' => 'password123',
+            'role' => 'employee',
+        ], $this->apiHeadersFor($manager))
             ->assertForbidden();
     }
 

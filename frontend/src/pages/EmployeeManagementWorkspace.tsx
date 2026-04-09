@@ -3,12 +3,10 @@ import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invitationApi, organizationApi, reportGroupApi, userApi } from '@/services/api';
 import PageHeader from '@/components/dashboard/PageHeader';
-import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
-import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
@@ -261,59 +259,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             <MetricCard label="Managers / Admins" value={users.filter((user: any) => user.role !== 'employee').length} hint="Elevated roles" icon={KeyRound} accent="violet" />
             <MetricCard label="Tracked Time" value={formatDuration(users.reduce((sum: number, user: any) => sum + Number(user.total_elapsed_duration || user.total_duration || 0), 0))} hint="Visible across users" icon={Users} accent="amber" />
           </div>
-
-          <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div>
-              <FieldLabel>Employee</FieldLabel>
-              <EmployeeSelect
-                employees={users}
-                value={selectedUserId ?? ''}
-                onChange={(value) => setSelectedUserId(value ? Number(value) : null)}
-              />
-            </div>
-            <div className="flex items-end">
-              <div className="flex w-full gap-3">
-                {selectedUser ? (
-                  <Link to={`/employees/${selectedUser.id}`} className="flex-1">
-                    <Button className="w-full">Open Profile</Button>
-                  </Link>
-                ) : (
-                  <Button className="flex-1 w-full" disabled>Open Profile</Button>
-                )}
-                {isStrictAdmin && selectedUser ? (
-                  <Button
-                    variant="danger"
-                    onClick={() => handleDeleteUser(selectedUser)}
-                    disabled={deleteUserMutation.isPending}
-                    className="shrink-0"
-                  >
-                    {deleteUserMutation.isPending ? 'Removing...' : 'Remove Employee'}
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-            {isStrictAdmin && selectedUser ? (
-              <div>
-                <FieldLabel>Promote / Change Role</FieldLabel>
-                <SelectInput
-                  value={selectedUser.role}
-                  onChange={(event) =>
-                    updateRoleMutation.mutate({
-                      userId: selectedUser.id,
-                      role: event.target.value as 'admin' | 'manager' | 'employee',
-                    })
-                  }
-                  disabled={updateRoleMutation.isPending}
-                >
-                  {employeeRoleOptions.map((role) => (
-                    <option key={role} value={role}>
-                      {role.charAt(0).toUpperCase() + role.slice(1)}
-                    </option>
-                  ))}
-                </SelectInput>
-              </div>
-            ) : null}
-          </FilterPanel>
 
           <DataTable
             title="Employee Directory"

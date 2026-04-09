@@ -67,7 +67,7 @@ const formatMinutes = (value?: number | null) => {
 export default function Tasks() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const canManageTasks = user?.role === 'admin' || user?.role === 'manager';
+  const canManageTasks = user?.role === 'admin';
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showTaskModal, setShowTaskModal] = useState(false);
