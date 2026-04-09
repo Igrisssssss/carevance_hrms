@@ -6,8 +6,10 @@ use App\Models\ChatConversation;
 use App\Models\ChatGroup;
 use App\Models\ChatGroupMember;
 use App\Models\ChatGroupMessage;
+use App\Models\ChatGroupMessageReaction;
 use App\Models\ChatGroupTypingStatus;
 use App\Models\ChatMessage;
+use App\Models\ChatMessageReaction;
 use App\Models\ChatTypingStatus;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -29,7 +31,7 @@ class ChatService
             })
             ->with(['participantOne:id,name,email,last_seen_at', 'participantTwo:id,name,email,last_seen_at'])
             ->with(['messages' => function ($query) {
-                $query->latest()->limit(1);
+                $query->with('reactionEntries')->latest()->limit(1);
             }])
             ->orderByDesc('updated_at')
             ->get()
@@ -184,6 +186,7 @@ class ChatService
                 'creator:id,name,email',
                 'members.user:id,name,email,last_seen_at',
                 'messages' => fn ($query) => $query->with('sender:id,name,email')->latest()->limit(1),
+                'messages.reactionEntries',
             ])
             ->orderByDesc('updated_at')
             ->get()
@@ -265,7 +268,7 @@ class ChatService
             'payload' => ChatMessage::query()
                 ->where('conversation_id', $conversation->id)
                 ->when($sinceId, fn ($query, $id) => $query->where('id', '>', $id))
-                ->with('sender:id,name,email')
+                ->with(['sender:id,name,email', 'reactionEntries'])
                 ->orderBy('created_at')
                 ->get(),
         ];
@@ -283,7 +286,7 @@ class ChatService
             'payload' => ChatGroupMessage::query()
                 ->where('group_id', $group->id)
                 ->when($sinceId, fn ($query, $id) => $query->where('id', '>', $id))
-                ->with('sender:id,name,email')
+                ->with(['sender:id,name,email', 'reactionEntries'])
                 ->orderBy('created_at')
                 ->get(),
         ];
@@ -308,7 +311,7 @@ class ChatService
 
         $conversation->touch();
 
-        return ['status' => 201, 'payload' => $message->load('sender:id,name,email')];
+        return ['status' => 201, 'payload' => $message->load(['sender:id,name,email', 'reactionEntries'])];
     }
 
     public function sendGroupMessage(Request $request, ?User $user, int $groupId): array
@@ -330,7 +333,169 @@ class ChatService
 
         $group->touch();
 
-        return ['status' => 201, 'payload' => $message->load('sender:id,name,email')];
+        return ['status' => 201, 'payload' => $message->load(['sender:id,name,email', 'reactionEntries'])];
+    }
+
+    public function updateMessage(?User $user, int $conversationId, int $messageId, string $body): array
+    {
+        $conversation = $this->findUserConversation($user?->id, $conversationId);
+        if (!$conversation || !$user) {
+            return ['status' => 404, 'payload' => ['message' => 'Conversation not found']];
+        }
+
+        $message = ChatMessage::query()
+            ->where('id', $messageId)
+            ->where('conversation_id', $conversation->id)
+            ->first();
+
+        if (!$message) {
+            return ['status' => 404, 'payload' => ['message' => 'Message not found']];
+        }
+
+        if ((int) $message->sender_id !== (int) $user->id) {
+            return ['status' => 403, 'payload' => ['message' => 'You can only edit your own messages.']];
+        }
+
+        $trimmedBody = trim($body);
+        if ($trimmedBody === '') {
+            return ['status' => 422, 'payload' => ['message' => 'Message cannot be empty.']];
+        }
+
+        $message->update([
+            'body' => $trimmedBody,
+            'edited_at' => now(),
+        ]);
+
+        return ['status' => 200, 'payload' => $message->fresh()->load(['sender:id,name,email', 'reactionEntries'])];
+    }
+
+    public function updateGroupMessage(?User $user, int $groupId, int $messageId, string $body): array
+    {
+        $group = $this->findUserGroup($user?->id, $groupId);
+        if (!$group || !$user) {
+            return ['status' => 404, 'payload' => ['message' => 'Group not found']];
+        }
+
+        $message = ChatGroupMessage::query()
+            ->where('id', $messageId)
+            ->where('group_id', $group->id)
+            ->first();
+
+        if (!$message) {
+            return ['status' => 404, 'payload' => ['message' => 'Message not found']];
+        }
+
+        if ((int) $message->sender_id !== (int) $user->id) {
+            return ['status' => 403, 'payload' => ['message' => 'You can only edit your own messages.']];
+        }
+
+        $trimmedBody = trim($body);
+        if ($trimmedBody === '') {
+            return ['status' => 422, 'payload' => ['message' => 'Message cannot be empty.']];
+        }
+
+        $message->update([
+            'body' => $trimmedBody,
+            'edited_at' => now(),
+        ]);
+
+        return ['status' => 200, 'payload' => $message->fresh()->load(['sender:id,name,email', 'reactionEntries'])];
+    }
+
+    public function toggleMessageReaction(?User $user, int $conversationId, int $messageId, string $emoji): array
+    {
+        $conversation = $this->findUserConversation($user?->id, $conversationId);
+        if (!$conversation || !$user) {
+            return ['status' => 404, 'payload' => ['message' => 'Conversation not found']];
+        }
+
+        $message = ChatMessage::query()
+            ->where('id', $messageId)
+            ->where('conversation_id', $conversation->id)
+            ->first();
+
+        if (!$message) {
+            return ['status' => 404, 'payload' => ['message' => 'Message not found']];
+        }
+
+        $normalizedEmoji = trim($emoji);
+        if ($normalizedEmoji === '') {
+            return ['status' => 422, 'payload' => ['message' => 'Reaction is required.']];
+        }
+
+        $existingReactions = ChatMessageReaction::query()
+            ->where('message_id', $message->id)
+            ->where('user_id', $user->id)
+            ->get();
+
+        $hasSameEmoji = $existingReactions->contains(
+            fn (ChatMessageReaction $reaction) => (string) $reaction->emoji === $normalizedEmoji
+        );
+
+        if ($existingReactions->isNotEmpty()) {
+            ChatMessageReaction::query()
+                ->where('message_id', $message->id)
+                ->where('user_id', $user->id)
+                ->delete();
+        }
+
+        if (!$hasSameEmoji) {
+            ChatMessageReaction::create([
+                'message_id' => $message->id,
+                'user_id' => $user->id,
+                'emoji' => $normalizedEmoji,
+            ]);
+        }
+
+        return ['status' => 200, 'payload' => $message->fresh()->load(['sender:id,name,email', 'reactionEntries'])];
+    }
+
+    public function toggleGroupMessageReaction(?User $user, int $groupId, int $messageId, string $emoji): array
+    {
+        $group = $this->findUserGroup($user?->id, $groupId);
+        if (!$group || !$user) {
+            return ['status' => 404, 'payload' => ['message' => 'Group not found']];
+        }
+
+        $message = ChatGroupMessage::query()
+            ->where('id', $messageId)
+            ->where('group_id', $group->id)
+            ->first();
+
+        if (!$message) {
+            return ['status' => 404, 'payload' => ['message' => 'Message not found']];
+        }
+
+        $normalizedEmoji = trim($emoji);
+        if ($normalizedEmoji === '') {
+            return ['status' => 422, 'payload' => ['message' => 'Reaction is required.']];
+        }
+
+        $existingReactions = ChatGroupMessageReaction::query()
+            ->where('group_message_id', $message->id)
+            ->where('user_id', $user->id)
+            ->get();
+
+        $hasSameEmoji = $existingReactions->contains(
+            fn (ChatGroupMessageReaction $reaction) => (string) $reaction->emoji === $normalizedEmoji
+        );
+
+        if ($existingReactions->isNotEmpty()) {
+            ChatGroupMessageReaction::query()
+                ->where('group_message_id', $message->id)
+                ->where('user_id', $user->id)
+                ->delete();
+        }
+
+        if (!$hasSameEmoji) {
+            ChatGroupMessageReaction::create([
+                'group_message_id' => $message->id,
+                'user_id' => $user->id,
+                'emoji' => $normalizedEmoji,
+            ]);
+        }
+
+        return ['status' => 200, 'payload' => $message->fresh()->load(['sender:id,name,email', 'reactionEntries'])];
     }
 
     public function markRead(?User $user, int $conversationId): array
