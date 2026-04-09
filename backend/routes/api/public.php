@@ -4,12 +4,16 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DesktopDownloadController;
 use App\Http\Controllers\Api\InviteController;
 use App\Http\Controllers\Api\InvitationController;
+use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\ScreenshotController;
 use App\Http\Controllers\Api\SupportController;
 use App\Http\Controllers\Api\PasswordResetController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/auth/email/verify/{id}/{hash}', [VerifyEmailController::class, 'verify'])
+    ->whereNumber('id')
+    ->name('api.verification.verify');
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth.register');
 Route::post('/auth/signup-owner', [AuthController::class, 'signupOwner'])->middleware('throttle:auth.register');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth.login');

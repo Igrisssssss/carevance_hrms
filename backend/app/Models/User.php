@@ -215,7 +215,7 @@ class User extends Authenticatable
     public function sendEmailVerificationNotification(): void
     {
         $verificationUrl = URL::temporarySignedRoute(
-            'verification.verify',
+            'api.verification.verify',
             now()->addMinutes((int) config('carevance.auth.email_verification_expire_minutes', 1440)),
             [
                 'id' => $this->getKey(),
