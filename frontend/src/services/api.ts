@@ -208,6 +208,9 @@ export const userApi = {
   
   get: (id: number) => 
     api.get<User>(`/users/${id}`),
+
+  getGroups: (id: number) =>
+    api.get<{ data: Group[] }>(`/users/${id}/groups`),
   
   create: (data: Partial<User> & { password?: string; group_ids?: number[] }) => 
     api.post<User>('/users', data),
