@@ -28,7 +28,7 @@ import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState } from '@/components/ui/PageState';
 import { useAuth } from '@/contexts/AuthContext';
 import { classifyActivityProductivity, normalizeActivityToolLabel } from '@/lib/activityProductivity';
-import { deriveDateRangeFromPreset, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, isDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
@@ -133,7 +133,7 @@ const readPersistedAdminDashboardFilters = (): PersistedFilterState => {
   const datePreset: DateRangePreset = isDateRangePreset(String(parsed.datePreset))
     ? (parsed.datePreset as DateRangePreset)
     : fallback.datePreset;
-  const derivedDates = datePreset === 'custom' ? fallback : { ...fallback, ...deriveDateRangeFromPreset(datePreset) };
+  const resolvedRange = resolvePersistedDateRange(datePreset, parsed.startDate || fallback.startDate, parsed.endDate || fallback.endDate);
   const selectedEmployeeId = coercePositiveNumber(parsed.selectedEmployeeId ?? parsed.selectedUserId) ?? '';
   const scope: DashboardScope =
     parsed.scope === 'employee' || (parsed.scope == null && selectedEmployeeId !== '')
@@ -144,8 +144,8 @@ const readPersistedAdminDashboardFilters = (): PersistedFilterState => {
     scope,
     selectedEmployeeId,
     datePreset,
-    startDate: parsed.startDate || derivedDates.startDate,
-    endDate: parsed.endDate || derivedDates.endDate,
+    startDate: resolvedRange.startDate,
+    endDate: resolvedRange.endDate,
     attendanceSearchQuery: typeof parsed.attendanceSearchQuery === 'string' ? parsed.attendanceSearchQuery : fallback.attendanceSearchQuery,
     attendanceGroupFilter: coercePositiveNumber(parsed.attendanceGroupFilter) ?? '',
   };
