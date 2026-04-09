@@ -82,6 +82,12 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
       return;
     }
 
+    if (!termsAccepted) {
+      setError('You must accept the terms and privacy policy before creating your workspace.');
+      setFieldErrors({ terms_accepted: ['You must accept the terms and privacy policy before creating your workspace.'] });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -342,19 +348,21 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                 <label className="flex items-start gap-3 rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-4 text-sm text-slate-600">
                   <input
                     type="checkbox"
+                    required
                     checked={termsAccepted}
                     onChange={(event) => setTermsAccepted(event.target.checked)}
                     className="mt-1 h-4 w-4 rounded border-slate-300 bg-white text-sky-600 focus:ring-sky-400"
                   />
                   <span>
                     I agree to the <Link to="/terms" className="font-semibold text-slate-900 underline-offset-4 hover:underline">terms</Link> and <Link to="/privacy" className="font-semibold text-slate-900 underline-offset-4 hover:underline">privacy policy</Link> for this workspace setup.
-                    <span className="mt-1 block text-xs text-slate-500">Optional now, easy to enforce later if you make legal acceptance mandatory.</span>
+                    <span className="mt-1 block text-xs text-slate-500">Required to create the workspace and continue to email verification.</span>
                   </span>
                 </label>
+                {fieldErrors.terms_accepted ? <p className="mt-2 text-sm text-red-600">{fieldErrors.terms_accepted[0]}</p> : null}
 
                 <button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || !termsAccepted}
                   className="group inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-5 py-4 text-sm font-semibold text-white shadow-[0_22px_50px_-18px_rgba(14,165,233,0.6)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_28px_58px_-20px_rgba(14,165,233,0.7)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isLoading ? (

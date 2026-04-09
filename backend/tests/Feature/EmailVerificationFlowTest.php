@@ -68,4 +68,57 @@ class EmailVerificationFlowTest extends TestCase
         Mail::assertQueued(VerifyEmailMail::class);
         Mail::assertQueuedCount(1);
     }
+
+    public function test_unverified_user_cannot_log_in_until_email_is_verified(): void
+    {
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        User::create([
+            'name' => 'Owner',
+            'email' => 'owner@example.com',
+            'password' => 'password123',
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+
+        $this->postJson('/api/auth/login', [
+            'email' => 'owner@example.com',
+            'password' => 'password123',
+        ])
+            ->assertStatus(403)
+            ->assertJsonPath('message', 'Please verify your email before signing in.')
+            ->assertJsonPath('error_code', 'EMAIL_NOT_VERIFIED')
+            ->assertJsonPath('email', 'owner@example.com');
+    }
+
+    public function test_verified_user_can_log_in(): void
+    {
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $user = User::create([
+            'name' => 'Owner',
+            'email' => 'owner@example.com',
+            'password' => 'password123',
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+
+        $user->forceFill([
+            'email_verified_at' => now(),
+        ])->save();
+
+        $this->postJson('/api/auth/login', [
+            'email' => 'owner@example.com',
+            'password' => 'password123',
+        ])
+            ->assertOk()
+            ->assertJsonPath('user.email', $user->email)
+            ->assertJsonStructure(['token']);
+    }
 }

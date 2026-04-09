@@ -49,6 +49,14 @@ export default function Login() {
       await login(submittedEmail, submittedPassword);
       navigate('/dashboard');
     } catch (err: any) {
+      const errorCode = err.response?.data?.error_code;
+      const responseEmail = err.response?.data?.email || submittedEmail;
+
+      if (errorCode === 'EMAIL_NOT_VERIFIED') {
+        navigate(`/verify-email?email=${encodeURIComponent(responseEmail)}&status=pending-login`);
+        return;
+      }
+
       setError(err.response?.data?.message || 'Invalid email or password');
     } finally {
       setIsLoading(false);

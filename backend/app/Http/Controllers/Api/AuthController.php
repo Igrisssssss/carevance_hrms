@@ -106,6 +106,15 @@ class AuthController extends Controller
             ]);
         }
 
+        if (! $user->hasVerifiedEmail()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please verify your email before signing in.',
+                'error_code' => 'EMAIL_NOT_VERIFIED',
+                'email' => $user->email,
+            ], 403);
+        }
+
         $token = $this->apiTokenService->issue($user);
         $user->load(['organization', 'groups']);
 

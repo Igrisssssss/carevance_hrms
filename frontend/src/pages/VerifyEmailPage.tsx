@@ -43,6 +43,13 @@ export default function VerifyEmailPage() {
       };
     }
 
+    if (status === 'pending-login') {
+      return {
+        tone: 'error' as const,
+        message: 'Please verify your email before signing in.',
+      };
+    }
+
     return null;
   }, [status]);
 

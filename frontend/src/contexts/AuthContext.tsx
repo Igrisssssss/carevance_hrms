@@ -373,7 +373,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       plan_code: 'starter',
       signup_mode: 'trial',
       billing_cycle: 'monthly',
-      terms_accepted: false,
+      terms_accepted: true,
     });
   };
 

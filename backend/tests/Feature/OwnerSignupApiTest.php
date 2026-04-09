@@ -26,6 +26,7 @@ class OwnerSignupApiTest extends TestCase
             'plan_code' => 'starter',
             'signup_mode' => 'trial',
             'billing_cycle' => 'monthly',
+            'terms_accepted' => true,
         ]);
 
         $response
@@ -61,6 +62,7 @@ class OwnerSignupApiTest extends TestCase
             'password_confirmation' => 'password123',
             'plan_code' => 'growth',
             'signup_mode' => 'paid',
+            'terms_accepted' => true,
             'role' => 'admin',
         ]);
 
@@ -97,6 +99,7 @@ class OwnerSignupApiTest extends TestCase
                 'plan_code' => 'starter',
                 'signup_mode' => 'trial',
                 'billing_cycle' => 'monthly',
+                'terms_accepted' => true,
             ])->assertCreated();
         }
 
@@ -109,6 +112,25 @@ class OwnerSignupApiTest extends TestCase
             'plan_code' => 'starter',
             'signup_mode' => 'trial',
             'billing_cycle' => 'monthly',
+            'terms_accepted' => true,
         ])->assertStatus(429);
+    }
+
+    public function test_owner_signup_requires_terms_acceptance(): void
+    {
+        $response = $this->postJson('/api/auth/signup-owner', [
+            'company_name' => 'CareVance Labs',
+            'name' => 'Workspace Owner',
+            'email' => 'owner@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'plan_code' => 'starter',
+            'signup_mode' => 'trial',
+            'billing_cycle' => 'monthly',
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['terms_accepted']);
     }
 }
