@@ -22,20 +22,25 @@ class VerifyEmailController extends Controller
         }
 
         if ($user->hasVerifiedEmail()) {
-            return $this->redirectToFrontend('already-verified');
+            return $this->redirectToFrontend('already-verified', $user->email);
         }
 
         $user->markEmailAsVerified();
 
-        return $this->redirectToFrontend('verified');
+        return $this->redirectToFrontend('verified', $user->email);
     }
 
-    private function redirectToFrontend(string $status): RedirectResponse
+    private function redirectToFrontend(string $status, ?string $email = null): RedirectResponse
     {
         $frontendUrl = rtrim((string) config('carevance.frontend_url', config('app.url')), '/');
-
-        return redirect()->away($frontendUrl.'/verify-email?'.http_build_query([
+        $query = [
             'status' => $status,
-        ]));
+        ];
+
+        if ($email) {
+            $query['email'] = $email;
+        }
+
+        return redirect()->away($frontendUrl.'/verify-email?'.http_build_query($query));
     }
 }

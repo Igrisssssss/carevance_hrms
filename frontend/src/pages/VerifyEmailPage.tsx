@@ -15,6 +15,9 @@ export default function VerifyEmailPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const status = searchParams.get('status');
   const email = searchParams.get('email')?.trim() || user?.email || '';
+  const [verificationResolved, setVerificationResolved] = useState(
+    status === 'verified' || status === 'already-verified' || Boolean(user?.email_verified_at)
+  );
 
   const statusMessage = useMemo(() => {
     if (status === 'verified') {
@@ -46,6 +49,8 @@ export default function VerifyEmailPage() {
     return null;
   }, [status]);
 
+  const isVerified = verificationResolved || Boolean(user?.email_verified_at);
+
   const handleResend = async () => {
     setInfoMessage('');
     setErrorMessage('');
@@ -56,6 +61,9 @@ export default function VerifyEmailPage() {
         ? await authApi.resendVerificationEmail()
         : await authApi.requestVerificationEmail({ email });
       setInfoMessage(response.data.message || 'A new verification email has been sent.');
+      if (response.data.already_verified) {
+        setVerificationResolved(true);
+      }
     } catch (requestError: any) {
       setErrorMessage(requestError?.response?.data?.message || 'Unable to resend the verification email right now.');
     } finally {
@@ -133,14 +141,14 @@ export default function VerifyEmailPage() {
                     <div>
                       <p className="text-sm font-semibold text-slate-950">Verification status</p>
                       <p className="mt-1 text-sm text-slate-600">
-                        {user?.email_verified_at ? 'Verified' : 'Pending verification'}
+                        {isVerified ? 'Verified' : 'Pending verification'}
                       </p>
                       {email ? <p className="mt-1 text-sm text-slate-500">{email}</p> : null}
                     </div>
                   </div>
                 </div>
 
-                {email && (!user || !user.email_verified_at) ? (
+                {email && !isVerified ? (
                   <button
                     type="button"
                     onClick={handleResend}
@@ -152,10 +160,10 @@ export default function VerifyEmailPage() {
                 ) : null}
 
                 <Link
-                  to={user && user.email_verified_at ? '/dashboard' : '/login'}
+                  to={isVerified && user ? '/dashboard' : '/login'}
                   className="inline-flex w-full items-center justify-center rounded-full border border-slate-300/85 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition duration-300 hover:-translate-y-0.5 hover:border-slate-950"
                 >
-                  {user && user.email_verified_at ? 'Back to dashboard' : 'Go to login'}
+                  {isVerified && user ? 'Back to dashboard' : 'Go to login'}
                 </Link>
               </div>
 
