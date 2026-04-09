@@ -934,7 +934,35 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     setHolidayDetails(matchedHoliday.details || '');
   }, [holidayCountry, holidayDate, holidayMapByDateAndCountry, isAdmin]);
 
-  const employeeSummaryStats = useMemo(
+  const employeeAttendanceRow = useMemo(
+    () => rows.find((row) => Number(row?.user?.id) === Number(user?.id)) || null,
+    [rows, user?.id]
+  );
+  const employeeWorkspaceGroups = useMemo(
+    () => (employeeGroups.length ? employeeGroups : ((user as any)?.groups || []).map((group: any) => ({ id: group.id, name: group.name }))),
+    [employeeGroups, user]
+  );
+  const employeeWorkspaceIsWorking = Boolean(
+    employeeProfile?.status?.is_working
+    || employeeAttendanceRow?.is_working
+    || todayRecord?.is_checked_in
+  );
+  const employeeWorkspaceLastSeenLabel = employeeProfile?.status?.last_seen_at
+    ? new Date(employeeProfile.status.last_seen_at).toLocaleString()
+    : employeeWorkspaceIsWorking
+      ? 'Active now'
+      : 'Unavailable';
+  const employeeWorkspaceCurrentTask =
+    employeeProfile?.status?.current_task
+    || employeeProfile?.status?.current_project
+    || (employeeWorkspaceIsWorking ? 'Timer running' : 'No active task');
+  const employeeWorkspaceCurrentTaskHint =
+    employeeWorkspaceIsWorking
+      ? employeeProfile?.status?.current_task || employeeProfile?.status?.current_project
+        ? 'You are currently working'
+        : 'Timer is active without a selected task'
+      : 'No active timer right now';
+  const employeeSummaryCards = useMemo(
     () => [
       {
         label: 'Workspace Users',
@@ -944,14 +972,14 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       },
       {
         label: 'Groups',
-        value: String(employeeGroups.length),
-        hint: employeeGroups.length ? employeeGroups.map((group) => group.name).join(', ') : 'No group assigned yet',
+        value: String(employeeWorkspaceGroups.length),
+        hint: employeeWorkspaceGroups.length ? employeeWorkspaceGroups.map((group) => group.name).join(', ') : 'No group assigned yet',
         icon: Layers3,
       },
       {
         label: 'Current Task',
-        value: employeeProfile?.status.current_task || employeeProfile?.status.current_project || 'No active task',
-        hint: employeeProfile?.status.is_working ? 'You are currently working' : 'No active timer right now',
+        value: employeeWorkspaceCurrentTask,
+        hint: employeeWorkspaceCurrentTaskHint,
         icon: Briefcase,
       },
       {
@@ -967,7 +995,13 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         icon: FolderKanban,
       },
     ],
-    [employeeGroups, employeeProfile, organizationMembersCount]
+    [
+      employeeProfile,
+      employeeWorkspaceCurrentTask,
+      employeeWorkspaceCurrentTaskHint,
+      employeeWorkspaceGroups,
+      organizationMembersCount,
+    ]
   );
   const employeeLiveMonitoring = employeeMonitoring?.live_monitoring?.selected_user || null;
   const openMonitoringScreenshotGallery = () => {
@@ -1142,12 +1176,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 ) : (
                   <>
                     <p>
-                      Working now: <span className="font-semibold text-slate-950">{employeeProfile?.status.is_working ? 'Yes' : 'No'}</span>
+                      Working now: <span className="font-semibold text-slate-950">{employeeWorkspaceIsWorking ? 'Yes' : 'No'}</span>
                     </p>
                     <p className="mt-1">
                       Last seen:{' '}
                       <span className="font-semibold text-slate-950">
-                        {employeeProfile?.status.last_seen_at ? new Date(employeeProfile.status.last_seen_at).toLocaleString() : 'Unavailable'}
+                        {employeeWorkspaceLastSeenLabel}
                       </span>
                     </p>
                   </>
@@ -1156,7 +1190,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {employeeSummaryStats.map((item) => (
+              {employeeSummaryCards.map((item) => (
                 <div key={item.label} className="rounded-[24px] border border-slate-200 bg-white/85 p-4 shadow-[0_18px_38px_-28px_rgba(15,23,42,0.25)]">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
