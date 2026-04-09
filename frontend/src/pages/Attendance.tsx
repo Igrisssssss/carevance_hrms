@@ -1378,7 +1378,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                   <p className="font-medium text-gray-900">{row.user.name}</p>
                   <p className="text-xs text-gray-500">{row.user.email}</p>
                 </td>
-                <td className="px-4 py-3 text-gray-700">{row.days_present} / {row.working_days_in_range}</td>
+                <td className="px-4 py-3 text-gray-700">{row.days_present} / {row.calendar_days_in_range || row.working_days_in_range}</td>
                 <td className="px-4 py-3 text-gray-700">{row.leave_days}</td>
                 <td className="px-4 py-3 text-gray-700">{row.attendance_rate}%</td>
                 <td className="px-4 py-3 text-gray-700">{formatDuration(row.worked_seconds)}</td>

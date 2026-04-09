@@ -639,6 +639,45 @@ class ReportWorkingTimeTest extends TestCase
         }
     }
 
+    public function test_attendance_report_includes_weekends_in_calendar_day_totals(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-03-22 10:15:00'));
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+            AttendanceRecord::create([
+                'organization_id' => $employee->organization_id,
+                'user_id' => $employee->id,
+                'attendance_date' => '2026-03-20',
+                'check_in_at' => '2026-03-20 09:00:00',
+                'check_out_at' => '2026-03-20 18:00:00',
+                'worked_seconds' => 32400,
+                'manual_adjustment_seconds' => 0,
+                'late_minutes' => 0,
+                'status' => 'present',
+            ]);
+
+            $query = http_build_query([
+                'start_date' => '2026-03-20',
+                'end_date' => '2026-03-22',
+                'user_id' => $employee->id,
+            ]);
+
+            $this->getJson("/api/reports/attendance?{$query}", $headers)
+                ->assertOk()
+                ->assertJsonPath('calendar_days', 3)
+                ->assertJsonPath('working_days', 1)
+                ->assertJsonPath('weekend_days', 2)
+                ->assertJsonPath('data.0.days_present', 1)
+                ->assertJsonPath('data.0.calendar_days_in_range', 3)
+                ->assertJsonPath('data.0.working_days_in_range', 1)
+                ->assertJsonPath('data.0.attendance_rate', 33.33);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_manager_employee_insights_only_returns_employee_monitoring_rows(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-03-16 11:15:00'));
