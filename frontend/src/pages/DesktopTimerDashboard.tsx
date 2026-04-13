@@ -56,6 +56,21 @@ const getLocalDateString = () => {
   return new Date(now.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
 };
 
+const getDateStringForTimestamp = (value?: string) => {
+  if (!value) return '';
+
+  const parsedMs = getStartTimeMs(value);
+  if (Number.isFinite(parsedMs)) {
+    const timestamp = new Date(parsedMs);
+    const timezoneOffsetMs = timestamp.getTimezoneOffset() * 60000;
+    return new Date(timestamp.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
+  }
+
+  return value.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? '';
+};
+
+const isTodayTimer = (startTime?: string) => getDateStringForTimestamp(startTime) === getLocalDateString();
+
 const restoreTimerSnapshot = (
   userId: number | null,
   organizationId: number | null | undefined,
@@ -76,7 +91,7 @@ const restoreTimerSnapshot = (
     const duration = Number.isFinite(Number(parsed.duration)) ? Number(parsed.duration) : 0;
     const startTime = typeof parsed.start_time === 'string' ? parsed.start_time : '';
 
-    if (!entryId || !startTime) {
+    if (!entryId || !startTime || !isTodayTimer(startTime)) {
       localStorage.removeItem(ACTIVE_TIMER_KEY);
       return null;
     }
@@ -219,9 +234,34 @@ export default function DesktopTimerDashboard() {
 
       const data = dashboardSucceeded ? (dashboardResult.value.data as any) : null;
       const attendancePayload = attendanceSucceeded ? (attendanceResult.value.data as any) : null;
-      const activeFromApi = data?.active_timer || null;
+      let activeFromApi = data?.active_timer || null;
+      const staleActiveTimer = activeFromApi && !isTodayTimer(activeFromApi.start_time);
       const snapshot = dashboardSucceeded && !activeFromApi ? localStorage.getItem(ACTIVE_TIMER_KEY) : null;
       let todayElapsedSeconds = Number(data?.today_total_elapsed_duration ?? data?.today_total_duration ?? 0) || 0;
+
+      if (staleActiveTimer) {
+        let clearedStaleTimer = false;
+        try {
+          await timeEntryApi.stop({
+            timer_slot: (activeFromApi?.timer_slot || 'primary') as 'primary' | 'secondary',
+          });
+          clearedStaleTimer = true;
+        } catch (error) {
+          const status = (error as any)?.response?.status;
+          if (status === 404) {
+            clearedStaleTimer = true;
+          }
+          if (status !== 404 && status !== 401 && status !== 403) {
+            console.error('Failed to stop stale timer from a previous day:', error);
+          }
+        }
+
+        if (clearedStaleTimer) {
+          activeFromApi = null;
+          localStorage.removeItem(ACTIVE_TIMER_KEY);
+          setNotice('Your previous day timer was stopped automatically. Start a fresh timer for today.');
+        }
+      }
 
       if (dashboardSucceeded) {
         setActiveTimer(activeFromApi);
@@ -587,7 +627,7 @@ export default function DesktopTimerDashboard() {
   );
   const effectiveWorkedSeconds = Math.max(currentWorkedSeconds, todayTotal);
   const todayDisplaySeconds = effectiveWorkedSeconds;
-  const timerDisplaySeconds = activeTimer ? liveDuration : 0;
+  const timerDisplaySeconds = activeTimer ? liveDuration : todayDisplaySeconds;
   const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - effectiveWorkedSeconds);
   const overtimeSeconds = Math.max(0, effectiveWorkedSeconds - shiftTargetSeconds);
   const availableTasks = allowedTasks.filter((task) => task.status !== 'done');

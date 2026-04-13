@@ -241,6 +241,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [timeEditFeedback, setTimeEditFeedbackState] = useState<SectionFeedback>(null);
   const [employeeProfile, setEmployeeProfile] = useState<UserProfile360 | null>(null);
   const [employeeMonitoring, setEmployeeMonitoring] = useState<any | null>(null);
+  const [employeeMonitoringProfile, setEmployeeMonitoringProfile] = useState<UserProfile360 | null>(null);
   const [employeeMonitoringScreenshots, setEmployeeMonitoringScreenshots] = useState<any[]>([]);
   const [employeeWebsiteUsage, setEmployeeWebsiteUsage] = useState<any[]>([]);
   const [employeeGroups, setEmployeeGroups] = useState<Array<{ id: number; name: string }>>([]);
@@ -806,27 +807,52 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     if (mode !== 'full') return;
     if (!canSeeAttendanceMonitoring) {
       setEmployeeMonitoring(null);
+      setEmployeeMonitoringProfile(null);
       setEmployeeMonitoringScreenshots([]);
       setEmployeeWebsiteUsage([]);
       return;
     }
 
     const monitoringUserId = selectedUserId;
-    if (!monitoringUserId) return;
+    if (!monitoringUserId) {
+      setEmployeeMonitoring(null);
+      setEmployeeMonitoringProfile(null);
+      setEmployeeMonitoringScreenshots([]);
+      setEmployeeWebsiteUsage([]);
+      return;
+    }
 
     let active = true;
 
     const fetchMonitoringPanel = async () => {
       try {
-        const [insightsResponse, screenshotsResponse, websiteResponse] = await Promise.all([
+        const [insightsResult, screenshotsResult, websiteResult, profileResult] = await Promise.allSettled([
           reportApi.employeeInsights({ start_date: startDate, end_date: endDate, user_id: monitoringUserId }),
           screenshotApi.getAll({ user_id: monitoringUserId, start_date: startDate, end_date: endDate, page: 1 }),
           activityApi.getAll({ user_id: monitoringUserId, type: 'url', start_date: startDate, end_date: endDate, page: 1 }),
+          userApi.getProfile360(monitoringUserId, { start_date: startDate, end_date: endDate }),
         ]);
 
         if (!active) return;
 
-        const websiteRows = ((websiteResponse.data as any)?.data || []).reduce((rows: any[], item: any) => {
+        if (insightsResult.status === 'rejected') {
+          console.warn('Attendance monitoring insights fetch failed:', insightsResult.reason);
+        }
+        if (screenshotsResult.status === 'rejected') {
+          console.warn('Attendance monitoring screenshots fetch failed:', screenshotsResult.reason);
+        }
+        if (websiteResult.status === 'rejected') {
+          console.warn('Attendance monitoring website usage fetch failed:', websiteResult.reason);
+        }
+        if (profileResult.status === 'rejected') {
+          console.warn('Attendance monitoring profile fetch failed:', profileResult.reason);
+        }
+
+        const websiteRows = (
+          websiteResult.status === 'fulfilled'
+            ? ((websiteResult.value.data as any)?.data || [])
+            : []
+        ).reduce((rows: any[], item: any) => {
           const website = normalizeToolLabel(item.name || '', item.type || 'url');
           const classification = classifyProductivity(website, item.type || 'url');
           const existing = rows.find((row) => row.website === website && row.classification === classification);
@@ -851,13 +877,19 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           return rows;
         }, []).sort((a: any, b: any) => Number(b.duration || 0) - Number(a.duration || 0));
 
-        setEmployeeMonitoring((insightsResponse.data as any) || null);
-        setEmployeeMonitoringScreenshots(((screenshotsResponse.data as any)?.data || []).slice(0, 8));
+        setEmployeeMonitoring(insightsResult.status === 'fulfilled' ? ((insightsResult.value.data as any) || null) : null);
+        setEmployeeMonitoringProfile(profileResult.status === 'fulfilled' ? (profileResult.value.data || null) : null);
+        setEmployeeMonitoringScreenshots(
+          screenshotsResult.status === 'fulfilled'
+            ? (((screenshotsResult.value.data as any)?.data || []).slice(0, 8))
+            : []
+        );
         setEmployeeWebsiteUsage(websiteRows);
       } catch (monitoringError) {
         console.error('Attendance monitoring panel fetch failed:', monitoringError);
         if (active) {
           setEmployeeMonitoring(null);
+          setEmployeeMonitoringProfile(null);
           setEmployeeMonitoringScreenshots([]);
           setEmployeeWebsiteUsage([]);
         }
@@ -871,9 +903,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     };
   }, [canSeeAttendanceMonitoring, endDate, mode, selectedUserId, startDate]);
 
-  const selectedRow = rows.find((row) => row.user.id === selectedUserId) || rows[0];
+  const selectedRow = rows.find((row) => row.user.id === selectedUserId) || null;
   const employeePanelUser = employeeProfile?.user || user;
-  const attendancePanelUser = isAdmin ? selectedRow?.user : employeePanelUser;
+  const attendancePanelUser = isAdmin
+    ? (selectedRow?.user || employeeMonitoringProfile?.user || null)
+    : employeePanelUser;
   const monitoringUserId = canSeeAttendanceMonitoring ? selectedUserId : null;
   const canReviewLeaveRequest = (item: any) => canReviewApprovalRequest(user, item?.user);
   const canReviewTimeEditRequest = (item: any) => canReviewApprovalRequest(user, item?.user);
@@ -1004,6 +1038,30 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     ]
   );
   const employeeLiveMonitoring = employeeMonitoring?.live_monitoring?.selected_user || null;
+  const monitoringProfileStatus = employeeMonitoringProfile?.status || null;
+  const monitoringIsWorking = Boolean(
+    employeeLiveMonitoring?.is_working
+    || monitoringProfileStatus?.is_working
+    || selectedRow?.is_working
+  );
+  const monitoringWorkStatus = employeeLiveMonitoring?.work_status?.replace('_', ' ')
+    || (monitoringIsWorking ? 'active' : 'inactive');
+  const monitoringCurrentTool = employeeLiveMonitoring?.current_tool
+    || monitoringProfileStatus?.current_task
+    || monitoringProfileStatus?.current_project
+    || (monitoringIsWorking ? 'Timer running without recent tool activity' : 'No active tool detected');
+  const monitoringCurrentToolMeta = employeeLiveMonitoring?.tool_type
+    || employeeLiveMonitoring?.activity_type
+    || (monitoringProfileStatus?.current_task
+      ? 'Current task'
+      : monitoringProfileStatus?.current_project
+        ? 'Current project'
+        : 'No tool type');
+  const monitoringLastActivityAt = employeeLiveMonitoring?.last_activity_at
+    || monitoringProfileStatus?.last_seen_at
+    || monitoringProfileStatus?.current_timer_started_at
+    || null;
+  const shouldShowAttendanceMonitoringState = Boolean(monitoringUserId && attendancePanelUser);
   const openMonitoringScreenshotGallery = () => {
     if (!monitoringUserId) return;
 
@@ -1210,101 +1268,117 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-700">Monitoring Panel</p>
               <h2 className="mt-2 text-xl font-semibold text-slate-950">
-                {attendancePanelUser?.name || employeePanelUser?.name || 'Employee monitoring'}
+                {shouldShowAttendanceMonitoringState
+                  ? attendancePanelUser?.name || 'Employee monitoring'
+                  : 'Select an employee'}
               </h2>
-              <p className="mt-1 text-sm text-slate-500">Live activity, screenshot previews, and website productivity directly inside attendance.</p>
+              <p className="mt-1 text-sm text-slate-500">
+                {shouldShowAttendanceMonitoringState
+                  ? 'Live activity, screenshot previews, and website productivity directly inside attendance.'
+                  : 'Choose an employee from the attendance table or employee filter to load live monitoring details.'}
+              </p>
             </div>
             <div className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold capitalize ${productivityTone(employeeLiveMonitoring?.classification)}`}>
-              {employeeLiveMonitoring?.classification || 'neutral'}
+              {shouldShowAttendanceMonitoringState
+                ? employeeLiveMonitoring?.classification || 'neutral'
+                : 'neutral'}
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
-              <p className="mt-2 text-sm font-semibold text-slate-950">{employeeLiveMonitoring?.current_tool || 'No active tool detected'}</p>
-              <p className="mt-1 text-xs capitalize text-slate-500">{employeeLiveMonitoring?.tool_type || employeeLiveMonitoring?.activity_type || 'No tool type'}</p>
-            </div>
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
-              <p className="mt-2 text-sm font-semibold capitalize text-slate-950">{employeeLiveMonitoring?.work_status?.replace('_', ' ') || 'inactive'}</p>
-              <p className="mt-1 text-xs text-slate-500">{employeeLiveMonitoring?.is_working ? 'Timer active now' : 'No active timer right now'}</p>
-            </div>
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
-              <p className="mt-2 text-sm font-semibold text-slate-950">{formatDateTime(employeeLiveMonitoring?.last_activity_at)}</p>
-              <p className="mt-1 text-xs text-slate-500">{employeeMonitoring?.stats?.activity_events || 0} activity events in selected range</p>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-            <div className="rounded-[24px] border border-slate-200 bg-white/85 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-semibold text-slate-950">Screenshot captures</h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500">{employeeMonitoringScreenshots.length} shown</span>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    iconLeft={<Eye className="h-4 w-4" />}
-                    onClick={openMonitoringScreenshotGallery}
-                    disabled={!monitoringUserId || employeeMonitoringScreenshots.length === 0}
-                  >
-                    View all screenshots
-                  </Button>
+          {shouldShowAttendanceMonitoringState ? (
+            <>
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-950">{monitoringCurrentTool}</p>
+                  <p className="mt-1 text-xs capitalize text-slate-500">{monitoringCurrentToolMeta}</p>
+                </div>
+                <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
+                  <p className="mt-2 text-sm font-semibold capitalize text-slate-950">{monitoringWorkStatus}</p>
+                  <p className="mt-1 text-xs text-slate-500">{monitoringIsWorking ? 'Timer active now' : 'No active timer right now'}</p>
+                </div>
+                <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-950">{formatDateTime(monitoringLastActivityAt)}</p>
+                  <p className="mt-1 text-xs text-slate-500">{employeeMonitoring?.stats?.activity_events || 0} activity events in selected range</p>
                 </div>
               </div>
-              {employeeMonitoringScreenshots.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">No screenshots found for the selected employee in this attendance panel.</p>
-              ) : (
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {employeeMonitoringScreenshots.map((shot: any) => (
-                    <a
-                      key={shot.id}
-                      href={shot.path}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="overflow-hidden rounded-[20px] border border-slate-200 bg-white transition hover:border-sky-200"
-                    >
-                      <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-32 w-full object-cover" />
-                      <div className="space-y-2 p-3">
-                        <p className="text-xs font-semibold text-slate-950">{formatDateTime(shot.recorded_at)}</p>
-                        <p className="text-[11px] text-slate-500">{shot.filename || 'Captured screenshot'}</p>
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              )}
-            </div>
 
-            <div className="rounded-[24px] border border-slate-200 bg-white/85 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-semibold text-slate-950">Website productivity</h3>
-                <span className="text-xs text-slate-500">Selected range</span>
-              </div>
-              {employeeWebsiteUsage.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">No website usage found for this employee.</p>
-              ) : (
-                <div className="mt-4 space-y-3">
-                  {employeeWebsiteUsage.slice(0, 6).map((item: any) => (
-                    <div key={`${item.website}-${item.classification}`} className="rounded-[20px] border border-slate-200 bg-slate-50/70 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-slate-950">{item.website}</p>
-                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize ${productivityTone(item.classification)}`}>
-                          {item.classification}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                        <span>{formatDuration(item.duration || 0)}</span>
-                        <span>{item.events} events</span>
-                      </div>
-                      <p className="mt-1 text-[11px] text-slate-500">Last used: {formatDateTime(item.lastUsedAt)}</p>
+              <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+                <div className="rounded-[24px] border border-slate-200 bg-white/85 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="font-semibold text-slate-950">Screenshot captures</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500">{employeeMonitoringScreenshots.length} shown</span>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        iconLeft={<Eye className="h-4 w-4" />}
+                        onClick={openMonitoringScreenshotGallery}
+                        disabled={!monitoringUserId || employeeMonitoringScreenshots.length === 0}
+                      >
+                        View all screenshots
+                      </Button>
                     </div>
-                  ))}
+                  </div>
+                  {employeeMonitoringScreenshots.length === 0 ? (
+                    <p className="mt-3 text-sm text-slate-500">No screenshots found for the selected employee in this attendance panel.</p>
+                  ) : (
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {employeeMonitoringScreenshots.map((shot: any) => (
+                        <a
+                          key={shot.id}
+                          href={shot.path}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="overflow-hidden rounded-[20px] border border-slate-200 bg-white transition hover:border-sky-200"
+                        >
+                          <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-32 w-full object-cover" />
+                          <div className="space-y-2 p-3">
+                            <p className="text-xs font-semibold text-slate-950">{formatDateTime(shot.recorded_at)}</p>
+                            <p className="text-[11px] text-slate-500">{shot.filename || 'Captured screenshot'}</p>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
+
+                <div className="rounded-[24px] border border-slate-200 bg-white/85 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="font-semibold text-slate-950">Website productivity</h3>
+                    <span className="text-xs text-slate-500">Selected range</span>
+                  </div>
+                  {employeeWebsiteUsage.length === 0 ? (
+                    <p className="mt-3 text-sm text-slate-500">No website usage found for this employee.</p>
+                  ) : (
+                    <div className="mt-4 space-y-3">
+                      {employeeWebsiteUsage.slice(0, 6).map((item: any) => (
+                        <div key={`${item.website}-${item.classification}`} className="rounded-[20px] border border-slate-200 bg-slate-50/70 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-slate-950">{item.website}</p>
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize ${productivityTone(item.classification)}`}>
+                              {item.classification}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                            <span>{formatDuration(item.duration || 0)}</span>
+                            <span>{item.events} events</span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-slate-500">Last used: {formatDateTime(item.lastUsedAt)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="mt-4 rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 p-5 text-sm text-slate-500">
+              Monitoring details will appear here after an employee is selected.
             </div>
-          </div>
+          )}
         </SurfaceCard>
         ) : null}
 
