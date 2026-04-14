@@ -208,7 +208,7 @@ export default function PayrollReportsView() {
 
         <DataTable
           title="Deductions Report"
-          description="Deductions and tax totals by employee."
+          description="Deductions, tax, and compliance deductions by employee."
           rows={reports.deductions_report || []}
           emptyMessage="No deduction report data found."
           stickyHeader
@@ -216,6 +216,7 @@ export default function PayrollReportsView() {
             { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
             { key: 'deductions', header: 'Deductions', render: (row: any) => formatPayrollCurrency(row.deductions || 0) },
             { key: 'tax', header: 'Tax', render: (row: any) => formatPayrollCurrency(row.tax || 0) },
+            { key: 'tds', header: 'TDS', render: (row: any) => formatPayrollCurrency(row.tds || 0) },
             { key: 'total_deductions', header: 'Total', render: (row: any) => formatPayrollCurrency(row.total_deductions || 0) },
           ]}
         />
@@ -232,6 +233,36 @@ export default function PayrollReportsView() {
             { key: 'present', header: 'Present', render: (row: any) => row.attendance_present_days },
             { key: 'leave', header: 'Leave', render: (row: any) => row.approved_leave_days },
             { key: 'worked', header: 'Worked Time', render: (row: any) => formatPayrollDuration(row.worked_seconds || 0) },
+          ]}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        <DataTable
+          title="Tax Report"
+          description="Employee-level TDS view with declared regime and annual estimate."
+          rows={reports.tax_report || []}
+          emptyMessage="No tax report data found."
+          stickyHeader
+          columns={[
+            { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
+            { key: 'tax_regime', header: 'Regime', render: (row: any) => row.tax_regime || 'N/A' },
+            { key: 'monthly_tds', header: 'Monthly TDS', render: (row: any) => formatPayrollCurrency(row.monthly_tds || 0) },
+            { key: 'annual_tax', header: 'Annual Tax', render: (row: any) => formatPayrollCurrency(row.annual_tax || 0) },
+          ]}
+        />
+
+        <DataTable
+          title="Compliance Report"
+          description="Employee and employer statutory totals for the selected run."
+          rows={reports.compliance_report || []}
+          emptyMessage="No compliance report data found."
+          stickyHeader
+          columns={[
+            { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
+            { key: 'employee_deductions', header: 'Employee Deductions', render: (row: any) => formatPayrollCurrency(row.employee_deductions || 0) },
+            { key: 'tds', header: 'TDS', render: (row: any) => formatPayrollCurrency(row.tds || 0) },
+            { key: 'employer_contributions', header: 'Employer Contributions', render: (row: any) => formatPayrollCurrency(row.employer_contributions || 0) },
           ]}
         />
       </div>
@@ -267,6 +298,20 @@ export default function PayrollReportsView() {
           ]}
         />
       </div>
+
+      <DataTable
+        title="Bank Advice / Payout Summary"
+        description="Export-friendly payout sheet with payment references and current status."
+        rows={reports.payout_bank_advice || []}
+        emptyMessage="No payout summary rows found."
+        stickyHeader
+        columns={[
+          { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Employee' },
+          { key: 'net_pay', header: 'Net Pay', render: (row: any) => formatPayrollCurrency(Number(row.net_pay || 0)) },
+          { key: 'payout_status', header: 'Payout', render: (row: any) => <PayrollStatusBadge status={row.payout_status} /> },
+          { key: 'payment_reference', header: 'Reference', render: (row: any) => row.payment_reference || 'Pending' },
+        ]}
+      />
 
       <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50/70 px-4 py-4 text-sm text-slate-500">
         Current reports are fully viewable in-app. Dedicated export generation for these workspace reports is the remaining backend step.

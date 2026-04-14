@@ -30,7 +30,7 @@ export default function PayrollRunsView() {
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [generateEmployeeId, setGenerateEmployeeId] = useState<number | ''>('');
-  const [generatePayoutMethod, setGeneratePayoutMethod] = useState<'mock' | 'stripe'>('mock');
+  const [generatePayoutMethod, setGeneratePayoutMethod] = useState<'mock' | 'stripe' | 'bank_transfer'>('mock');
   const [allowOverwrite, setAllowOverwrite] = useState(false);
   const [selectedPayrollDraft, setSelectedPayrollDraft] = useState<PayrollRecord | null>(null);
   const [validatedRunIds, setValidatedRunIds] = useState<number[]>([]);
@@ -107,8 +107,11 @@ export default function PayrollRunsView() {
     [selectedRun]
   );
 
+  const approvalTimeline = runDetailQuery.data?.approval_timeline || [];
+
   const runStage = useMemo(() => {
     if (!selectedRun) return 'draft';
+    if (['validated', 'manager_approved', 'finance_approved', 'processed', 'paid'].includes(selectedRun.status)) return selectedRun.status;
     if (items.length > 0 && items.every((item) => item.payroll?.payroll_status === 'paid')) return 'paid';
     if (items.length > 0 && items.every((item) => ['processed', 'paid'].includes(item.payroll?.payroll_status || 'draft'))) return 'processed';
     if (selectedRun.status === 'approved') return 'approved';
@@ -116,19 +119,21 @@ export default function PayrollRunsView() {
   }, [items, selectedRun]);
 
   const isValidated = useMemo(
-    () => Boolean(selectedRun && (validatedRunIds.includes(selectedRun.id) || ['approved', 'processed', 'paid', 'finalized', 'locked'].includes(selectedRun.status))),
+    () => Boolean(selectedRun && (validatedRunIds.includes(selectedRun.id) || ['validated', 'approved', 'manager_approved', 'finance_approved', 'processed', 'paid', 'finalized', 'locked'].includes(selectedRun.status))),
     [selectedRun, validatedRunIds]
   );
 
   const workflowSteps = useMemo<WorkflowStep[]>(() => {
-    const approved = runStage === 'approved' || runStage === 'processed' || runStage === 'paid';
-    const processed = runStage === 'processed' || runStage === 'paid';
+    const managerApproved = ['manager_approved', 'finance_approved', 'processed', 'paid'].includes(runStage);
+    const financeApproved = ['finance_approved', 'processed', 'paid'].includes(runStage);
+    const processed = ['processed', 'paid'].includes(runStage);
     const paid = runStage === 'paid';
     return [
       { key: 'draft', label: 'Draft', detail: `${summary.drafts} draft records`, state: isValidated ? 'complete' : 'current' },
-      { key: 'validate', label: 'Validate', detail: runWarnings.length > 0 ? `${runWarnings.length} blockers` : 'Ready to approve', state: approved || isValidated ? 'complete' : 'current' },
-      { key: 'approve', label: 'Approve', detail: approved ? 'Run approved' : 'Awaiting sign-off', state: approved ? 'complete' : (isValidated ? 'current' : 'blocked') },
-      { key: 'process', label: 'Process', detail: `${items.filter((item) => item.payroll?.payroll_status === 'processed').length} processed`, state: processed ? 'complete' : (approved ? 'current' : 'blocked') },
+      { key: 'validate', label: 'Validate', detail: runWarnings.length > 0 ? `${runWarnings.length} blockers` : 'Ready for manager review', state: runStage !== 'draft' || isValidated ? 'complete' : 'current' },
+      { key: 'manager', label: 'Manager Approval', detail: managerApproved ? 'Manager approved' : 'Awaiting manager sign-off', state: managerApproved ? 'complete' : (isValidated ? 'current' : 'blocked') },
+      { key: 'finance', label: 'Finance Approval', detail: financeApproved ? 'Finance approved' : 'Awaiting finance sign-off', state: financeApproved ? 'complete' : (managerApproved ? 'current' : 'blocked') },
+      { key: 'process', label: 'Process', detail: `${items.filter((item) => item.payroll?.payroll_status === 'processed').length} processed`, state: processed ? 'complete' : (financeApproved ? 'current' : 'blocked') },
       { key: 'payout', label: 'Payout', detail: `${summary.readyForPayout} pending payout`, state: paid ? 'complete' : (processed ? 'current' : 'blocked') },
       { key: 'publish', label: 'Publish Payslips', detail: paid ? 'Ready to issue' : 'Awaiting paid run', state: paid ? 'current' : 'blocked' },
     ];
@@ -140,14 +145,16 @@ export default function PayrollRunsView() {
     await Promise.all([runsQuery.refetch(), runDetailQuery.refetch()]);
   };
 
-  const validateRun = () => {
+  const validateRun = async () => {
     if (!selectedRun) return;
     setValidatedRunIds((current) => current.includes(selectedRun.id) ? current : [...current, selectedRun.id]);
+    if (runWarnings.length === 0) {
+      await updateRunStage('validated', 'Validation completed. This run is ready for manager approval.');
+      return;
+    }
     setFeedback({
-      tone: runWarnings.length > 0 ? 'error' : 'success',
-      message: runWarnings.length > 0
-        ? 'Validation completed with blockers. Review the warnings before approval.'
-        : 'Validation completed. This run is ready for approval.',
+      tone: 'error',
+      message: 'Validation completed with blockers. Review the warnings before approval.',
     });
   };
 
@@ -171,7 +178,7 @@ export default function PayrollRunsView() {
       setFeedback({ tone: 'error', message: 'Resolve validation blockers before approval.' });
       return;
     }
-    await updateRunStage('approved', 'Pay run approved and ready for processing.');
+    await updateRunStage('manager_approved', 'Pay run approved and ready for finance review.');
   };
 
   const generateRun = async () => {
@@ -332,8 +339,9 @@ export default function PayrollRunsView() {
   const primaryRunAction = useMemo(() => {
     if (!selectedRun) return null;
     if (!isValidated) return { label: 'Validate Run', helper: 'Confirm payroll readiness and reveal blockers before approval.', onClick: validateRun, disabled: false };
-    if (runStage === 'draft') return { label: 'Approve Run', helper: 'Sign off the reviewed run before processing.', onClick: () => void approveRun(), disabled: runWarnings.length > 0 };
-    if (runStage === 'approved') return { label: 'Process Payroll', helper: 'Mark draft payroll items as processed for payout.', onClick: () => void processRun(), disabled: false };
+    if (runStage === 'draft' || runStage === 'validated') return { label: 'Manager Approve', helper: 'Sign off the reviewed run before finance approval.', onClick: () => void approveRun(), disabled: runWarnings.length > 0 };
+    if (runStage === 'manager_approved') return { label: 'Finance Approve', helper: 'Finance approval unlocks processing and payout.', onClick: () => void updateRunStage('finance_approved', 'Finance approval recorded.'), disabled: false };
+    if (runStage === 'finance_approved') return { label: 'Process Payroll', helper: 'Mark draft payroll items as processed for payout.', onClick: () => void processRun(), disabled: false };
     if (runStage === 'processed' && summary.readyForPayout > 0) return { label: 'Run Payouts', helper: 'Submit eligible processed payroll items for payout.', onClick: () => void payoutRun(), disabled: false };
     return { label: 'Publish Payslips', helper: 'Generate payslips for this run after payroll is paid.', onClick: () => void publishPayslips(), disabled: runStage !== 'paid' };
   }, [approveRun, isValidated, processRun, publishPayslips, payoutRun, runStage, runWarnings.length, selectedRun, summary.readyForPayout]);
@@ -383,9 +391,10 @@ export default function PayrollRunsView() {
         </div>
         <div>
           <FieldLabel>Payout Method</FieldLabel>
-          <SelectInput value={generatePayoutMethod} onChange={(event) => setGeneratePayoutMethod(event.target.value as 'mock' | 'stripe')}>
+          <SelectInput value={generatePayoutMethod} onChange={(event) => setGeneratePayoutMethod(event.target.value as 'mock' | 'stripe' | 'bank_transfer')}>
             <option value="mock">Mock</option>
             <option value="stripe">Stripe</option>
+            <option value="bank_transfer">Bank transfer</option>
           </SelectInput>
         </div>
         <div className="flex items-end">
@@ -493,12 +502,31 @@ export default function PayrollRunsView() {
                   </div>
                   <div className="mt-4 flex flex-wrap gap-3">
                     <Button size="sm" variant="ghost" onClick={validateRun} disabled={isSaving || isValidated}>Validate</Button>
-                    <Button size="sm" variant="ghost" onClick={() => void approveRun()} disabled={isSaving || !isValidated || runWarnings.length > 0 || runStage !== 'draft'}>Approve</Button>
-                    <Button size="sm" variant="ghost" onClick={processRun} disabled={isSaving || runStage !== 'approved'}>Process</Button>
+                    <Button size="sm" variant="ghost" onClick={() => void approveRun()} disabled={isSaving || !isValidated || runWarnings.length > 0 || !['draft', 'validated'].includes(runStage)}>Manager Approve</Button>
+                    <Button size="sm" variant="ghost" onClick={() => void updateRunStage('finance_approved', 'Finance approval recorded.')} disabled={isSaving || runStage !== 'manager_approved'}>Finance Approve</Button>
+                    <Button size="sm" variant="ghost" onClick={processRun} disabled={isSaving || runStage !== 'finance_approved'}>Process</Button>
                     <Button size="sm" variant="ghost" onClick={payoutRun} disabled={isSaving || runStage !== 'processed' || summary.readyForPayout === 0}>Payout</Button>
                     <Button size="sm" variant="ghost" onClick={publishPayslips} disabled={isSaving || runStage !== 'paid'}>Payslips</Button>
                   </div>
                 </div>
+
+                {approvalTimeline.length > 0 ? (
+                  <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
+                    <p className="text-sm font-semibold text-slate-950">Approval timeline</p>
+                    <div className="mt-3 space-y-3">
+                      {approvalTimeline.map((step: any) => (
+                        <div key={step.id} className="flex items-start justify-between gap-3 rounded-[18px] border border-slate-200/80 bg-white/80 px-3 py-3">
+                          <div>
+                            <p className="font-medium text-slate-950">{String(step.stage || '').replace(/_/g, ' ')}</p>
+                            <p className="mt-1 text-sm text-slate-500">{step.actor?.name || 'Awaiting action'}{step.action_at ? ` | ${new Date(step.action_at).toLocaleString()}` : ''}</p>
+                            {step.comment ? <p className="mt-1 text-sm text-slate-500">{step.comment}</p> : null}
+                          </div>
+                          <PayrollStatusBadge status={step.status} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
                 <PayrollWarningPanel title="Run validation" warnings={runWarnings} successMessage="No validation warnings are attached to this run." />
               </div>
@@ -598,6 +626,7 @@ export default function PayrollRunsView() {
                     <SelectInput value={selectedPayrollDraft.payout_method} onChange={(event) => updateDraftField('payout_method', event.target.value)}>
                       <option value="mock">Mock</option>
                       <option value="stripe">Stripe</option>
+                      <option value="bank_transfer">Bank transfer</option>
                     </SelectInput>
                   </div>
                 </div>

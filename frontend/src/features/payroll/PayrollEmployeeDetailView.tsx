@@ -244,6 +244,8 @@ export default function PayrollEmployeeDetailView() {
                 items={[
                   { label: 'Payroll ready', value: data.readiness.payroll_readiness.is_ready ? 'Yes' : 'Needs setup', emphasize: true },
                   { label: 'Payout ready', value: data.readiness.payout_readiness.is_ready ? 'Yes' : 'Needs setup', emphasize: true },
+                  { label: 'Declaration status', value: data.readiness.declaration_status || profile?.declaration_status || 'not_started' },
+                  { label: 'Compliance status', value: data.readiness.compliance_status || profile?.compliance_readiness_status || 'pending' },
                   { label: 'Missing sections', value: data.readiness.missing_sections.length ? data.readiness.missing_sections.join(', ') : 'None' },
                   { label: 'Eligibility state', value: profile?.payroll_eligible ? 'Included in payroll' : 'Excluded until reviewed' },
                 ]}
@@ -285,13 +287,50 @@ export default function PayrollEmployeeDetailView() {
                   { label: 'IFSC / SWIFT', value: defaultBank?.ifsc_swift || profile?.bank_ifsc_swift },
                   { label: 'Payment email', value: defaultBank?.payment_email || profile?.payment_email },
                   { label: 'Tax identifier', value: profile?.tax_identifier || 'Not captured yet' },
+                  { label: 'PAN / Tax ID', value: profile?.pan_or_tax_id || 'Not captured yet' },
+                  { label: 'Tax regime', value: profile?.tax_regime || 'Not selected' },
+                  { label: 'PF / UAN', value: profile?.pf_account_number || profile?.uan || 'Not captured yet' },
+                  { label: 'ESI number', value: profile?.esi_number || 'Not captured yet' },
+                  { label: 'Professional tax state', value: profile?.professional_tax_state || 'Not captured yet' },
                   { label: 'Bank verification', value: String(bankStatus).replace(/_/g, ' ') },
                 ]}
                 columns={2}
               />
-              <p className="text-sm leading-6 text-slate-500">
-                Pay groups and deeper statutory fields still need backend modeling, so this record stays focused on the bank and tax data that already exists instead of showing oversized placeholders.
-              </p>
+            </div>
+          </PayrollSectionCard>
+
+          <PayrollSectionCard
+            title="Tax Declarations"
+            description="Current financial-year declarations and review state used for TDS readiness."
+          >
+            <div className="space-y-3">
+              {(data.payroll.tax_declarations || []).length === 0 ? (
+                <p className="text-sm text-slate-500">No tax declarations have been submitted for this employee yet. Payroll will fall back to the profile tax amount until one is approved.</p>
+              ) : (data.payroll.tax_declarations || []).map((declaration) => (
+                <div key={declaration.id} className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-slate-950">{declaration.financial_year}</p>
+                      <p className="mt-1 text-sm text-slate-500">{declaration.tax_regime} regime</p>
+                    </div>
+                    <PayrollStatusBadge status={declaration.status} />
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 text-sm md:grid-cols-3">
+                    <div>
+                      <p className="text-slate-500">Investments</p>
+                      <p className="font-semibold text-slate-950">{formatPayrollCurrency(Number(declaration.sections?.investments?.total || 0), profile?.currency || 'INR')}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">Exemptions</p>
+                      <p className="font-semibold text-slate-950">{formatPayrollCurrency(Number(declaration.sections?.exemptions?.total || 0), profile?.currency || 'INR')}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">Other income</p>
+                      <p className="font-semibold text-slate-950">{formatPayrollCurrency(Number(declaration.sections?.other_income?.total || 0), profile?.currency || 'INR')}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </PayrollSectionCard>
 

@@ -14,8 +14,13 @@ class PayrollSetting extends Model
         'overtime_rules',
         'late_deduction_rules',
         'leave_mapping',
+        'adjustment_rules',
         'approval_workflow',
+        'compliance_settings',
+        'tax_settings',
         'payslip_branding',
+        'payslip_issue_rules',
+        'payout_workflow',
     ];
 
     protected function casts(): array
@@ -26,8 +31,13 @@ class PayrollSetting extends Model
             'overtime_rules' => 'array',
             'late_deduction_rules' => 'array',
             'leave_mapping' => 'array',
+            'adjustment_rules' => 'array',
             'approval_workflow' => 'array',
+            'compliance_settings' => 'array',
+            'tax_settings' => 'array',
             'payslip_branding' => 'array',
+            'payslip_issue_rules' => 'array',
+            'payout_workflow' => 'array',
         ];
     }
 

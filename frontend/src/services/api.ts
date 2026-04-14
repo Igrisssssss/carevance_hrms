@@ -34,10 +34,12 @@ import type {
   PayrollTransaction,
   PayrollWorkspaceOverview,
   PayrollRun,
+  PayRunApproval,
   PayrollProfile,
   SalaryComponentMaster,
   SalaryTemplate,
   PayrollAdjustment,
+  PayrollTaxDeclaration,
   ReimbursementClaim,
   PayrollReportsPayload,
   PayrollSettingsPayload,
@@ -790,9 +792,9 @@ export const payrollApi = {
   getRecords: (params?: {
     user_id?: number;
     payroll_month?: string;
-    payroll_status?: 'draft' | 'processed' | 'paid';
+    payroll_status?: 'draft' | 'validated' | 'manager_approved' | 'finance_approved' | 'processed' | 'paid';
     payout_status?: 'pending' | 'success' | 'failed';
-    payout_method?: 'mock' | 'stripe';
+    payout_method?: 'mock' | 'stripe' | 'bank_transfer';
   }) =>
     api.get<{ data: PayrollRecord[]; mode: 'mock' | 'stripe_test' | 'stripe_live' }>('/payroll/records', { params }),
 
@@ -800,7 +802,7 @@ export const payrollApi = {
     payroll_month: string;
     user_id?: number;
     allow_overwrite?: boolean;
-    payout_method?: 'mock' | 'stripe';
+    payout_method?: 'mock' | 'stripe' | 'bank_transfer';
   }) =>
     api.post<{
       message: string;
@@ -819,16 +821,16 @@ export const payrollApi = {
     deductions?: number;
     bonus?: number;
     tax?: number;
-    payroll_status?: 'draft' | 'processed' | 'paid';
-    payout_method?: 'mock' | 'stripe';
+    payroll_status?: 'draft' | 'validated' | 'manager_approved' | 'finance_approved' | 'processed' | 'paid';
+    payout_method?: 'mock' | 'stripe' | 'bank_transfer';
   }) =>
     api.patch<PayrollRecord>(`/payroll/records/${id}`, data),
 
-  updateRecordStatus: (id: number, payroll_status: 'draft' | 'processed' | 'paid') =>
+  updateRecordStatus: (id: number, payroll_status: 'draft' | 'validated' | 'manager_approved' | 'finance_approved' | 'processed' | 'paid') =>
     api.post<PayrollRecord>(`/payroll/records/${id}/status`, { payroll_status }),
 
   payoutRecord: (id: number, data?: {
-    payout_method?: 'mock' | 'stripe';
+    payout_method?: 'mock' | 'stripe' | 'bank_transfer';
     simulate_status?: 'success' | 'failed' | 'pending';
   }) =>
     api.post<{ mode: 'mock' | 'stripe_test' | 'stripe_live'; payroll: PayrollRecord; transaction: PayrollTransaction; checkout_url?: string | null }>(`/payroll/records/${id}/payout`, data || {}),
@@ -887,10 +889,10 @@ export const payrollWorkspaceApi = {
     api.get<{ data: PayrollRun[] }>('/payroll/workspace/runs', { params }),
 
   getRun: (id: number) =>
-    api.get<{ run: PayrollRun; summary: Record<string, any>; warnings: Array<{ user_id: number; warnings: string[] }> }>(`/payroll/workspace/runs/${id}`),
+    api.get<{ run: PayrollRun; summary: Record<string, any>; warnings: Array<{ user_id: number; warnings: string[] }>; approval_timeline?: PayRunApproval[] }>(`/payroll/workspace/runs/${id}`),
 
-  updateRunStatus: (id: number, status: string) =>
-    api.post<PayrollRun>(`/payroll/workspace/runs/${id}/status`, { status }),
+  updateRunStatus: (id: number, status: string, extras?: { comment?: string; rejection_reason?: string }) =>
+    api.post<PayrollRun>(`/payroll/workspace/runs/${id}/status`, { status, ...extras }),
 
   getProfiles: (params?: { payroll_month?: string }) =>
     api.get<{ employees: Array<{ id: number; name: string; email: string; role: string }>; templates: SalaryTemplate[]; profiles: PayrollProfile[] }>('/payroll/workspace/profiles', { params }),
@@ -961,6 +963,21 @@ export const payrollWorkspaceApi = {
 
   updateSettings: (data: Partial<PayrollSettingsPayload>) =>
     api.put<PayrollSettingsPayload>('/payroll/workspace/settings', data),
+
+  getTaxDeclarations: (params?: { user_id?: number; financial_year?: string }) =>
+    api.get<{ data: PayrollTaxDeclaration[] }>('/payroll/workspace/tax-declarations', { params }),
+
+  createTaxDeclaration: (data: Partial<PayrollTaxDeclaration> & { user_id: number }) =>
+    api.post<PayrollTaxDeclaration>('/payroll/workspace/tax-declarations', data),
+
+  updateTaxDeclaration: (id: number, data: Partial<PayrollTaxDeclaration> & { user_id: number }) =>
+    api.put<PayrollTaxDeclaration>(`/payroll/workspace/tax-declarations/${id}`, data),
+
+  approveTaxDeclaration: (id: number) =>
+    api.post<PayrollTaxDeclaration>(`/payroll/workspace/tax-declarations/${id}/approve`),
+
+  rejectTaxDeclaration: (id: number, rejection_reason?: string) =>
+    api.post<PayrollTaxDeclaration>(`/payroll/workspace/tax-declarations/${id}/reject`, { rejection_reason }),
 };
 
 export const notificationApi = {

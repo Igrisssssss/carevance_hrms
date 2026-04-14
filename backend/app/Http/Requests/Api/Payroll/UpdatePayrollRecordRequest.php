@@ -14,8 +14,8 @@ class UpdatePayrollRecordRequest extends ApiFormRequest
             'deductions' => 'nullable|numeric|min:0',
             'bonus' => 'nullable|numeric|min:0',
             'tax' => 'nullable|numeric|min:0',
-            'payroll_status' => 'nullable|in:draft,processed,paid',
-            'payout_method' => 'nullable|in:mock,stripe',
+            'payroll_status' => 'nullable|in:draft,validated,manager_approved,finance_approved,processed,paid',
+            'payout_method' => 'nullable|in:mock,stripe,bank_transfer',
         ];
     }
 }

@@ -24,6 +24,8 @@ class PayRunItem extends Model
         'status',
         'payout_status',
         'salary_breakdown',
+        'adjustment_breakdown',
+        'compliance_breakdown',
         'attendance_summary',
         'warnings',
     ];
@@ -40,6 +42,8 @@ class PayRunItem extends Model
             'total_deductions' => 'float',
             'net_pay' => 'float',
             'salary_breakdown' => 'array',
+            'adjustment_breakdown' => 'array',
+            'compliance_breakdown' => 'array',
             'attendance_summary' => 'array',
             'warnings' => 'array',
         ];

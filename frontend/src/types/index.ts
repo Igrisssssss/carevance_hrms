@@ -523,14 +523,23 @@ export interface PayrollRecord {
   deductions: number;
   bonus: number;
   tax: number;
+  gross_salary?: number;
   net_salary: number;
-  payroll_status: 'draft' | 'processed' | 'paid';
-  payout_method: 'mock' | 'stripe';
+  payroll_status: 'draft' | 'validated' | 'manager_approved' | 'finance_approved' | 'processed' | 'paid';
+  payout_method: 'mock' | 'stripe' | 'bank_transfer';
   payout_status: 'pending' | 'success' | 'failed';
+  attendance_summary?: Record<string, any> | null;
+  salary_breakdown?: Record<string, any> | null;
+  adjustment_breakdown?: Record<string, any> | null;
+  compliance_breakdown?: Record<string, any> | null;
+  tax_breakdown?: Record<string, any> | null;
+  warnings?: string[] | null;
   generated_by?: number | null;
   updated_by?: number | null;
   processed_at?: string | null;
   paid_at?: string | null;
+  payment_reference?: string | null;
+  failure_reason?: string | null;
   created_at: string;
   updated_at: string;
   user?: User;
@@ -540,7 +549,7 @@ export interface PayrollRecord {
 export interface PayrollTransaction {
   id: number;
   payroll_id: number;
-  provider: 'mock' | 'stripe';
+  provider: 'mock' | 'stripe' | 'bank_transfer';
   transaction_id?: string | null;
   amount: number;
   currency: string;
@@ -604,9 +613,11 @@ export interface PayrollRun {
   warnings_count?: number;
   generated_at?: string | null;
   locked_at?: string | null;
+  approval_summary?: Record<string, any>;
   items?: PayrollRunItem[];
   summary?: Record<string, any>;
   warnings?: Array<{ user_id: number; warnings: string[] }>;
+  approvals?: PayRunApproval[];
 }
 
 export interface PayrollRunItem {
@@ -627,6 +638,8 @@ export interface PayrollRunItem {
   status: string;
   payout_status: string;
   salary_breakdown?: Record<string, any> | null;
+  adjustment_breakdown?: Record<string, any> | null;
+  compliance_breakdown?: Record<string, any> | null;
   attendance_summary?: Record<string, any> | null;
   warnings?: string[] | null;
   user?: User;
@@ -634,18 +647,43 @@ export interface PayrollRunItem {
   payroll_profile?: PayrollProfile | null;
 }
 
+export interface PayRunApproval {
+  id: number;
+  stage: string;
+  status: string;
+  comment?: string | null;
+  rejection_reason?: string | null;
+  action_at?: string | null;
+  actor?: Pick<User, 'id' | 'name' | 'email'> | null;
+  meta?: Record<string, any> | null;
+}
+
 export interface PayrollProfile {
   id: number;
   organization_id: number;
   user_id: number;
+  payroll_code?: string | null;
   salary_template_id?: number | null;
   currency: string;
+  pay_group?: string | null;
   payout_method: string;
   bank_name?: string | null;
   bank_account_number?: string | null;
   bank_ifsc_swift?: string | null;
   payment_email?: string | null;
+  bank_verification_status?: string | null;
   tax_identifier?: string | null;
+  tax_regime?: 'old' | 'new' | string | null;
+  pan_or_tax_id?: string | null;
+  pf_account_number?: string | null;
+  uan?: string | null;
+  esi_number?: string | null;
+  professional_tax_state?: string | null;
+  professional_tax_jurisdiction?: string | null;
+  payroll_start_date?: string | null;
+  declaration_status?: string | null;
+  payout_readiness_status?: string | null;
+  compliance_readiness_status?: string | null;
   payroll_eligible: boolean;
   reimbursements_eligible: boolean;
   is_active: boolean;
@@ -653,11 +691,15 @@ export interface PayrollProfile {
   deduction_components?: Array<Record<string, any>> | null;
   bonus_amount: number;
   tax_amount: number;
+  compliance_overrides?: Record<string, any> | null;
+  declaration_snapshot?: Record<string, any> | null;
   meta?: Record<string, any> | null;
   current_cycle_adjustments_count?: number;
   current_cycle_adjustments_total?: number;
   pending_adjustments_count?: number;
   last_revision_date?: string | null;
+  latest_tax_declaration?: PayrollTaxDeclaration | null;
+  setup_readiness?: Record<string, any> | null;
   created_at?: string;
   updated_at?: string;
   user?: User;
@@ -670,9 +712,13 @@ export interface SalaryComponentMaster {
   name: string;
   code: string;
   category: 'basic' | 'allowance' | 'overtime' | 'bonus' | 'reimbursement' | 'penalty' | 'tax' | 'deduction' | 'other';
+  impact?: 'earning' | 'deduction' | 'tax' | 'reimbursement' | 'employer_contribution';
   value_type: 'fixed' | 'percentage';
+  calculation_basis?: 'basic' | 'gross' | null;
   default_value: number;
   is_taxable: boolean;
+  is_compliance_component?: boolean;
+  is_system_default?: boolean;
   is_active: boolean;
   template_components_count?: number;
   meta?: Record<string, any> | null;
@@ -712,15 +758,46 @@ export interface PayrollAdjustment {
   title: string;
   description?: string | null;
   kind: 'reimbursement' | 'bonus' | 'manual_deduction' | 'penalty' | 'one_time_adjustment';
+  source?: string | null;
   effective_month: string;
   amount: number;
   currency: string;
   status: 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'applied';
   approval_note?: string | null;
   approved_at?: string | null;
+  rejected_at?: string | null;
   applied_at?: string | null;
+  rejection_reason?: string | null;
+  attachment_meta?: Record<string, any> | null;
+  approval_trail?: Array<Record<string, any>> | null;
+  applied_run_id?: number | null;
+  claim_reference?: string | null;
+  claim_category?: string | null;
+  merchant_name?: string | null;
   user?: User;
   reimbursement?: ReimbursementClaim | null;
+  approved_by?: number | null;
+  approvedBy?: Pick<User, 'id' | 'name' | 'email'> | null;
+  appliedBy?: Pick<User, 'id' | 'name' | 'email'> | null;
+  rejectedBy?: Pick<User, 'id' | 'name' | 'email'> | null;
+  appliedRun?: { id: number; run_code: string; payroll_month: string } | null;
+}
+
+export interface PayrollTaxDeclaration {
+  id: number;
+  organization_id: number;
+  user_id: number;
+  payroll_profile_id?: number | null;
+  financial_year: string;
+  tax_regime: 'old' | 'new' | string;
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | string;
+  sections?: Record<string, any> | null;
+  summary?: Record<string, any> | null;
+  approved_snapshot?: Record<string, any> | null;
+  rejection_reason?: string | null;
+  submitted_at?: string | null;
+  reviewed_at?: string | null;
+  user?: User;
 }
 
 export interface ReimbursementClaim {
@@ -742,7 +819,10 @@ export interface PayrollReportsPayload {
   employee_payroll_sheet: Array<Record<string, any>>;
   department_payroll_cost: Array<Record<string, any>>;
   deductions_report: Array<Record<string, any>>;
+  tax_report?: Array<Record<string, any>>;
+  compliance_report?: Array<Record<string, any>>;
   payout_status_report: Array<Record<string, any>>;
+  payout_bank_advice?: Array<Record<string, any>>;
   attendance_vs_payable_days: Array<Record<string, any>>;
   overtime_summary: Array<Record<string, any>>;
   component_totals: Array<Record<string, any>>;
@@ -759,8 +839,13 @@ export interface PayrollSettingsPayload {
   overtime_rules?: Record<string, any> | null;
   late_deduction_rules?: Record<string, any> | null;
   leave_mapping?: Record<string, any> | null;
+  adjustment_rules?: Record<string, any> | null;
   approval_workflow?: Record<string, any> | null;
+  compliance_settings?: Record<string, any> | null;
+  tax_settings?: Record<string, any> | null;
   payslip_branding?: Record<string, any> | null;
+  payslip_issue_rules?: Record<string, any> | null;
+  payout_workflow?: Record<string, any> | null;
 }
 
 export interface AppNotificationItem {
@@ -962,6 +1047,7 @@ export interface EmployeeWorkspacePayload {
     }>;
     current_compensation?: Record<string, any> | null;
     warnings: string[];
+    tax_declarations?: PayrollTaxDeclaration[];
     pending_reimbursements: number;
     recent_reimbursements: ReimbursementClaim[];
     recent_adjustments: PayrollAdjustment[];
@@ -995,6 +1081,8 @@ export interface EmployeeWorkspacePayload {
     missing_sections: string[];
     payroll_readiness: { is_ready: boolean; warnings: string[] };
     payout_readiness: { is_ready: boolean; warnings: string[] };
+    declaration_status?: string;
+    compliance_status?: string;
     attendance: Record<string, any>;
     leave: Record<string, any>;
   };

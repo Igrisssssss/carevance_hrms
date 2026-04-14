@@ -58,7 +58,7 @@ export default function PayrollSettingsView() {
       <PageHeader
         eyebrow="Payroll setup"
         title="Payroll Settings"
-        description="Configuration for pay schedule, payout defaults, rules, payroll approvals, and future-ready payroll setup placeholders."
+        description="Configuration for pay schedule, payout defaults, payroll rules, compliance, tax, payslips, and approval guardrails."
         actions={<Button onClick={save} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Settings'}</Button>}
       />
 
@@ -172,19 +172,91 @@ export default function PayrollSettingsView() {
           </div>
         </PayrollSectionCard>
 
-        <PayrollSectionCard title="Future Setup Areas" description="Clearly marked placeholders for setup areas that need deeper backend support before they can be fully operational.">
+        <PayrollSectionCard title="Compliance and Payslips" description="Statutory defaults, declaration fallback, and payslip publication rules.">
           <div className="space-y-4">
-            <div className="rounded-[22px] border border-dashed border-slate-300 bg-slate-50/70 px-4 py-4">
-              <p className="text-sm font-semibold text-slate-950">Pay group management</p>
-              <p className="mt-2 text-sm text-slate-500">The desired payroll IA includes pay groups, but the current backend does not yet model them as first-class entities. This section is intentionally left as a guided placeholder rather than fake data.</p>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">PF enabled</p>
+                    <p className="text-sm text-slate-500">Enable Provident Fund deduction and employer contribution.</p>
+                  </div>
+                  <ToggleInput checked={Boolean(settings.compliance_settings?.pf?.enabled)} onChange={(checked) => setSettings((current: any) => ({ ...current, compliance_settings: { ...current.compliance_settings, pf: { ...current.compliance_settings?.pf, enabled: checked } } }))} />
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel>Employee %</FieldLabel>
+                    <TextInput type="number" min={0} step="0.01" value={Number(settings.compliance_settings?.pf?.employee_rate || 12)} onChange={(event) => setSettings((current: any) => ({ ...current, compliance_settings: { ...current.compliance_settings, pf: { ...current.compliance_settings?.pf, employee_rate: Number(event.target.value || 0) } } }))} />
+                  </div>
+                  <div>
+                    <FieldLabel>Employer %</FieldLabel>
+                    <TextInput type="number" min={0} step="0.01" value={Number(settings.compliance_settings?.pf?.employer_rate || 12)} onChange={(event) => setSettings((current: any) => ({ ...current, compliance_settings: { ...current.compliance_settings, pf: { ...current.compliance_settings?.pf, employer_rate: Number(event.target.value || 0) } } }))} />
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">ESI enabled</p>
+                    <p className="text-sm text-slate-500">Apply Employee State Insurance thresholds and rates.</p>
+                  </div>
+                  <ToggleInput checked={Boolean(settings.compliance_settings?.esi?.enabled)} onChange={(checked) => setSettings((current: any) => ({ ...current, compliance_settings: { ...current.compliance_settings, esi: { ...current.compliance_settings?.esi, enabled: checked } } }))} />
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel>Employee %</FieldLabel>
+                    <TextInput type="number" min={0} step="0.01" value={Number(settings.compliance_settings?.esi?.employee_rate || 0.75)} onChange={(event) => setSettings((current: any) => ({ ...current, compliance_settings: { ...current.compliance_settings, esi: { ...current.compliance_settings?.esi, employee_rate: Number(event.target.value || 0) } } }))} />
+                  </div>
+                  <div>
+                    <FieldLabel>Employer %</FieldLabel>
+                    <TextInput type="number" min={0} step="0.01" value={Number(settings.compliance_settings?.esi?.employer_rate || 3.25)} onChange={(event) => setSettings((current: any) => ({ ...current, compliance_settings: { ...current.compliance_settings, esi: { ...current.compliance_settings?.esi, employer_rate: Number(event.target.value || 0) } } }))} />
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="rounded-[22px] border border-dashed border-slate-300 bg-slate-50/70 px-4 py-4">
-              <p className="text-sm font-semibold text-slate-950">Compliance defaults</p>
-              <p className="mt-2 text-sm text-slate-500">Basic tax identifiers are supported at the employee profile level, but broader statutory setup and employer contribution rules need backend expansion.</p>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">Professional tax enabled</p>
+                    <p className="text-sm text-slate-500">Use a monthly PT fallback amount when no state table is configured.</p>
+                  </div>
+                  <ToggleInput checked={Boolean(settings.compliance_settings?.professional_tax?.enabled)} onChange={(checked) => setSettings((current: any) => ({ ...current, compliance_settings: { ...current.compliance_settings, professional_tax: { ...current.compliance_settings?.professional_tax, enabled: checked } } }))} />
+                </div>
+                <div className="mt-4">
+                  <FieldLabel>Default monthly PT</FieldLabel>
+                  <TextInput type="number" min={0} value={Number(settings.compliance_settings?.professional_tax?.default_monthly_amount || 200)} onChange={(event) => setSettings((current: any) => ({ ...current, compliance_settings: { ...current.compliance_settings, professional_tax: { ...current.compliance_settings?.professional_tax, default_monthly_amount: Number(event.target.value || 0) } } }))} />
+                </div>
+              </div>
+              <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">TDS enabled</p>
+                    <p className="text-sm text-slate-500">Fall back to profile tax amount when declarations are absent.</p>
+                  </div>
+                  <ToggleInput checked={Boolean(settings.compliance_settings?.tds?.enabled)} onChange={(checked) => setSettings((current: any) => ({ ...current, compliance_settings: { ...current.compliance_settings, tds: { ...current.compliance_settings?.tds, enabled: checked } } }))} />
+                </div>
+                <div className="mt-4">
+                  <FieldLabel>Default regime</FieldLabel>
+                  <SelectInput value={settings.tax_settings?.default_regime || 'new'} onChange={(event) => setSettings((current: any) => ({ ...current, tax_settings: { ...current.tax_settings, default_regime: event.target.value } }))}>
+                    <option value="new">New</option>
+                    <option value="old">Old</option>
+                  </SelectInput>
+                </div>
+              </div>
             </div>
-            <div className="rounded-[22px] border border-dashed border-slate-300 bg-slate-50/70 px-4 py-4">
-              <p className="text-sm font-semibold text-slate-950">Imports and uploads</p>
-              <p className="mt-2 text-sm text-slate-500">Import flows for bulk payroll setup and payroll run inputs are not wired in the current backend yet, so this remains a scoped TODO instead of a non-functional UI.</p>
+            <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Publish payslips after payment</p>
+                  <p className="text-sm text-slate-500">Keep payslips in draft until the pay run is paid.</p>
+                </div>
+                <ToggleInput checked={Boolean(settings.payslip_issue_rules?.publish_after_payment)} onChange={(checked) => setSettings((current: any) => ({ ...current, payslip_issue_rules: { ...current.payslip_issue_rules, publish_after_payment: checked } }))} />
+              </div>
+              <div className="mt-4">
+                <FieldLabel>Track viewed timestamp</FieldLabel>
+                <ToggleInput checked={Boolean(settings.payslip_issue_rules?.track_viewed_at)} onChange={(checked) => setSettings((current: any) => ({ ...current, payslip_issue_rules: { ...current.payslip_issue_rules, track_viewed_at: checked } }))} />
+              </div>
             </div>
           </div>
         </PayrollSectionCard>

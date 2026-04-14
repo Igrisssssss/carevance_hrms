@@ -29,6 +29,11 @@ Route::post('/payroll/workspace/adjustments/{id}/apply', [PayrollWorkspaceContro
 Route::get('/payroll/workspace/reports', [PayrollWorkspaceController::class, 'reports']);
 Route::get('/payroll/workspace/settings', [PayrollWorkspaceController::class, 'settings']);
 Route::put('/payroll/workspace/settings', [PayrollWorkspaceController::class, 'updateSettings']);
+Route::get('/payroll/workspace/tax-declarations', [PayrollWorkspaceController::class, 'taxDeclarations']);
+Route::post('/payroll/workspace/tax-declarations', [PayrollWorkspaceController::class, 'storeTaxDeclaration']);
+Route::put('/payroll/workspace/tax-declarations/{id}', [PayrollWorkspaceController::class, 'updateTaxDeclaration']);
+Route::post('/payroll/workspace/tax-declarations/{id}/approve', [PayrollWorkspaceController::class, 'reviewTaxDeclaration'])->defaults('status', 'approve');
+Route::post('/payroll/workspace/tax-declarations/{id}/reject', [PayrollWorkspaceController::class, 'reviewTaxDeclaration'])->defaults('status', 'reject');
 Route::get('/payroll/structures', [PayrollController::class, 'structures']);
 Route::post('/payroll/structures', [PayrollController::class, 'upsertStructure']);
 Route::put('/payroll/structures/{id}', [PayrollController::class, 'updateStructure']);

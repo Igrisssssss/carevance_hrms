@@ -13,9 +13,11 @@ use App\Models\PayrollAdjustment;
 use App\Models\PayrollAuditLog;
 use App\Models\PayrollProfile;
 use App\Models\PayrollSetting;
+use App\Models\PayrollTaxDeclaration;
 use App\Models\Payslip;
 use App\Models\ReportGroup;
 use App\Models\Reimbursement;
+use App\Models\SalaryComponent;
 use App\Models\SalaryTemplate;
 use App\Models\SalaryTemplateComponent;
 use App\Models\TimeEntry;
@@ -27,12 +29,17 @@ use Illuminate\Database\Eloquent\Collection;
 class PayrollWorkspaceService
 {
     public function __construct(
+        private readonly PayRunApprovalService $payRunApprovalService,
+        private readonly PayrollComplianceService $payrollComplianceService,
         private readonly PayrollDomainService $payrollDomainService,
+        private readonly PayrollTaxDeclarationService $payrollTaxDeclarationService,
     ) {
     }
 
     public function syncPayRunForMonth(int $organizationId, string $payrollMonth, ?int $actorUserId = null): ?PayRun
     {
+        $this->ensureDefaultSetup($organizationId);
+
         $records = Payroll::query()
             ->with(['user', 'transactions'])
             ->where('organization_id', $organizationId)
@@ -52,8 +59,10 @@ class PayrollWorkspaceService
                 'currency' => (string) config('payroll.default_currency', 'INR'),
                 'generated_by' => $actorUserId,
                 'generated_at' => now(),
+                'approval_config' => $this->payRunApprovalService->defaultWorkflow(),
             ]
         );
+        $this->payRunApprovalService->syncDefaults($run, $run->approval_config ?: []);
 
         foreach ($records as $record) {
             $profile = PayrollProfile::query()
@@ -74,20 +83,22 @@ class PayrollWorkspaceService
                     'overtime_seconds' => (int) $attendance['overtime_seconds'],
                     'approved_leave_days' => (int) $attendance['approved_leave_days'],
                     'approved_time_edit_seconds' => (int) $attendance['approved_time_edit_seconds'],
-                    'gross_pay' => round((float) $record->basic_salary + (float) $record->allowances + (float) $record->bonus, 2),
+                    'gross_pay' => round((float) ($record->gross_salary ?: ((float) $record->basic_salary + (float) $record->allowances + (float) $record->bonus)), 2),
                     'total_deductions' => round((float) $record->deductions + (float) $record->tax, 2),
                     'net_pay' => (float) $record->net_salary,
                     'status' => (string) $record->payroll_status,
                     'payout_status' => (string) $record->payout_status,
-                    'salary_breakdown' => [
+                    'salary_breakdown' => $record->salary_breakdown ?: [
                         'basic_salary' => (float) $record->basic_salary,
                         'allowances' => (float) $record->allowances,
                         'bonus' => (float) $record->bonus,
                         'deductions' => (float) $record->deductions,
                         'tax' => (float) $record->tax,
                     ],
-                    'attendance_summary' => $attendance,
-                    'warnings' => $warnings,
+                    'adjustment_breakdown' => $record->adjustment_breakdown,
+                    'compliance_breakdown' => $record->compliance_breakdown,
+                    'attendance_summary' => $record->attendance_summary ?: $attendance,
+                    'warnings' => array_values(array_unique(array_merge($warnings, $record->warnings ?: []))),
                 ]
             );
         }
@@ -108,9 +119,12 @@ class PayrollWorkspaceService
             ->values()
             ->all();
         $run->status = $this->deriveRunStatus($records);
+        $run->approval_summary = [
+            'timeline' => $this->payRunApprovalService->timeline($run),
+        ];
         $run->save();
 
-        return $run->fresh(['items.user', 'items.payroll.transactions', 'generatedBy', 'approvedBy']);
+        return $run->fresh(['items.user', 'items.payroll.transactions', 'approvals.actor', 'generatedBy', 'approvedBy']);
     }
 
     public function overview(User $user, string $payrollMonth): array
@@ -146,6 +160,9 @@ class PayrollWorkspaceService
             'pending_actions' => $pendingActions,
             'status_distribution' => [
                 'draft' => $records->where('payroll_status', 'draft')->count(),
+                'validated' => $records->where('payroll_status', 'validated')->count(),
+                'manager_approved' => $records->where('payroll_status', 'manager_approved')->count(),
+                'finance_approved' => $records->where('payroll_status', 'finance_approved')->count(),
                 'processed' => $records->where('payroll_status', 'processed')->count(),
                 'paid' => $records->where('payroll_status', 'paid')->count(),
                 'payout_pending' => $records->where('payout_status', 'pending')->count(),
@@ -191,6 +208,7 @@ class PayrollWorkspaceService
                     'warnings_count' => count($run->warnings ?: []),
                     'generated_at' => optional($run->generated_at)->toIso8601String(),
                     'locked_at' => optional($run->locked_at)->toIso8601String(),
+                    'approval_summary' => $run->approval_summary ?: [],
                 ];
             })
             ->values()
@@ -200,7 +218,7 @@ class PayrollWorkspaceService
     public function runDetail(User $user, int $runId): ?array
     {
         $run = PayRun::query()
-            ->with(['items.user', 'items.payroll.transactions', 'items.payrollProfile.salaryTemplate.components.component', 'generatedBy', 'approvedBy'])
+            ->with(['items.user', 'items.payroll.transactions', 'items.payrollProfile.salaryTemplate.components.component', 'approvals.actor', 'generatedBy', 'approvedBy'])
             ->where('organization_id', $user->organization_id)
             ->find($runId);
 
@@ -212,6 +230,7 @@ class PayrollWorkspaceService
             'run' => $run,
             'summary' => $run->summary ?: [],
             'warnings' => $run->warnings ?: [],
+            'approval_timeline' => $this->payRunApprovalService->timeline($run),
         ];
     }
 
@@ -219,6 +238,9 @@ class PayrollWorkspaceService
     {
         [$start, $end] = $this->monthWindow($payrollMonth);
         $shiftTarget = max(1, (int) env('ATTENDANCE_SHIFT_SECONDS', 8 * 3600));
+        $setting = PayrollSetting::query()->where('organization_id', $organizationId)->first();
+        $approvedLeaveCountsAsPayable = (bool) data_get($setting?->leave_mapping, 'approved_leave_counts_as_payable_day', true);
+        $overtimeEnabled = (bool) data_get($setting?->overtime_rules, 'enabled', true);
 
         $records = AttendanceRecord::query()
             ->where('organization_id', $organizationId)
@@ -257,6 +279,9 @@ class PayrollWorkspaceService
                 ->whereBetween('start_time', [$start->toDateTimeString(), $end->copy()->endOfDay()->toDateTimeString()])
                 ->sum('duration');
         }
+        $overtimeSeconds = (int) $records->sum(
+            fn (AttendanceRecord $record) => max(0, ((int) ($record->worked_seconds ?? 0) + (int) ($record->manual_adjustment_seconds ?? 0)) - $shiftTarget)
+        );
 
         return [
             'period_start' => $start->toDateString(),
@@ -264,9 +289,13 @@ class PayrollWorkspaceService
             'present_days' => $records->filter(fn (AttendanceRecord $record) => !empty($record->check_in_at))->count(),
             'approved_leave_days' => $approvedLeaveDays,
             'approved_time_edit_seconds' => $approvedTimeEditSeconds,
-            'payable_days' => round($records->filter(fn (AttendanceRecord $record) => !empty($record->check_in_at))->count() + $approvedLeaveDays, 2),
+            'payable_days' => round(
+                $records->filter(fn (AttendanceRecord $record) => !empty($record->check_in_at))->count()
+                + ($approvedLeaveCountsAsPayable ? $approvedLeaveDays : 0),
+                2
+            ),
             'worked_seconds' => $workedSeconds,
-            'overtime_seconds' => (int) $records->sum(fn (AttendanceRecord $record) => max(0, ((int) ($record->worked_seconds ?? 0) + (int) ($record->manual_adjustment_seconds ?? 0)) - $shiftTarget)),
+            'overtime_seconds' => $overtimeEnabled ? $overtimeSeconds : 0,
             'attendance_records_count' => $records->count(),
             'has_attendance_summary' => $records->isNotEmpty() || $workedSeconds > 0,
         ];
@@ -316,6 +345,7 @@ class PayrollWorkspaceService
 
         return [
             'monthly_summary' => $run?->summary ?: [],
+            'monthly_trend' => $this->reportMonthlyTrend((int) $user->organization_id),
             'employee_payroll_sheet' => $items->map(fn (PayRunItem $item) => [
                 'id' => $item->id,
                 'user' => $item->user?->only(['id', 'name', 'email']),
@@ -348,12 +378,36 @@ class PayrollWorkspaceService
                 'user' => $item->user?->only(['id', 'name', 'email']),
                 'deductions' => (float) ($item->salary_breakdown['deductions'] ?? 0),
                 'tax' => (float) ($item->salary_breakdown['tax'] ?? 0),
+                'tds' => (float) data_get($item->compliance_breakdown, 'totals.tds', 0),
+                'pf_employee' => (float) data_get(collect(data_get($item->compliance_breakdown, 'employee', []))->firstWhere('code', 'PF_EMPLOYEE'), 'amount', 0),
+                'esi_employee' => (float) data_get(collect(data_get($item->compliance_breakdown, 'employee', []))->firstWhere('code', 'ESI_EMPLOYEE'), 'amount', 0),
                 'total_deductions' => (float) $item->total_deductions,
+            ])->values(),
+            'tax_report' => $items->map(fn (PayRunItem $item) => [
+                'id' => $item->id,
+                'user' => $item->user?->only(['id', 'name', 'email']),
+                'tax_regime' => data_get($item->compliance_breakdown, 'tax_estimate.tax_regime'),
+                'monthly_tds' => (float) data_get($item->compliance_breakdown, 'totals.tds', 0),
+                'annual_tax' => (float) data_get($item->compliance_breakdown, 'tax_estimate.annual_tax', 0),
+            ])->values(),
+            'compliance_report' => $items->map(fn (PayRunItem $item) => [
+                'id' => $item->id,
+                'user' => $item->user?->only(['id', 'name', 'email']),
+                'employee_deductions' => (float) data_get($item->compliance_breakdown, 'totals.employee_deductions', 0),
+                'employer_contributions' => (float) data_get($item->compliance_breakdown, 'totals.employer_contributions', 0),
+                'tds' => (float) data_get($item->compliance_breakdown, 'totals.tds', 0),
             ])->values(),
             'payout_status_report' => $items->groupBy('payout_status')->map(fn (Collection $group, string $status) => [
                 'status' => $status,
                 'count' => $group->count(),
                 'amount' => round($group->sum('net_pay'), 2),
+            ])->values(),
+            'payout_bank_advice' => $items->map(fn (PayRunItem $item) => [
+                'id' => $item->id,
+                'user' => $item->user?->only(['id', 'name', 'email']),
+                'net_pay' => (float) $item->net_pay,
+                'payout_status' => $item->payout_status,
+                'payment_reference' => $item->payroll?->payment_reference,
             ])->values(),
             'attendance_vs_payable_days' => $items->map(fn (PayRunItem $item) => [
                 'id' => $item->id,
@@ -362,29 +416,36 @@ class PayrollWorkspaceService
                 'attendance_present_days' => (int) ($item->attendance_summary['present_days'] ?? 0),
                 'approved_leave_days' => (int) ($item->attendance_summary['approved_leave_days'] ?? 0),
                 'worked_seconds' => (int) $item->worked_seconds,
+                'difference' => round((float) $item->payable_days - ((int) ($item->attendance_summary['present_days'] ?? 0) + (int) ($item->attendance_summary['approved_leave_days'] ?? 0)), 2),
             ])->values(),
             'overtime_summary' => $items->map(fn (PayRunItem $item) => [
                 'id' => $item->id,
                 'user' => $item->user?->only(['id', 'name', 'email']),
                 'overtime_seconds' => (int) $item->overtime_seconds,
             ])->values(),
+            'component_totals' => $this->reportComponentTotals($items),
+            'payout_history' => $this->reportPayoutHistory((int) $user->organization_id, $payrollMonth),
+            'failed_payout_report' => $this->reportFailedPayouts($items),
         ];
     }
 
     public function settingsForOrganization(int $organizationId): PayrollSetting
     {
-        return PayrollSetting::query()->firstOrCreate(
+        $this->ensureDefaultSetup($organizationId);
+
+        $setting = PayrollSetting::query()->firstOrCreate(
             ['organization_id' => $organizationId],
-            [
-                'payroll_calendar' => ['cutoff_day' => 30, 'payment_day' => 1],
-                'default_payout_method' => ['method' => 'mock', 'currency' => (string) config('payroll.default_currency', 'INR')],
-                'overtime_rules' => ['enabled' => true, 'rate_multiplier' => 1.5],
-                'late_deduction_rules' => ['enabled' => false, 'deduction_per_late_day' => 0],
-                'leave_mapping' => ['approved_leave_counts_as_payable_day' => true],
-                'approval_workflow' => ['adjustments_require_approval' => true, 'pay_run_requires_finalization' => true],
-                'payslip_branding' => ['company_name' => 'CareVance', 'accent_color' => '#0f172a'],
-            ]
+            $this->defaultPayrollSettings()
         );
+
+        foreach ($this->defaultPayrollSettings() as $key => $value) {
+            if (empty($setting->{$key})) {
+                $setting->{$key} = $value;
+            }
+        }
+        $setting->save();
+
+        return $setting->fresh();
     }
 
     public function applyTemplateAssignment(int $organizationId, int $userId, int $salaryTemplateId, string $effectiveFrom): EmployeeSalaryAssignment
@@ -455,8 +516,9 @@ class PayrollWorkspaceService
 
         $structure = $this->payrollDomainService->resolvePayrollStructure($organizationId, $userId, $periodStart, null);
         if ($structure) {
-            [, $allowanceTotal] = $this->payrollDomainService->computeComponents($structure->allowances->toArray(), (float) $structure->basic_salary);
-            [, $deductionTotal] = $this->payrollDomainService->computeComponents($structure->deductions->toArray(), (float) $structure->basic_salary);
+            [$allowanceRows, $allowanceTotal] = $this->payrollDomainService->computeComponents($structure->allowances->toArray(), (float) $structure->basic_salary);
+            [$deductionRows, $deductionTotal] = $this->payrollDomainService->computeComponents($structure->deductions->toArray(), (float) $structure->basic_salary);
+            $netSalary = round((float) $structure->basic_salary + (float) $allowanceTotal - (float) $deductionTotal, 2);
 
             return [
                 'source' => 'legacy_structure',
@@ -467,8 +529,9 @@ class PayrollWorkspaceService
                     'deductions' => round((float) $deductionTotal, 2),
                     'bonus' => 0.0,
                     'tax' => 0.0,
-                    'earnings_components' => [],
-                    'deduction_components' => [],
+                    'net_salary' => $netSalary,
+                    'earnings_components' => $allowanceRows,
+                    'deduction_components' => $deductionRows,
                 ],
             ];
         }
@@ -481,6 +544,7 @@ class PayrollWorkspaceService
                 'deductions' => 0.0,
                 'bonus' => 0.0,
                 'tax' => 0.0,
+                'net_salary' => 0.0,
                 'earnings_components' => [],
                 'deduction_components' => [],
             ],
@@ -519,6 +583,26 @@ class PayrollWorkspaceService
 
     private function deriveRunStatus(Collection $records): string
     {
+        if ($records->every(fn (Payroll $record) => $this->payRunApprovalService->mappedStatus((string) $record->payroll_status) === 'paid')) {
+            return 'paid';
+        }
+
+        if ($records->every(fn (Payroll $record) => in_array($this->payRunApprovalService->mappedStatus((string) $record->payroll_status), ['processed', 'paid'], true))) {
+            return 'processed';
+        }
+
+        if ($records->every(fn (Payroll $record) => in_array($this->payRunApprovalService->mappedStatus((string) $record->payroll_status), ['finance_approved', 'processed', 'paid'], true))) {
+            return 'finance_approved';
+        }
+
+        if ($records->every(fn (Payroll $record) => in_array($this->payRunApprovalService->mappedStatus((string) $record->payroll_status), ['manager_approved', 'finance_approved', 'processed', 'paid'], true))) {
+            return 'manager_approved';
+        }
+
+        if ($records->every(fn (Payroll $record) => in_array($this->payRunApprovalService->mappedStatus((string) $record->payroll_status), ['validated', 'manager_approved', 'finance_approved', 'processed', 'paid'], true))) {
+            return 'validated';
+        }
+
         if ($records->every(fn (Payroll $record) => $record->payroll_status === 'paid')) {
             return 'paid';
         }
@@ -554,10 +638,119 @@ class PayrollWorkspaceService
             ->all();
     }
 
+    private function reportComponentTotals(Collection $items): array
+    {
+        return collect([
+            [
+                'component' => 'Basic Salary',
+                'category' => 'basic',
+                'amount' => round($items->sum(fn (PayRunItem $item) => (float) ($item->salary_breakdown['basic_salary'] ?? 0)), 2),
+            ],
+            [
+                'component' => 'Allowances',
+                'category' => 'allowance',
+                'amount' => round($items->sum(fn (PayRunItem $item) => (float) ($item->salary_breakdown['allowances'] ?? 0)), 2),
+            ],
+            [
+                'component' => 'Bonus',
+                'category' => 'bonus',
+                'amount' => round($items->sum(fn (PayRunItem $item) => (float) ($item->salary_breakdown['bonus'] ?? 0)), 2),
+            ],
+            [
+                'component' => 'Deductions',
+                'category' => 'deduction',
+                'amount' => round($items->sum(fn (PayRunItem $item) => (float) ($item->salary_breakdown['deductions'] ?? 0)), 2),
+            ],
+            [
+                'component' => 'Tax',
+                'category' => 'tax',
+                'amount' => round($items->sum(fn (PayRunItem $item) => (float) ($item->salary_breakdown['tax'] ?? 0)), 2),
+            ],
+            [
+                'component' => 'Compliance Deductions',
+                'category' => 'compliance',
+                'amount' => round($items->sum(fn (PayRunItem $item) => (float) data_get($item->compliance_breakdown, 'totals.employee_deductions', 0)), 2),
+            ],
+            [
+                'component' => 'Employer Contributions',
+                'category' => 'employer_contribution',
+                'amount' => round($items->sum(fn (PayRunItem $item) => (float) data_get($item->compliance_breakdown, 'totals.employer_contributions', 0)), 2),
+            ],
+        ])
+            ->filter(fn (array $row) => $row['amount'] > 0)
+            ->values()
+            ->all();
+    }
+
+    private function reportPayoutHistory(int $organizationId, string $payrollMonth): array
+    {
+        return \App\Models\PayrollTransaction::query()
+            ->with('payroll.user')
+            ->whereHas('payroll', function ($query) use ($organizationId, $payrollMonth) {
+                $query->where('organization_id', $organizationId)
+                    ->where('payroll_month', $payrollMonth);
+            })
+            ->latest()
+            ->limit(25)
+            ->get()
+            ->map(fn (\App\Models\PayrollTransaction $transaction) => [
+                'id' => $transaction->id,
+                'user' => $transaction->payroll?->user?->only(['id', 'name', 'email']),
+                'provider' => $transaction->provider,
+                'transaction_id' => $transaction->transaction_id,
+                'created_at' => optional($transaction->created_at)->toIso8601String(),
+                'status' => $transaction->status,
+                'amount' => (float) $transaction->amount,
+                'currency' => $transaction->currency,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function reportFailedPayouts(Collection $items): array
+    {
+        return $items
+            ->filter(fn (PayRunItem $item) => $item->payout_status === 'failed')
+            ->map(fn (PayRunItem $item) => [
+                'id' => $item->id,
+                'user' => $item->user?->only(['id', 'name', 'email']),
+                'net_pay' => (float) $item->net_pay,
+                'payout_status' => $item->payout_status,
+                'warnings' => $item->warnings ?: [],
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function reportMonthlyTrend(int $organizationId): array
+    {
+        return PayRun::query()
+            ->where('organization_id', $organizationId)
+            ->latest('payroll_month')
+            ->latest('id')
+            ->limit(6)
+            ->get()
+            ->map(function (PayRun $run) {
+                $summary = $run->summary ?: [];
+
+                return [
+                    'month' => $run->payroll_month,
+                    'gross_payroll' => (float) ($summary['gross_payroll'] ?? 0),
+                    'net_payroll' => (float) ($summary['net_payroll'] ?? 0),
+                    'employees_count' => (int) ($summary['employees_count'] ?? 0),
+                    'paid_count' => (int) ($summary['paid_count'] ?? 0),
+                    'failed_payouts' => (int) ($summary['failed_payouts'] ?? 0),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
     private function employeeWarnings(?User $employee, ?PayrollProfile $profile, array $attendance): array
     {
         $warnings = [];
-        $salarySource = $employee ? $this->resolveSalarySource((int) $employee->organization_id, (int) $employee->id, Carbon::parse($attendance['period_start'])->format('Y-m')) : ['source' => 'none'];
+        $payrollMonth = Carbon::parse($attendance['period_start'])->format('Y-m');
+        $salarySource = $employee ? $this->resolveSalarySource((int) $employee->organization_id, (int) $employee->id, $payrollMonth) : ['source' => 'none'];
 
         if (!$profile) {
             $warnings[] = 'Missing payroll profile';
@@ -565,14 +758,37 @@ class PayrollWorkspaceService
         if ($profile && empty($profile->payout_method)) {
             $warnings[] = 'Missing payout method';
         }
+        if ($profile && empty($profile->pay_group)) {
+            $warnings[] = 'Missing pay group';
+        }
+        if ($profile && empty($profile->payroll_code)) {
+            $warnings[] = 'Missing payroll code';
+        }
         if ($profile && in_array((string) $profile->payout_method, ['bank_transfer', 'stripe'], true) && empty($profile->bank_account_number) && empty($profile->payment_email)) {
             $warnings[] = 'Missing bank or payment destination details';
+        }
+        if ($profile && empty($profile->bank_verification_status)) {
+            $warnings[] = 'Missing bank verification status';
         }
         if (!($attendance['has_attendance_summary'] ?? false)) {
             $warnings[] = 'Missing attendance summary';
         }
         if (($salarySource['source'] ?? 'none') === 'none') {
             $warnings[] = 'Missing salary structure or template';
+        }
+
+        if ($profile && $employee) {
+            $settings = $this->settingsForOrganization((int) $employee->organization_id);
+            $declaration = PayrollTaxDeclaration::query()
+                ->where('organization_id', $employee->organization_id)
+                ->where('user_id', $employee->id)
+                ->where('financial_year', $this->payrollTaxDeclarationService->financialYearForMonth($payrollMonth))
+                ->first();
+
+            $warnings = array_merge(
+                $warnings,
+                $this->payrollComplianceService->readiness($profile, $settings->compliance_settings ?: [], $declaration)['warnings']
+            );
         }
 
         return array_values(array_unique($warnings));
@@ -601,43 +817,48 @@ class PayrollWorkspaceService
               continue;
           }
 
+          $basis = (string) ($item->component->calculation_basis ?: 'basic');
+          $baseAmount = $basis === 'gross'
+              ? max($basicSalary + $allowances + $bonus, $basicSalary)
+              : $basicSalary;
           $computed = $item->value_type === 'percentage'
-              ? round(($basicSalary * (float) $item->value) / 100, 2)
+              ? round(($baseAmount * (float) $item->value) / 100, 2)
               : round((float) $item->value, 2);
+          $impact = (string) ($item->component->impact ?: 'earning');
 
           $row = [
               'salary_component_id' => $item->salary_component_id,
               'name' => $item->component->name,
               'category' => $category,
+              'impact' => $impact,
+              'calculation_basis' => $basis,
+              'calculation_type' => $item->value_type,
               'value_type' => $item->value_type,
               'value' => (float) $item->value,
               'computed_amount' => $computed,
           ];
 
-          if (in_array($category, ['allowance', 'reimbursement', 'other'], true)) {
-              $allowances += $computed;
-              $earnings[] = $row;
-              continue;
-
-          }
-
-          
-          if ($category === 'earning'){
-                $allowances += $computed;
-                $earnings[] = $row;
-                continue;
-
-          }
           if ($category === 'bonus') {
               $bonus += $computed;
               $earnings[] = $row;
               continue;
           }
-          if ($category === 'tax') {
+          if ($category === 'tax' || $impact === 'tax') {
               $tax += $computed;
-          } else {
-              $deductions += $computed;
+              $deductionRows[] = $row;
+              continue;
           }
+          if (in_array($category, ['deduction', 'penalty'], true) || $impact === 'deduction') {
+              $deductions += $computed;
+              $deductionRows[] = $row;
+              continue;
+          }
+          if (in_array($impact, ['earning', 'reimbursement'], true) || in_array($category, ['allowance', 'overtime', 'reimbursement', 'other', 'earning'], true)) {
+              $allowances += $computed;
+              $earnings[] = $row;
+              continue;
+          }
+          $deductions += $computed;
           $deductionRows[] = $row;
         }
 
@@ -647,8 +868,73 @@ class PayrollWorkspaceService
             'deductions' => round($deductions, 2),
             'bonus' => round($bonus, 2),
             'tax' => round($tax, 2),
+            'net_salary' => round($basicSalary + $allowances + $bonus - $deductions - $tax, 2),
             'earnings_components' => $earnings,
             'deduction_components' => $deductionRows,
+        ];
+    }
+
+    private function ensureDefaultSetup(int $organizationId): void
+    {
+        PayrollSetting::query()->firstOrCreate(
+            ['organization_id' => $organizationId],
+            $this->defaultPayrollSettings()
+        );
+
+        foreach ($this->defaultSalaryComponents() as $component) {
+            SalaryComponent::query()->firstOrCreate(
+                [
+                    'organization_id' => $organizationId,
+                    'code' => $component['code'],
+                ],
+                $component
+            );
+        }
+    }
+
+    private function defaultPayrollSettings(): array
+    {
+        $currency = (string) config('payroll.default_currency', 'INR');
+
+        return [
+            'payroll_calendar' => ['cutoff_day' => 30, 'payment_day' => 1],
+            'default_payout_method' => ['method' => 'mock', 'currency' => $currency],
+            'overtime_rules' => ['enabled' => true, 'rate_multiplier' => 1.5],
+            'late_deduction_rules' => ['enabled' => false, 'deduction_per_late_day' => 0],
+            'leave_mapping' => ['approved_leave_counts_as_payable_day' => true],
+            'adjustment_rules' => ['approval_required' => true, 'auto_apply_approved_adjustments' => true],
+            'approval_workflow' => array_merge($this->payRunApprovalService->defaultWorkflow(), [
+                'adjustments_require_approval' => true,
+                'pay_run_requires_finalization' => true,
+            ]),
+            'compliance_settings' => $this->payrollComplianceService->defaultSettings($currency),
+            'tax_settings' => [
+                'default_regime' => 'new',
+                'rebate_limits' => ['old' => 500000, 'new' => 1200000],
+            ],
+            'payslip_branding' => ['company_name' => 'CareVance', 'accent_color' => '#0f172a'],
+            'payslip_issue_rules' => ['publish_after_payment' => true, 'track_viewed_at' => true],
+            'payout_workflow' => ['allow_bank_transfer_batch' => true, 'retry_failed_payouts' => true],
+        ];
+    }
+
+    private function defaultSalaryComponents(): array
+    {
+        return [
+            ['name' => 'Basic', 'code' => 'BASIC', 'category' => 'basic', 'impact' => 'earning', 'value_type' => 'fixed', 'calculation_basis' => 'basic', 'default_value' => 0, 'is_taxable' => true, 'is_compliance_component' => false, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'HRA', 'code' => 'HRA', 'category' => 'allowance', 'impact' => 'earning', 'value_type' => 'percentage', 'calculation_basis' => 'basic', 'default_value' => 40, 'is_taxable' => true, 'is_compliance_component' => false, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'Special Allowance', 'code' => 'SPECIAL_ALLOWANCE', 'category' => 'allowance', 'impact' => 'earning', 'value_type' => 'fixed', 'calculation_basis' => 'basic', 'default_value' => 0, 'is_taxable' => true, 'is_compliance_component' => false, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'Conveyance', 'code' => 'CONVEYANCE', 'category' => 'allowance', 'impact' => 'earning', 'value_type' => 'fixed', 'calculation_basis' => 'basic', 'default_value' => 0, 'is_taxable' => true, 'is_compliance_component' => false, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'Bonus', 'code' => 'BONUS', 'category' => 'bonus', 'impact' => 'earning', 'value_type' => 'fixed', 'calculation_basis' => 'basic', 'default_value' => 0, 'is_taxable' => true, 'is_compliance_component' => false, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'Reimbursement', 'code' => 'REIMBURSEMENT', 'category' => 'reimbursement', 'impact' => 'reimbursement', 'value_type' => 'fixed', 'calculation_basis' => 'basic', 'default_value' => 0, 'is_taxable' => false, 'is_compliance_component' => false, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'Overtime', 'code' => 'OVERTIME', 'category' => 'overtime', 'impact' => 'earning', 'value_type' => 'fixed', 'calculation_basis' => 'gross', 'default_value' => 0, 'is_taxable' => true, 'is_compliance_component' => false, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'Manual Deduction', 'code' => 'MANUAL_DEDUCTION', 'category' => 'deduction', 'impact' => 'deduction', 'value_type' => 'fixed', 'calculation_basis' => 'basic', 'default_value' => 0, 'is_taxable' => false, 'is_compliance_component' => false, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'PF Employee', 'code' => 'PF_EMPLOYEE', 'category' => 'deduction', 'impact' => 'deduction', 'value_type' => 'percentage', 'calculation_basis' => 'basic', 'default_value' => 12, 'is_taxable' => false, 'is_compliance_component' => true, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'PF Employer', 'code' => 'PF_EMPLOYER', 'category' => 'other', 'impact' => 'employer_contribution', 'value_type' => 'percentage', 'calculation_basis' => 'basic', 'default_value' => 12, 'is_taxable' => false, 'is_compliance_component' => true, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'ESI Employee', 'code' => 'ESI_EMPLOYEE', 'category' => 'deduction', 'impact' => 'deduction', 'value_type' => 'percentage', 'calculation_basis' => 'gross', 'default_value' => 0.75, 'is_taxable' => false, 'is_compliance_component' => true, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'ESI Employer', 'code' => 'ESI_EMPLOYER', 'category' => 'other', 'impact' => 'employer_contribution', 'value_type' => 'percentage', 'calculation_basis' => 'gross', 'default_value' => 3.25, 'is_taxable' => false, 'is_compliance_component' => true, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'Professional Tax', 'code' => 'PROFESSIONAL_TAX', 'category' => 'deduction', 'impact' => 'deduction', 'value_type' => 'fixed', 'calculation_basis' => 'basic', 'default_value' => 200, 'is_taxable' => false, 'is_compliance_component' => true, 'is_system_default' => true, 'is_active' => true],
+            ['name' => 'TDS', 'code' => 'TDS', 'category' => 'tax', 'impact' => 'tax', 'value_type' => 'fixed', 'calculation_basis' => 'gross', 'default_value' => 0, 'is_taxable' => false, 'is_compliance_component' => true, 'is_system_default' => true, 'is_active' => true],
         ];
     }
 }

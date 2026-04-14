@@ -13,9 +13,13 @@ class SalaryComponent extends Model
         'name',
         'code',
         'category',
+        'impact',
         'value_type',
+        'calculation_basis',
         'default_value',
         'is_taxable',
+        'is_compliance_component',
+        'is_system_default',
         'is_active',
         'meta',
     ];
@@ -25,6 +29,8 @@ class SalaryComponent extends Model
         return [
             'default_value' => 'float',
             'is_taxable' => 'boolean',
+            'is_compliance_component' => 'boolean',
+            'is_system_default' => 'boolean',
             'is_active' => 'boolean',
             'meta' => 'array',
         ];

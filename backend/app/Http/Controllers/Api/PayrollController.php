@@ -16,15 +16,23 @@ use App\Http\Requests\Api\Payroll\UpdatePayrollRecordStatusRequest;
 use App\Models\PayrollAllowance;
 use App\Models\PayrollDeduction;
 use App\Models\Payroll;
+use App\Models\PayrollAdjustment;
+use App\Models\PayrollProfile;
+use App\Models\PayrollSetting;
+use App\Models\PayrollTaxDeclaration;
 use App\Models\PayrollTransaction;
 use App\Models\PayrollStructure;
+use App\Models\PayRun;
 use App\Models\Payslip;
 use App\Models\User;
 use App\Services\AppNotificationService;
 use App\Services\Audit\AuditLogService;
+use App\Services\Payroll\PayRunApprovalService;
 use App\Services\Payroll\PayrollCalculatorService;
+use App\Services\Payroll\PayrollComplianceService;
 use App\Services\Payroll\PayrollDomainService;
 use App\Services\Payroll\PayrollPayoutManager;
+use App\Services\Payroll\PayrollTaxDeclarationService;
 use App\Services\Payroll\PayrollWorkspaceService;
 use App\Services\Payroll\StripePayrollPayoutService;
 use Carbon\Carbon;
@@ -40,9 +48,12 @@ class PayrollController extends Controller
     public function __construct(
         private readonly AppNotificationService $notificationService,
         private readonly AuditLogService $auditLogService,
+        private readonly PayRunApprovalService $payRunApprovalService,
         private readonly PayrollCalculatorService $payrollCalculatorService,
+        private readonly PayrollComplianceService $payrollComplianceService,
         private readonly PayrollDomainService $payrollDomainService,
         private readonly PayrollPayoutManager $payrollPayoutManager,
+        private readonly PayrollTaxDeclarationService $payrollTaxDeclarationService,
         private readonly PayrollWorkspaceService $payrollWorkspaceService,
         private readonly StripePayrollPayoutService $stripePayrollPayoutService,
     ) {
@@ -125,6 +136,7 @@ class PayrollController extends Controller
         }
 
         $allowOverwrite = (bool) $request->boolean('allow_overwrite', false);
+        $workspaceSettings = $this->payrollWorkspaceService->settingsForOrganization((int) $currentUser->organization_id);
         $generated = [];
         $skipped = [];
 
@@ -134,19 +146,26 @@ class PayrollController extends Controller
             $request,
             $periodStart,
             $allowOverwrite,
+            $workspaceSettings,
             &$generated,
             &$skipped
         ) {
             foreach ($employees as $employee) {
-                $compensation = $this->payrollWorkspaceService->compensationSnapshot(
-                    (int) $currentUser->organization_id,
-                    (int) $employee->id,
-                    (string) $request->payroll_month
-                );
-                $profile = \App\Models\PayrollProfile::query()
+                $compensation = $this->payrollWorkspaceService->compensationSnapshot((int) $currentUser->organization_id, (int) $employee->id, (string) $request->payroll_month);
+                $profile = PayrollProfile::query()
                     ->where('organization_id', $currentUser->organization_id)
                     ->where('user_id', $employee->id)
                     ->first();
+                $attendance = $this->payrollWorkspaceService->attendanceSummary((int) $currentUser->organization_id, (int) $employee->id, (string) $request->payroll_month);
+                $settings = $workspaceSettings;
+                $declaration = $this->payrollTaxDeclarationService->findForMonth((int) $currentUser->organization_id, (int) $employee->id, (string) $request->payroll_month);
+                $adjustments = PayrollAdjustment::query()
+                    ->where('organization_id', $currentUser->organization_id)
+                    ->where('user_id', $employee->id)
+                    ->where('effective_month', $request->payroll_month)
+                    ->whereIn('status', ['approved', 'applied'])
+                    ->orderBy('id')
+                    ->get();
 
                 $existing = Payroll::where('organization_id', $currentUser->organization_id)
                     ->where('user_id', $employee->id)
@@ -163,11 +182,11 @@ class PayrollController extends Controller
 
                 if (($compensation['source'] ?? 'none') !== 'none') {
                     $snapshot = $compensation['snapshot'] ?? [];
-                    $basicSalary = round((float) ($snapshot['basic_salary'] ?? 0), 2);
-                    $allowances = round((float) ($snapshot['allowances'] ?? 0), 2);
-                    $deductions = round((float) ($snapshot['deductions'] ?? 0), 2);
-                    $bonus = round((float) ($snapshot['bonus'] ?? 0) + (float) ($profile?->bonus_amount ?? 0), 2);
-                    $tax = round((float) ($snapshot['tax'] ?? 0) + (float) ($profile?->tax_amount ?? 0), 2);
+                    $baseBasicSalary = round((float) ($snapshot['basic_salary'] ?? 0), 2);
+                    $baseAllowances = round((float) ($snapshot['allowances'] ?? 0), 2);
+                    $baseDeductions = round((float) ($snapshot['deductions'] ?? 0), 2);
+                    $baseBonus = round((float) ($snapshot['bonus'] ?? 0) + (float) ($profile?->bonus_amount ?? 0), 2);
+                    $baseTax = round((float) ($snapshot['tax'] ?? 0), 2);
                 } else {
                     // Fallback: generate a draft payroll even when structure is missing.
                     $lastPayroll = Payroll::where('organization_id', $currentUser->organization_id)
@@ -176,19 +195,79 @@ class PayrollController extends Controller
                         ->orderByDesc('id')
                         ->first();
 
-                    $basicSalary = round((float) ($lastPayroll?->basic_salary ?? 0), 2);
-                    $allowances = round((float) ($lastPayroll?->allowances ?? 0), 2);
-                    $deductions = round((float) ($lastPayroll?->deductions ?? 0), 2);
-                    $bonus = round((float) ($lastPayroll?->bonus ?? 0), 2);
-                    $tax = round((float) ($lastPayroll?->tax ?? 0), 2);
+                    $baseBasicSalary = round((float) ($lastPayroll?->basic_salary ?? 0), 2);
+                    $baseAllowances = round((float) ($lastPayroll?->allowances ?? 0), 2);
+                    $baseDeductions = round((float) ($lastPayroll?->deductions ?? 0), 2);
+                    $baseBonus = round((float) ($lastPayroll?->bonus ?? 0), 2);
+                    $baseTax = round((float) ($lastPayroll?->tax ?? 0), 2);
                 }
 
-                $netSalary = $this->payrollCalculatorService->calculateNetSalary(
-                    $basicSalary,
-                    $allowances,
-                    $bonus,
-                    $deductions,
-                    $tax
+                $payableDays = max(1, (float) ($attendance['payable_days'] ?? 0));
+                $daysInMonth = max(1, (int) $periodStart->copy()->endOfMonth()->day);
+                $attendanceFactor = (bool) ($attendance['has_attendance_summary'] ?? false)
+                    ? min(1, round($payableDays / $daysInMonth, 4))
+                    : 1.0;
+
+                $basicSalary = round($baseBasicSalary * $attendanceFactor, 2);
+                $allowances = round($baseAllowances * $attendanceFactor, 2);
+                $deductions = round($baseDeductions * $attendanceFactor, 2);
+                $bonus = $baseBonus;
+                $tax = $baseTax;
+
+                $adjustmentBreakdown = $adjustments->map(function (PayrollAdjustment $adjustment) {
+                    $category = in_array($adjustment->kind, ['manual_deduction', 'penalty'], true) ? 'deduction' : 'earning';
+
+                    return [
+                        'id' => $adjustment->id,
+                        'title' => $adjustment->title,
+                        'kind' => $adjustment->kind,
+                        'source' => $adjustment->source,
+                        'status' => $adjustment->status,
+                        'amount' => (float) $adjustment->amount,
+                        'category' => $category,
+                    ];
+                })->values()->all();
+
+                $adjustmentEarnings = round(collect($adjustmentBreakdown)->where('category', 'earning')->sum('amount'), 2);
+                $adjustmentDeductions = round(collect($adjustmentBreakdown)->where('category', 'deduction')->sum('amount'), 2);
+                $bonus = round($bonus + $adjustmentEarnings, 2);
+                $deductions = round($deductions + $adjustmentDeductions, 2);
+
+                $overtimeAmount = 0.0;
+                if ((bool) data_get($settings->overtime_rules, 'enabled', true)) {
+                    $hours = round(((float) ($attendance['overtime_seconds'] ?? 0)) / 3600, 2);
+                    $rateMultiplier = (float) data_get($settings->overtime_rules, 'rate_multiplier', 1.5);
+                    $hourlyRate = $daysInMonth > 0 ? (($baseBasicSalary + $baseAllowances) / max(1, $daysInMonth * 8)) : 0;
+                    $overtimeAmount = round($hours * $hourlyRate * $rateMultiplier, 2);
+                    $allowances = round($allowances + $overtimeAmount, 2);
+                }
+
+                $grossSalary = round($basicSalary + $allowances + $bonus, 2);
+                $compliance = $profile
+                    ? $this->payrollComplianceService->calculate(
+                        $basicSalary,
+                        $grossSalary,
+                        $profile,
+                        [
+                            'pf' => data_get($settings->compliance_settings, 'pf', []),
+                            'esi' => data_get($settings->compliance_settings, 'esi', []),
+                            'professional_tax' => data_get($settings->compliance_settings, 'professional_tax', []),
+                            'tds' => array_replace_recursive(data_get($settings->compliance_settings, 'tds', []), $settings->tax_settings ?: []),
+                        ],
+                        $declaration,
+                        (float) ($profile?->tax_amount ?? 0)
+                    )
+                    : ['employee' => [], 'employer' => [], 'totals' => ['employee_deductions' => 0, 'tds' => (float) ($profile?->tax_amount ?? 0), 'employer_contributions' => 0], 'tax_estimate' => []];
+
+                $deductions = round($deductions + (float) data_get($compliance, 'totals.employee_deductions', 0), 2);
+                $tax = round($tax + (float) data_get($compliance, 'totals.tds', (float) ($profile?->tax_amount ?? 0)), 2);
+                $netSalary = $this->payrollCalculatorService->calculateNetSalary($basicSalary, $allowances, $bonus, $deductions, $tax);
+                $payoutMethod = $this->payrollPayoutManager->normalizePayoutMethod(
+                    (string) (
+                        $request->payout_method
+                        ?: $profile?->payout_method
+                        ?: data_get($workspaceSettings->default_payout_method, 'method')
+                    )
                 );
 
                 $payload = [
@@ -197,10 +276,33 @@ class PayrollController extends Controller
                     'deductions' => $deductions,
                     'bonus' => $bonus,
                     'tax' => $tax,
+                    'gross_salary' => $grossSalary,
                     'net_salary' => $netSalary,
                     'payroll_status' => 'draft',
-                    'payout_method' => (string) ($request->payout_method ?: 'mock'),
+                    'payout_method' => $payoutMethod,
                     'payout_status' => 'pending',
+                    'attendance_summary' => $attendance,
+                    'salary_breakdown' => [
+                        'basic_salary' => $basicSalary,
+                        'allowances' => $allowances,
+                        'bonus' => $bonus,
+                        'deductions' => $deductions,
+                        'tax' => $tax,
+                        'attendance_factor' => $attendanceFactor,
+                        'overtime_amount' => $overtimeAmount,
+                    ],
+                    'adjustment_breakdown' => [
+                        'items' => $adjustmentBreakdown,
+                        'earnings_total' => $adjustmentEarnings,
+                        'deductions_total' => $adjustmentDeductions,
+                    ],
+                    'compliance_breakdown' => $compliance,
+                    'tax_breakdown' => [
+                        'declaration' => $declaration?->only(['id', 'financial_year', 'tax_regime', 'status']),
+                        'estimate' => data_get($compliance, 'tax_estimate', []),
+                        'fallback_tax_amount' => (float) ($profile?->tax_amount ?? 0),
+                    ],
+                    'warnings' => $this->payrollWorkspaceService->employeeWarningsForUser((int) $currentUser->organization_id, $employee, (string) $request->payroll_month),
                     'generated_by' => $currentUser->id,
                     'updated_by' => $currentUser->id,
                 ];
@@ -275,6 +377,8 @@ class PayrollController extends Controller
             'payout_method',
         ]);
         $record->fill($request->only(['basic_salary', 'allowances', 'deductions', 'bonus', 'tax', 'payroll_status', 'payout_method']));
+        $record->payout_method = $this->payrollPayoutManager->normalizePayoutMethod((string) $record->payout_method);
+        $record->gross_salary = round((float) $record->basic_salary + (float) $record->allowances + (float) $record->bonus, 2);
         $record->net_salary = $this->payrollCalculatorService->calculateNetSalary(
             (float) $record->basic_salary,
             (float) $record->allowances,
@@ -282,6 +386,13 @@ class PayrollController extends Controller
             (float) $record->deductions,
             (float) $record->tax
         );
+        $record->salary_breakdown = array_merge($record->salary_breakdown ?: [], [
+            'basic_salary' => (float) $record->basic_salary,
+            'allowances' => (float) $record->allowances,
+            'bonus' => (float) $record->bonus,
+            'deductions' => (float) $record->deductions,
+            'tax' => (float) $record->tax,
+        ]);
         $record->updated_by = $currentUser?->id;
         $record->save();
 
@@ -322,11 +433,12 @@ class PayrollController extends Controller
             return response()->json(['message' => 'Payroll can be marked paid only after successful payout.'], 422);
         }
 
-        $record->payroll_status = $nextStatus;
+        $record->payroll_status = $this->payRunApprovalService->mappedStatus($nextStatus);
         $record->processed_at = $nextStatus === 'processed' ? now() : $record->processed_at;
         $record->paid_at = $nextStatus === 'paid' ? now() : $record->paid_at;
         $record->updated_by = $request->user()?->id;
         $record->save();
+        $this->payrollWorkspaceService->syncPayRunForMonth((int) $record->organization_id, (string) $record->payroll_month, $request->user()?->id);
 
         $this->auditLogService->log(
             action: $nextStatus === 'paid' ? 'payroll.marked_paid' : 'payroll.status_updated',
@@ -358,13 +470,33 @@ class PayrollController extends Controller
             return response()->json(['message' => 'Net salary must be greater than 0 before payout.'], 422);
         }
 
-        $currentUser = $request->user();
-        if ($request->filled('payout_method')) {
-            $record->payout_method = (string) $request->payout_method;
+        $profile = PayrollProfile::query()
+            ->where('organization_id', $record->organization_id)
+            ->where('user_id', $record->user_id)
+            ->first();
+        $payoutWarnings = array_values(array_filter([
+            in_array($record->payout_method, ['bank_transfer', 'stripe'], true) && !$profile ? 'Missing payroll profile' : null,
+            $profile && $record->payout_method === 'bank_transfer' && empty($profile->bank_account_number) ? 'Missing bank account number' : null,
+            $profile && $record->payout_method === 'bank_transfer' && empty($profile->bank_ifsc_swift) ? 'Missing IFSC or SWIFT code' : null,
+            $profile && $record->payout_method === 'stripe' && empty($profile->payment_email) && empty($record->user?->email) ? 'Missing payment email' : null,
+        ]));
+
+        if (count($payoutWarnings) > 0) {
+            $record->failure_reason = implode(' | ', $payoutWarnings);
+            $record->save();
+
+            return response()->json(['message' => $record->failure_reason], 422);
         }
 
+        $currentUser = $request->user();
+        $record->loadMissing('user');
+        if ($request->filled('payout_method')) {
+            $record->payout_method = $this->payrollPayoutManager->normalizePayoutMethod((string) $request->payout_method);
+        }
+        $record->payout_method = $this->payrollPayoutManager->normalizePayoutMethod((string) $record->payout_method);
+
         try {
-            $service = $this->payrollPayoutManager->resolveForCurrentMode();
+            $service = $this->payrollPayoutManager->resolveForPayoutMethod((string) $record->payout_method);
             $result = $service->payout($record->loadMissing('user'), $request->get('simulate_status'));
         } catch (\Throwable $e) {
             Log::error('Payroll payout failed', [
@@ -390,15 +522,20 @@ class PayrollController extends Controller
 
         $record->payout_status = $result['status'];
         $record->updated_by = $currentUser?->id;
+        $record->failure_reason = $result['status'] === 'failed'
+            ? ((string) data_get($result, 'raw_response.error', 'Payout failed'))
+            : null;
+        $record->payment_reference = (string) ($result['transaction_id'] ?: $record->payment_reference);
         if ($result['status'] === 'success') {
             $record->payroll_status = 'paid';
             $record->paid_at = now();
             $this->payrollDomainService->sendPayrollPaidNotification($record->fresh('user'), $currentUser?->id);
-        } elseif ($record->payroll_status === 'draft') {
+        } elseif (in_array($record->payroll_status, ['draft', 'validated', 'manager_approved', 'finance_approved'], true)) {
             $record->payroll_status = 'processed';
             $record->processed_at = now();
         }
         $record->save();
+        $this->payrollWorkspaceService->syncPayRunForMonth((int) $record->organization_id, (string) $record->payroll_month, $currentUser?->id);
 
         $this->auditLogService->log(
             action: $result['status'] === 'success' ? 'payroll.marked_paid' : 'payroll.payout_processed',
@@ -490,12 +627,15 @@ class PayrollController extends Controller
 
         $previousPayoutStatus = (string) $record->payout_status;
         $record->payout_status = $mappedStatus;
+        $record->payment_reference = (string) $request->checkout_session_id;
+        $record->failure_reason = $mappedStatus === 'failed' ? 'Stripe checkout session failed or expired.' : null;
         if ($mappedStatus === 'success') {
             $record->payroll_status = 'paid';
             $record->paid_at = now();
         }
         $record->updated_by = $request->user()?->id;
         $record->save();
+        $this->payrollWorkspaceService->syncPayRunForMonth((int) $record->organization_id, (string) $record->payroll_month, $request->user()?->id);
 
         if ($previousPayoutStatus !== 'success' && $mappedStatus === 'success') {
             $this->payrollDomainService->sendPayrollPaidNotification($record->fresh('user'), $request->user()?->id);
@@ -610,11 +750,14 @@ class PayrollController extends Controller
         if ($payroll) {
             $previousPayrollStatus = $payroll->payout_status;
             $payroll->payout_status = $mappedStatus;
+            $payroll->payment_reference = (string) ($transaction->transaction_id ?: $payroll->payment_reference);
+            $payroll->failure_reason = $mappedStatus === 'failed' ? 'Stripe webhook marked payout as failed.' : null;
             if ($mappedStatus === 'success') {
                 $payroll->payroll_status = 'paid';
                 $payroll->paid_at = now();
             }
             $payroll->save();
+            $this->payrollWorkspaceService->syncPayRunForMonth((int) $payroll->organization_id, (string) $payroll->payroll_month);
 
             if (!$wasSuccess && $previousPayrollStatus !== 'success' && $mappedStatus === 'success') {
                 $this->payrollDomainService->sendPayrollPaidNotification($payroll->loadMissing('user'));
@@ -824,7 +967,7 @@ class PayrollController extends Controller
             return response()->json(['data' => []]);
         }
 
-        $query = Payslip::with(['user', 'generatedBy', 'payrollStructure'])
+        $query = Payslip::with(['user', 'generatedBy', 'payrollStructure', 'payroll', 'payRun'])
             ->where('organization_id', $currentUser->organization_id)
             ->orderByDesc('period_month')
             ->orderByDesc('generated_at');
@@ -874,16 +1017,24 @@ class PayrollController extends Controller
 
         $structure = $compensation['structure'] ?? null;
         $snapshot = $compensation['snapshot'] ?? [];
-        $profile = \App\Models\PayrollProfile::query()
+        $profile = PayrollProfile::query()
             ->where('organization_id', $currentUser->organization_id)
             ->where('user_id', $targetUser->id)
             ->first();
-        $basicSalary = (float) ($snapshot['basic_salary'] ?? 0);
-        $allowances = $snapshot['earnings_components'] ?? [];
-        $deductions = $snapshot['deduction_components'] ?? [];
-        $allowanceTotal = (float) ($snapshot['allowances'] ?? 0) + (float) ($snapshot['bonus'] ?? 0) + (float) ($profile?->bonus_amount ?? 0);
-        $deductionTotal = (float) ($snapshot['deductions'] ?? 0) + (float) ($snapshot['tax'] ?? 0) + (float) ($profile?->tax_amount ?? 0);
-        $net = max(0, $basicSalary + $allowanceTotal - $deductionTotal);
+        $payroll = Payroll::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->where('user_id', $targetUser->id)
+            ->where('payroll_month', $request->period_month)
+            ->first();
+
+        $basicSalary = (float) ($payroll?->basic_salary ?? $snapshot['basic_salary'] ?? 0);
+        $allowances = $payroll?->salary_breakdown['earnings_components'] ?? $snapshot['earnings_components'] ?? [];
+        $deductions = $payroll?->salary_breakdown['deduction_components'] ?? $snapshot['deduction_components'] ?? [];
+        $allowanceTotal = (float) ($payroll?->allowances ?? ((float) ($snapshot['allowances'] ?? 0) + (float) ($snapshot['bonus'] ?? 0) + (float) ($profile?->bonus_amount ?? 0)));
+        $deductionTotal = (float) ($payroll?->deductions ?? ((float) ($snapshot['deductions'] ?? 0) + (float) ($snapshot['tax'] ?? 0))) + (float) ($payroll?->tax ?? $profile?->tax_amount ?? 0);
+        $net = (float) ($payroll?->net_salary ?? max(0, $basicSalary + $allowanceTotal - $deductionTotal));
+        $publishAfterPayment = (bool) data_get($this->payrollWorkspaceService->settingsForOrganization((int) $currentUser->organization_id)->payslip_issue_rules, 'publish_after_payment', true);
+        $publishStatus = $publishAfterPayment && ($payroll?->payroll_status !== 'paid') ? 'draft' : 'published';
 
         $payslip = Payslip::updateOrCreate(
             [
@@ -893,6 +1044,11 @@ class PayrollController extends Controller
             ],
             [
                 'payroll_structure_id' => $structure?->id,
+                'payroll_id' => $payroll?->id,
+                'pay_run_id' => PayRun::query()
+                    ->where('organization_id', $currentUser->organization_id)
+                    ->where('payroll_month', $request->period_month)
+                    ->value('id'),
                 'currency' => $structure?->currency ?: (string) config('payroll.default_currency', 'INR'),
                 'basic_salary' => round($basicSalary, 2),
                 'total_allowances' => round($allowanceTotal, 2),
@@ -900,11 +1056,17 @@ class PayrollController extends Controller
                 'net_salary' => round($net, 2),
                 'allowances' => $allowances,
                 'deductions' => $deductions,
+                'breakdown' => $payroll?->salary_breakdown ?: $snapshot,
+                'compliance_breakdown' => $payroll?->compliance_breakdown,
                 'generated_by' => $currentUser->id,
                 'generated_at' => now(),
-                'payment_status' => 'pending',
-                'paid_at' => null,
-                'paid_by' => null,
+                'issued_at' => now(),
+                'publish_status' => $publishStatus,
+                'published_at' => $publishStatus === 'published' ? now() : null,
+                'payment_status' => $payroll?->payroll_status === 'paid' ? 'paid' : 'pending',
+                'paid_at' => $payroll?->paid_at,
+                'paid_by' => $currentUser->id,
+                'payment_reference' => $payroll?->payment_reference,
             ]
         );
 
@@ -920,7 +1082,7 @@ class PayrollController extends Controller
             request: $request
         );
 
-        return response()->json($payslip->load(['user', 'generatedBy', 'payrollStructure']), 201);
+        return response()->json($payslip->load(['user', 'generatedBy', 'payrollStructure', 'payroll', 'payRun']), 201);
     }
 
     public function payNow(PayPayslipsRequest $request)
@@ -954,7 +1116,19 @@ class PayrollController extends Controller
                     'payment_status' => 'paid',
                     'paid_at' => now(),
                     'paid_by' => $currentUser->id,
+                    'published_at' => $payslip->published_at ?: now(),
+                    'publish_status' => 'published',
+                    'payment_reference' => $payslip->payment_reference ?: sprintf('PAYSLIP-%d-%s', $payslip->id, now()->format('YmdHis')),
                 ]);
+
+                if ($payslip->payroll) {
+                    $payslip->payroll->update([
+                        'payroll_status' => 'paid',
+                        'paid_at' => now(),
+                        'payment_reference' => $payslip->payment_reference ?: sprintf('PAYSLIP-%d-%s', $payslip->id, now()->format('YmdHis')),
+                    ]);
+                    $this->payrollWorkspaceService->syncPayRunForMonth((int) $payslip->organization_id, (string) $payslip->period_month, $currentUser->id);
+                }
             }
         });
 
@@ -1006,7 +1180,12 @@ class PayrollController extends Controller
             return response()->json(['message' => 'Payslip not found'], 404);
         }
 
-        return response()->json($payslip->load(['user', 'generatedBy', 'payrollStructure']));
+        if ($request->user()?->id === $payslip->user_id && !$this->payrollDomainService->canManagePayroll($request->user())) {
+            $payslip->viewed_at = now();
+            $payslip->save();
+        }
+
+        return response()->json($payslip->fresh()->load(['user', 'generatedBy', 'payrollStructure', 'payroll', 'payRun']));
     }
 
     public function downloadPayslipPdf(Request $request, int $id)
@@ -1016,7 +1195,7 @@ class PayrollController extends Controller
             return response()->json(['message' => 'Payslip not found'], 404);
         }
 
-        $payslip->load(['user', 'generatedBy']);
+        $payslip->load(['user', 'generatedBy', 'payroll']);
         $html = View::make('payslips.pdf', ['payslip' => $payslip])->render();
 
         $options = new Options();

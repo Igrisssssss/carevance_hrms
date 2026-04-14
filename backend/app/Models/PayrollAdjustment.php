@@ -15,15 +15,26 @@ class PayrollAdjustment extends Model
         'title',
         'description',
         'kind',
+        'source',
         'effective_month',
         'amount',
         'currency',
         'status',
         'created_by',
         'approved_by',
+        'applied_run_id',
+        'applied_by',
+        'rejected_by',
         'approved_at',
+        'rejected_at',
         'applied_at',
         'approval_note',
+        'rejection_reason',
+        'attachment_meta',
+        'approval_trail',
+        'claim_reference',
+        'claim_category',
+        'merchant_name',
         'meta',
     ];
 
@@ -32,7 +43,10 @@ class PayrollAdjustment extends Model
         return [
             'amount' => 'float',
             'approved_at' => 'datetime',
+            'rejected_at' => 'datetime',
             'applied_at' => 'datetime',
+            'attachment_meta' => 'array',
+            'approval_trail' => 'array',
             'meta' => 'array',
         ];
     }
@@ -65,5 +79,20 @@ class PayrollAdjustment extends Model
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function appliedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'applied_by');
+    }
+
+    public function rejectedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'rejected_by');
+    }
+
+    public function appliedRun(): BelongsTo
+    {
+        return $this->belongsTo(PayRun::class, 'applied_run_id');
     }
 }

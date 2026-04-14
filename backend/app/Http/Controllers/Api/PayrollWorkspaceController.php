@@ -7,12 +7,15 @@ use App\Models\PayRun;
 use App\Models\PayrollAdjustment;
 use App\Models\PayrollProfile;
 use App\Models\PayrollSetting;
+use App\Models\PayrollTaxDeclaration;
 use App\Models\Reimbursement;
 use App\Models\SalaryComponent;
 use App\Models\SalaryTemplate;
 use App\Models\SalaryTemplateComponent;
 use App\Models\User;
+use App\Services\Payroll\PayRunApprovalService;
 use App\Services\Payroll\PayrollDomainService;
+use App\Services\Payroll\PayrollTaxDeclarationService;
 use App\Services\Payroll\PayrollWorkspaceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +23,9 @@ use Illuminate\Support\Facades\DB;
 class PayrollWorkspaceController extends Controller
 {
     public function __construct(
+        private readonly PayRunApprovalService $payRunApprovalService,
         private readonly PayrollDomainService $payrollDomainService,
+        private readonly PayrollTaxDeclarationService $payrollTaxDeclarationService,
         private readonly PayrollWorkspaceService $payrollWorkspaceService,
     ) {
     }
@@ -72,7 +77,9 @@ class PayrollWorkspaceController extends Controller
         }
 
         $data = $request->validate([
-            'status' => 'required|in:draft,processed,approved,finalized,locked,paid',
+            'status' => 'required|in:draft,validated,approved,manager_approved,finalized,locked,finance_approved,processed,paid',
+            'comment' => 'nullable|string',
+            'rejection_reason' => 'nullable|string',
         ]);
 
         $run = PayRun::query()
@@ -83,24 +90,21 @@ class PayrollWorkspaceController extends Controller
             return response()->json(['message' => 'Pay run not found'], 404);
         }
 
-        $run->status = $data['status'];
-        if ($data['status'] === 'approved') {
-            $run->approved_by = $user->id;
-            $run->approved_at = now();
-        }
-        if ($data['status'] === 'finalized') {
-            $run->finalized_at = now();
-        }
-        if ($data['status'] === 'locked') {
-            $run->locked_at = now();
-        }
-        $run->save();
+        $run = $this->payRunApprovalService->transition(
+            $run,
+            $user,
+            (string) $data['status'],
+            $data['comment'] ?? null,
+            $data['rejection_reason'] ?? null
+        );
 
         $this->payrollWorkspaceService->logWorkspaceAudit((int) $user->organization_id, $user->id, 'pay_run.status_updated', $run, [
             'status' => $run->status,
+            'comment' => $data['comment'] ?? null,
+            'rejection_reason' => $data['rejection_reason'] ?? null,
         ]);
 
-        return response()->json($run->fresh(['items.user', 'items.payroll.transactions']));
+        return response()->json($run->fresh(['items.user', 'items.payroll.transactions', 'approvals.actor']));
     }
 
     public function profiles(Request $request)
@@ -119,7 +123,7 @@ class PayrollWorkspaceController extends Controller
 
         $profiles = PayrollProfile::query()
             ->where('organization_id', $user->organization_id)
-            ->with(['user', 'salaryTemplate.components.component'])
+            ->with(['user', 'salaryTemplate.components.component', 'taxDeclarations' => fn ($query) => $query->latest('financial_year')->limit(1)])
             ->withCount([
                 'adjustments as current_cycle_adjustments_count' => fn ($query) => $query->where('effective_month', $payrollMonth),
                 'adjustments as pending_adjustments_count' => fn ($query) => $query
@@ -136,6 +140,13 @@ class PayrollWorkspaceController extends Controller
                     'last_revision_date',
                     $revisionDates[$profile->user_id] ?? optional($profile->updated_at)->toDateString()
                 );
+                $latestDeclaration = $profile->taxDeclarations->first();
+                $profile->setAttribute('latest_tax_declaration', $latestDeclaration);
+                $profile->setAttribute('setup_readiness', [
+                    'payout' => (bool) ($profile->payout_method && ($profile->bank_account_number || $profile->payment_email)),
+                    'compliance' => $profile->compliance_readiness_status,
+                    'declaration' => $latestDeclaration?->status ?: $profile->declaration_status,
+                ]);
 
                 return $profile;
             })
@@ -276,7 +287,7 @@ class PayrollWorkspaceController extends Controller
             'employees' => User::query()->where('organization_id', $user->organization_id)->where('role', 'employee')->orderBy('name')->get(['id', 'name', 'email', 'role']),
             'adjustments' => PayrollAdjustment::query()
                 ->where('organization_id', $user->organization_id)
-                ->with(['user', 'reimbursement', 'approvedBy'])
+                ->with(['user', 'reimbursement', 'approvedBy', 'appliedBy', 'rejectedBy', 'appliedRun'])
                 ->when($request->filled('effective_month'), fn ($query) => $query->where('effective_month', $request->effective_month))
                 ->latest()
                 ->get(),
@@ -326,13 +337,32 @@ class PayrollWorkspaceController extends Controller
             $adjustment->approved_by = $user->id;
             $adjustment->approved_at = now();
         }
+        if ($status === 'reject') {
+            $adjustment->rejected_by = $user->id;
+            $adjustment->rejected_at = now();
+            $adjustment->rejection_reason = (string) $request->get('rejection_reason', $adjustment->rejection_reason);
+        }
         if ($status === 'apply') {
             $adjustment->applied_at = now();
+            $adjustment->applied_by = $user->id;
+            $adjustment->applied_run_id = PayRun::query()
+                ->where('organization_id', $user->organization_id)
+                ->where('payroll_month', $adjustment->effective_month)
+                ->value('id');
         }
         $adjustment->approval_note = (string) $request->get('approval_note', $adjustment->approval_note);
+        $trail = $adjustment->approval_trail ?: [];
+        $trail[] = [
+            'action' => $status,
+            'actor_id' => $user->id,
+            'at' => now()->toIso8601String(),
+            'note' => $adjustment->approval_note,
+            'rejection_reason' => $adjustment->rejection_reason,
+        ];
+        $adjustment->approval_trail = $trail;
         $adjustment->save();
 
-        return response()->json($adjustment->fresh(['user', 'reimbursement', 'approvedBy']));
+        return response()->json($adjustment->fresh(['user', 'reimbursement', 'approvedBy', 'appliedBy', 'rejectedBy', 'appliedRun']));
     }
 
     public function reports(Request $request)
@@ -371,8 +401,13 @@ class PayrollWorkspaceController extends Controller
             'overtime_rules' => 'nullable|array',
             'late_deduction_rules' => 'nullable|array',
             'leave_mapping' => 'nullable|array',
+            'adjustment_rules' => 'nullable|array',
             'approval_workflow' => 'nullable|array',
+            'compliance_settings' => 'nullable|array',
+            'tax_settings' => 'nullable|array',
             'payslip_branding' => 'nullable|array',
+            'payslip_issue_rules' => 'nullable|array',
+            'payout_workflow' => 'nullable|array',
         ]);
 
         $setting->fill($data);
@@ -381,6 +416,112 @@ class PayrollWorkspaceController extends Controller
         $this->payrollWorkspaceService->logWorkspaceAudit((int) $user->organization_id, $user->id, 'payroll_settings.updated', $setting, $data);
 
         return response()->json($setting->fresh());
+    }
+
+    public function taxDeclarations(Request $request)
+    {
+        $user = $request->user();
+        if (!$user || !$user->organization_id || !$this->payrollDomainService->canManagePayroll($user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        return response()->json([
+            'data' => PayrollTaxDeclaration::query()
+                ->where('organization_id', $user->organization_id)
+                ->with(['user', 'payrollProfile', 'submittedBy', 'reviewedBy'])
+                ->when($request->filled('user_id'), fn ($query) => $query->where('user_id', (int) $request->user_id))
+                ->when($request->filled('financial_year'), fn ($query) => $query->where('financial_year', (string) $request->financial_year))
+                ->latest('financial_year')
+                ->latest()
+                ->get(),
+        ]);
+    }
+
+    public function storeTaxDeclaration(Request $request)
+    {
+        return $this->saveTaxDeclaration($request);
+    }
+
+    public function updateTaxDeclaration(Request $request, int $id)
+    {
+        return $this->saveTaxDeclaration($request, $id);
+    }
+
+    public function reviewTaxDeclaration(Request $request, int $id, string $status)
+    {
+        $user = $request->user();
+        if (!$user || !$user->organization_id || !$this->payrollDomainService->canManagePayroll($user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        if (!in_array($status, ['approve', 'reject'], true)) {
+            return response()->json(['message' => 'Invalid declaration action'], 422);
+        }
+
+        $declaration = PayrollTaxDeclaration::query()
+            ->where('organization_id', $user->organization_id)
+            ->find($id);
+
+        if (!$declaration) {
+            return response()->json(['message' => 'Tax declaration not found'], 404);
+        }
+
+        $declaration->status = $status === 'approve' ? 'approved' : 'rejected';
+        $declaration->reviewed_by = $user->id;
+        $declaration->reviewed_at = now();
+        $declaration->rejection_reason = $status === 'reject' ? (string) $request->get('rejection_reason', '') : null;
+        $declaration->approved_snapshot = $status === 'approve' ? ($declaration->sections ?: []) : null;
+        $declaration->save();
+
+        PayrollProfile::query()
+            ->where('organization_id', $user->organization_id)
+            ->where('user_id', $declaration->user_id)
+            ->update([
+                'declaration_status' => $declaration->status,
+                'declaration_snapshot' => $declaration->approved_snapshot ?: ['status' => $declaration->status],
+            ]);
+
+        return response()->json($declaration->fresh(['user', 'payrollProfile', 'submittedBy', 'reviewedBy']));
+    }
+
+    private function saveTaxDeclaration(Request $request, ?int $id = null)
+    {
+        $user = $request->user();
+        if (!$user || !$user->organization_id || !$this->payrollDomainService->canManagePayroll($user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $data = $request->validate([
+            'user_id' => 'required|integer',
+            'payroll_profile_id' => 'nullable|integer',
+            'financial_year' => 'nullable|string|max:20',
+            'tax_regime' => 'nullable|in:old,new',
+            'status' => 'nullable|in:draft,submitted,approved,rejected',
+            'sections' => 'nullable|array',
+            'summary' => 'nullable|array',
+        ]);
+
+        $data['financial_year'] = $data['financial_year'] ?: $this->payrollTaxDeclarationService->financialYearForMonth(now()->format('Y-m'));
+        $declaration = PayrollTaxDeclaration::query()
+            ->where('organization_id', $user->organization_id)
+            ->when($id, fn ($query) => $query->where('id', $id))
+            ->first() ?: new PayrollTaxDeclaration(['organization_id' => $user->organization_id]);
+
+        $declaration->fill($data);
+        $declaration->organization_id = $user->organization_id;
+        $declaration->submitted_by = $data['status'] === 'submitted' ? $user->id : $declaration->submitted_by;
+        $declaration->submitted_at = $data['status'] === 'submitted' ? now() : $declaration->submitted_at;
+        $declaration->save();
+
+        PayrollProfile::query()
+            ->where('organization_id', $user->organization_id)
+            ->where('user_id', $declaration->user_id)
+            ->update([
+                'declaration_status' => $declaration->status,
+                'tax_regime' => $declaration->tax_regime,
+            ]);
+
+        return response()->json($declaration->fresh(['user', 'payrollProfile', 'submittedBy', 'reviewedBy']), $id ? 200 : 201);
     }
 
     private function saveProfile(Request $request, ?int $id = null)
@@ -392,14 +533,28 @@ class PayrollWorkspaceController extends Controller
 
         $data = $request->validate([
             'user_id' => 'required|integer',
+            'payroll_code' => 'nullable|string|max:80',
             'salary_template_id' => 'nullable|integer',
             'currency' => 'nullable|string|max:8',
+            'pay_group' => 'nullable|string|max:120',
             'payout_method' => 'nullable|string|max:32',
             'bank_name' => 'nullable|string|max:255',
             'bank_account_number' => 'nullable|string|max:255',
             'bank_ifsc_swift' => 'nullable|string|max:255',
             'payment_email' => 'nullable|email',
             'tax_identifier' => 'nullable|string|max:255',
+            'tax_regime' => 'nullable|in:old,new',
+            'pan_or_tax_id' => 'nullable|string|max:80',
+            'pf_account_number' => 'nullable|string|max:120',
+            'uan' => 'nullable|string|max:120',
+            'esi_number' => 'nullable|string|max:120',
+            'professional_tax_state' => 'nullable|string|max:120',
+            'professional_tax_jurisdiction' => 'nullable|string|max:120',
+            'payroll_start_date' => 'nullable|date',
+            'bank_verification_status' => 'nullable|in:pending,verified,rejected,unverified',
+            'declaration_status' => 'nullable|in:not_started,draft,submitted,approved,rejected',
+            'payout_readiness_status' => 'nullable|in:pending,ready,blocked',
+            'compliance_readiness_status' => 'nullable|in:pending,ready,blocked',
             'payroll_eligible' => 'nullable|boolean',
             'reimbursements_eligible' => 'nullable|boolean',
             'is_active' => 'nullable|boolean',
@@ -407,6 +562,7 @@ class PayrollWorkspaceController extends Controller
             'deduction_components' => 'nullable|array',
             'bonus_amount' => 'nullable|numeric',
             'tax_amount' => 'nullable|numeric',
+            'compliance_overrides' => 'nullable|array',
             'meta' => 'nullable|array',
             'template_effective_from' => 'nullable|date',
         ]);
@@ -415,6 +571,19 @@ class PayrollWorkspaceController extends Controller
             ->where('organization_id', $user->organization_id)
             ->when($id, fn ($query) => $query->where('id', $id))
             ->first() ?: new PayrollProfile(['organization_id' => $user->organization_id]);
+
+        $data['pan_or_tax_id'] = strtoupper((string) ($data['pan_or_tax_id'] ?? $data['tax_identifier'] ?? '')) ?: null;
+        $data['bank_verification_status'] = $data['bank_verification_status']
+            ?? (!empty($data['bank_account_number']) || !empty($data['payment_email']) ? 'verified' : 'pending');
+        $data['payout_readiness_status'] = $data['payout_readiness_status']
+            ?? (!empty($data['payout_method']) && (!empty($data['bank_account_number']) || !empty($data['payment_email'])) ? 'ready' : 'blocked');
+        $data['compliance_readiness_status'] = $data['compliance_readiness_status']
+            ?? ((!empty($data['tax_identifier']) || !empty($data['pan_or_tax_id'])) ? 'ready' : 'blocked');
+        $data['declaration_snapshot'] = [
+            'tax_identifier' => $data['tax_identifier'] ?? null,
+            'pan_or_tax_id' => $data['pan_or_tax_id'] ?? null,
+            'tax_regime' => $data['tax_regime'] ?? null,
+        ];
 
         $profile->fill($data);
         $profile->organization_id = $user->organization_id;
@@ -445,9 +614,13 @@ class PayrollWorkspaceController extends Controller
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:80',
             'category' => 'required|in:basic,allowance,overtime,bonus,reimbursement,penalty,tax,deduction,other',
+            'impact' => 'nullable|in:earning,deduction,tax,reimbursement,employer_contribution',
             'value_type' => 'required|in:fixed,percentage',
+            'calculation_basis' => 'nullable|in:basic,gross',
             'default_value' => 'nullable|numeric',
             'is_taxable' => 'nullable|boolean',
+            'is_compliance_component' => 'nullable|boolean',
+            'is_system_default' => 'nullable|boolean',
             'is_active' => 'nullable|boolean',
             'meta' => 'nullable|array',
         ]);
@@ -524,11 +697,19 @@ class PayrollWorkspaceController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'kind' => 'required|in:reimbursement,bonus,manual_deduction,penalty,one_time_adjustment',
+            'source' => 'nullable|string|max:80',
             'effective_month' => 'required|string|size:7',
             'amount' => 'required|numeric',
             'currency' => 'nullable|string|max:8',
             'status' => 'nullable|in:draft,pending_approval,approved,rejected,applied',
             'approval_note' => 'nullable|string',
+            'rejection_reason' => 'nullable|string',
+            'attachment_meta' => 'nullable|array',
+            'approval_trail' => 'nullable|array',
+            'applied_run_id' => 'nullable|integer',
+            'claim_reference' => 'nullable|string|max:120',
+            'claim_category' => 'nullable|string|max:120',
+            'merchant_name' => 'nullable|string|max:255',
             'meta' => 'nullable|array',
             'reimbursement' => 'nullable|array',
             'reimbursement.title' => 'nullable|string|max:255',
@@ -570,9 +751,13 @@ class PayrollWorkspaceController extends Controller
 
             $adjustment->fill(collect($data)->except('reimbursement')->all());
             $adjustment->organization_id = $user->organization_id;
+            if (($adjustment->status ?? null) === 'applied' && !$adjustment->applied_at) {
+                $adjustment->applied_at = now();
+                $adjustment->applied_by = $user->id;
+            }
             $adjustment->save();
         });
 
-        return response()->json($adjustment->fresh(['user', 'reimbursement', 'approvedBy']), $id ? 200 : 201);
+        return response()->json($adjustment->fresh(['user', 'reimbursement', 'approvedBy', 'appliedBy', 'rejectedBy', 'appliedRun']), $id ? 200 : 201);
     }
 }

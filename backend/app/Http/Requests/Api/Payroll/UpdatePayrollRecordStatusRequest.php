@@ -9,7 +9,7 @@ class UpdatePayrollRecordStatusRequest extends ApiFormRequest
     public function rules(): array
     {
         return [
-            'payroll_status' => 'required|in:draft,processed,paid',
+            'payroll_status' => 'required|in:draft,validated,manager_approved,finance_approved,processed,paid',
         ];
     }
 }

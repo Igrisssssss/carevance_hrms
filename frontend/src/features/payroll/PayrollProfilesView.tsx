@@ -21,8 +21,14 @@ import { defaultPayrollMonth, formatPayrollCurrency, formatPayrollMonth, maskBan
 const profileWarnings = (profile: PayrollProfile) => {
   const warnings: string[] = [];
   if (!profile.salary_template_id) warnings.push('Missing salary template');
+  if (!profile.payroll_code) warnings.push('Missing payroll code');
+  if (!profile.pay_group) warnings.push('Missing pay group');
   if (!profile.payout_method) warnings.push('Missing payout method');
   if (!profile.bank_account_number && !profile.payment_email) warnings.push('Missing payout destination');
+  if (profile.bank_verification_status !== 'verified') warnings.push('Bank not verified');
+  if (!profile.pan_or_tax_id && !profile.tax_identifier) warnings.push('Missing PAN / tax ID');
+  if (profile.compliance_readiness_status === 'blocked') warnings.push('Compliance blocked');
+  if (!['submitted', 'approved'].includes(String(profile.declaration_status || ''))) warnings.push('Tax declaration incomplete');
   if (!profile.payroll_eligible) warnings.push('Payroll eligibility disabled');
   if (!profile.is_active) warnings.push('Profile inactive');
   return warnings;
@@ -280,10 +286,12 @@ export default function PayrollProfilesView() {
               render: (profile: PayrollProfile) => (
                 <div className="space-y-2">
                   <div className="flex flex-wrap gap-2">
-                    <PayrollStatusBadge status={profile.tax_identifier ? 'verified' : 'incomplete'} />
+                    <PayrollStatusBadge status={profile.pan_or_tax_id || profile.tax_identifier ? 'verified' : 'incomplete'} />
+                    <PayrollStatusBadge status={profile.declaration_status || 'not_started'} />
+                    <PayrollStatusBadge status={profile.compliance_readiness_status || 'pending'} />
                     <PayrollStatusBadge status={profile.reimbursements_eligible ? 'active' : 'inactive'} />
                   </div>
-                  <p className="text-sm text-slate-500">{profile.tax_identifier ? 'Tax ID captured' : 'Tax details still incomplete'}</p>
+                  <p className="text-sm text-slate-500">{profile.compliance_readiness_status === 'ready' ? 'Compliance setup is payroll-ready' : 'Compliance details still need attention'}</p>
                 </div>
               ),
             },
@@ -417,7 +425,11 @@ export default function PayrollProfilesView() {
                   </div>
                   <div>
                     <p className="text-slate-500">Tax readiness</p>
-                    <p className="font-semibold text-slate-950">{selectedProfile.tax_identifier ? 'Tax details captured' : 'Tax details pending'}</p>
+                    <p className="font-semibold text-slate-950">{selectedProfile.declaration_status === 'approved' ? 'Declaration approved' : selectedProfile.pan_or_tax_id || selectedProfile.tax_identifier ? 'Tax details captured' : 'Tax details pending'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Compliance status</p>
+                    <p className="font-semibold text-slate-950">{selectedProfile.compliance_readiness_status || 'pending'}</p>
                   </div>
                   <div>
                     <p className="text-slate-500">Last revision</p>

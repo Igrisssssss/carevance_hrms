@@ -20,10 +20,14 @@ const emptyAdjustment = {
   title: '',
   description: '',
   kind: 'bonus',
+  source: 'manual',
   effective_month: defaultPayrollMonth(),
   amount: 0,
   currency: 'INR',
   status: 'draft',
+  claim_reference: '',
+  claim_category: '',
+  merchant_name: '',
   reimbursement: {
     title: '',
     description: '',
@@ -98,10 +102,14 @@ export default function PayrollAdjustmentsView() {
       title: adjustment.title,
       description: adjustment.description || '',
       kind: adjustment.kind,
+      source: adjustment.source || 'manual',
       effective_month: adjustment.effective_month,
       amount: adjustment.amount,
       currency: adjustment.currency,
       status: adjustment.status,
+      claim_reference: adjustment.claim_reference || '',
+      claim_category: adjustment.claim_category || '',
+      merchant_name: adjustment.merchant_name || '',
       reimbursement: {
         title: adjustment.reimbursement?.title || adjustment.title,
         description: adjustment.reimbursement?.description || adjustment.description || '',
@@ -182,6 +190,15 @@ export default function PayrollAdjustmentsView() {
               <TextInput type="month" value={form.effective_month} onChange={(event) => setForm((current: any) => ({ ...current, effective_month: event.target.value }))} />
             </div>
             <div>
+              <FieldLabel>Source</FieldLabel>
+              <SelectInput value={form.source} onChange={(event) => setForm((current: any) => ({ ...current, source: event.target.value }))}>
+                <option value="manual">Manual</option>
+                <option value="reimbursement_claim">Reimbursement claim</option>
+                <option value="attendance_correction">Attendance correction</option>
+                <option value="manager_override">Manager override</option>
+              </SelectInput>
+            </div>
+            <div>
               <FieldLabel>Amount</FieldLabel>
               <TextInput type="number" min={0} value={Number(form.amount || 0)} onChange={(event) => setForm((current: any) => ({ ...current, amount: Number(event.target.value || 0) }))} />
             </div>
@@ -192,6 +209,18 @@ export default function PayrollAdjustmentsView() {
             <div className="md:col-span-2">
               <FieldLabel>Description</FieldLabel>
               <TextInput value={form.description} onChange={(event) => setForm((current: any) => ({ ...current, description: event.target.value }))} />
+            </div>
+            <div>
+              <FieldLabel>Claim Reference</FieldLabel>
+              <TextInput value={form.claim_reference} onChange={(event) => setForm((current: any) => ({ ...current, claim_reference: event.target.value }))} />
+            </div>
+            <div>
+              <FieldLabel>Claim Category</FieldLabel>
+              <TextInput value={form.claim_category} onChange={(event) => setForm((current: any) => ({ ...current, claim_category: event.target.value }))} />
+            </div>
+            <div className="md:col-span-2">
+              <FieldLabel>Merchant / Vendor</FieldLabel>
+              <TextInput value={form.merchant_name} onChange={(event) => setForm((current: any) => ({ ...current, merchant_name: event.target.value }))} />
             </div>
           </div>
 
@@ -234,7 +263,7 @@ export default function PayrollAdjustmentsView() {
                   <p className="mt-3 text-lg font-semibold text-slate-950">{formatPayrollCurrency(adjustment.amount, adjustment.currency)}</p>
                   <p className="mt-1 text-sm text-slate-500">{adjustment.description || 'No description provided.'}</p>
                   <div className="mt-3 rounded-[18px] border border-dashed border-slate-300 bg-white/70 px-3 py-2 text-xs text-slate-500">
-                    Applied-to-pay-run linkage is currently inferred by effective month and status. Direct run linkage can be surfaced when the backend adds an explicit relation.
+                    {adjustment.appliedRun ? `Linked to ${adjustment.appliedRun.run_code} for ${formatPayrollMonth(adjustment.appliedRun.payroll_month)}.` : 'Not linked to a pay run yet.'}
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button size="sm" variant="secondary" onClick={() => loadAdjustment(adjustment)}>Edit</Button>

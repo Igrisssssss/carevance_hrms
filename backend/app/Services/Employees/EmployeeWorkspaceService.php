@@ -14,6 +14,7 @@ use App\Models\LeaveRequest;
 use App\Models\PayrollAdjustment;
 use App\Models\PayrollAuditLog;
 use App\Models\PayrollProfile;
+use App\Models\PayrollTaxDeclaration;
 use App\Models\Payslip;
 use App\Models\Reimbursement;
 use App\Models\User;
@@ -79,10 +80,18 @@ class EmployeeWorkspaceService
             ->limit(8)
             ->get();
         $adjustments = PayrollAdjustment::query()
+            ->with(['approvedBy:id,name,email', 'appliedBy:id,name,email', 'appliedRun:id,run_code,payroll_month'])
             ->where('organization_id', $employee->organization_id)
             ->where('user_id', $employee->id)
             ->latest()
             ->limit(8)
+            ->get();
+        $taxDeclarations = PayrollTaxDeclaration::query()
+            ->where('organization_id', $employee->organization_id)
+            ->where('user_id', $employee->id)
+            ->latest('financial_year')
+            ->latest()
+            ->limit(5)
             ->get();
 
         return [
@@ -95,6 +104,7 @@ class EmployeeWorkspaceService
                 'salary_assignments' => $salaryAssignments,
                 'current_compensation' => $this->payrollWorkspaceService->compensationSnapshot((int) $employee->organization_id, (int) $employee->id, $payrollMonth),
                 'warnings' => $this->payrollWorkspaceService->employeeWarningsForUser((int) $employee->organization_id, $employee, $payrollMonth),
+                'tax_declarations' => $taxDeclarations->values(),
                 'pending_reimbursements' => $reimbursements->whereIn('status', ['draft', 'pending_approval'])->count(),
                 'recent_reimbursements' => $reimbursements->values(),
                 'recent_adjustments' => $adjustments->values(),
@@ -347,6 +357,8 @@ class EmployeeWorkspaceService
                     $defaultBank && empty($defaultBank->payout_method) ? 'Missing payout method' : null,
                 ])),
             ],
+            'declaration_status' => $payrollProfile?->declaration_status ?: 'not_started',
+            'compliance_status' => $payrollProfile?->compliance_readiness_status ?: 'pending',
             'attendance' => $attendance,
             'leave' => $leave,
         ];

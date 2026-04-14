@@ -17,7 +17,14 @@ class Payroll extends Model
         'deductions',
         'bonus',
         'tax',
+        'gross_salary',
         'net_salary',
+        'attendance_summary',
+        'salary_breakdown',
+        'adjustment_breakdown',
+        'compliance_breakdown',
+        'tax_breakdown',
+        'warnings',
         'payroll_status',
         'payout_method',
         'payout_status',
@@ -25,6 +32,8 @@ class Payroll extends Model
         'updated_by',
         'processed_at',
         'paid_at',
+        'payment_reference',
+        'failure_reason',
     ];
 
     protected function casts(): array
@@ -35,7 +44,14 @@ class Payroll extends Model
             'deductions' => 'float',
             'bonus' => 'float',
             'tax' => 'float',
+            'gross_salary' => 'float',
             'net_salary' => 'float',
+            'attendance_summary' => 'array',
+            'salary_breakdown' => 'array',
+            'adjustment_breakdown' => 'array',
+            'compliance_breakdown' => 'array',
+            'tax_breakdown' => 'array',
+            'warnings' => 'array',
             'processed_at' => 'datetime',
             'paid_at' => 'datetime',
         ];
@@ -66,4 +82,3 @@ class Payroll extends Model
         return $this->hasMany(PayrollTransaction::class);
     }
 }
-
