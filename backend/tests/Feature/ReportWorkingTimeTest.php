@@ -538,6 +538,40 @@ class ReportWorkingTimeTest extends TestCase
             ->assertJsonPath('employee_rankings.by_unproductive_duration.0.unproductive_duration', 300);
     }
 
+    public function test_employee_insights_uses_saved_classification_fields_for_tool_rollups(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        $entry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-03-16 10:45:00',
+            'end_time' => '2026-03-16 11:00:00',
+            'duration' => 900,
+            'billable' => true,
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'time_entry_id' => $entry->id,
+            'type' => 'app',
+            'name' => 'Visual Studio Code - app.php - demo_laravel_2 - Visual Studio Code',
+            'duration' => 300,
+            'recorded_at' => '2026-03-16 10:50:00',
+            'normalized_label' => 'vscode',
+            'software_name' => 'vscode',
+            'tool_type' => 'software',
+            'classification' => 'productive',
+            'classification_reason' => 'Saved by classifier.',
+        ]);
+
+        $this->getJson("/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}", $headers)
+            ->assertOk()
+            ->assertJsonPath('selected_user_tools.productive.0.label', 'vscode')
+            ->assertJsonPath('selected_user_tools.productive.0.total_duration', 300)
+            ->assertJsonPath('organization_summary.productive_duration', 300)
+            ->assertJsonPath('employee_rankings.by_productive_duration.0.productive_duration', 300);
+    }
+
     public function test_employee_insights_collapse_duplicate_tool_snapshots_before_reporting_totals(): void
     {
         [$admin, $employee, $headers] = $this->createAdminAndEmployee();

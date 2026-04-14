@@ -951,7 +951,21 @@ class ReportController extends Controller
 
         $activities = Activity::where('user_id', $selectedUser->id)
             ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+            ->get([
+                'id',
+                'user_id',
+                'time_entry_id',
+                'type',
+                'name',
+                'duration',
+                'recorded_at',
+                'normalized_label',
+                'normalized_domain',
+                'software_name',
+                'tool_type',
+                'classification',
+                'classification_reason',
+            ]);
         $selectedUsageSummary = $this->usageProcessingService->buildWebAppUsageUserRangeSummary(
             (int) $selectedUser->id,
             $activities,
@@ -987,7 +1001,21 @@ class ReportController extends Controller
             ? collect()
             : Activity::whereIn('user_id', $analyticsUserIds)
                 ->whereBetween('recorded_at', [$startDate, $endDate])
-                ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+                ->get([
+                    'id',
+                    'user_id',
+                    'time_entry_id',
+                    'type',
+                    'name',
+                    'duration',
+                    'recorded_at',
+                    'normalized_label',
+                    'normalized_domain',
+                    'software_name',
+                    'tool_type',
+                    'classification',
+                    'classification_reason',
+                ]);
         $organizationActivitiesByUser = collect($organizationActivities)->groupBy(fn ($activity) => (int) $activity->user_id);
 
         $toolTotalsByKey = [];
@@ -1193,7 +1221,19 @@ class ReportController extends Controller
             : Activity::whereIn('user_id', $analyticsUserIds)
                 ->where('recorded_at', '>=', now()->subMinutes(5))
                 ->orderByDesc('recorded_at')
-                ->get(['user_id', 'type', 'name', 'duration', 'recorded_at'])
+                ->get([
+                    'user_id',
+                    'type',
+                    'name',
+                    'duration',
+                    'recorded_at',
+                    'normalized_label',
+                    'normalized_domain',
+                    'software_name',
+                    'tool_type',
+                    'classification',
+                    'classification_reason',
+                ])
                 ->groupBy('user_id')
                 ->map(fn ($group) => $group->first());
 
@@ -1206,9 +1246,9 @@ class ReportController extends Controller
 
             if ($latest) {
                 $toolDescriptor = $this->usageProcessingService->describeTool((string) ($latest->name ?? ''), (string) ($latest->type ?? 'app'));
-                $toolLabel = $toolDescriptor['label'] ?? null;
-                $classification = $toolDescriptor['classification'] ?? 'neutral';
-                $toolType = $toolDescriptor['type'] ?? null;
+                $toolLabel = (string) ($latest->normalized_label ?: ($toolDescriptor['label'] ?? ''));
+                $classification = (string) ($latest->classification ?: ($toolDescriptor['classification'] ?? 'neutral'));
+                $toolType = (string) ($latest->tool_type ?: ($toolDescriptor['type'] ?? ''));
                 $activityType = (string) ($latest->type ?? 'app');
             }
 

@@ -137,6 +137,13 @@ const formatTimelineDuration = (seconds: number) => {
 
   return `${remainingSeconds}s`;
 };
+const formatTimelineToolLabel = (row: any) => {
+  if (row?.type === 'idle') {
+    return row?.name || 'Idle';
+  }
+
+  return row?.normalized_label || row?.software_name || row?.normalized_domain || row?.name || 'Unknown';
+};
 const formatPreviewList = (items: unknown[], emptyLabel: string, limit = 3) => {
   const normalizedItems = Array.from(new Set(items.map((item) => String(item || '').trim()).filter(Boolean)));
   if (!normalizedItems.length) {
@@ -1005,8 +1012,19 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             columns={[
               { key: 'recorded_at', header: 'When', render: (row: any) => new Date(row.recorded_at).toLocaleString() },
               { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
-              { key: 'type', header: 'Type', render: (row: any) => row.type },
-              { key: 'name', header: 'Name', render: (row: any) => row.name },
+              { key: 'type', header: 'Type', render: (row: any) => row.tool_type || row.type },
+              {
+                key: 'name',
+                header: 'Tool',
+                render: (row: any) => (
+                  <div>
+                    <p className="font-medium text-slate-950">{formatTimelineToolLabel(row)}</p>
+                    {row?.name && row?.name !== formatTimelineToolLabel(row) ? (
+                      <p className="text-xs text-slate-500">{row.name}</p>
+                    ) : null}
+                  </div>
+                ),
+              },
               { key: 'duration', header: 'Duration', render: (row: any) => formatTimelineDuration(row.duration || 0) },
             ]}
           />
