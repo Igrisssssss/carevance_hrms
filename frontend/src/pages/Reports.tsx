@@ -21,9 +21,15 @@ type OrgUser = { id: number; name: string; email: string; role: string };
 type Group = { id: number; name: string; users: OrgUser[] };
 
 const formatDuration = (seconds: number) => {
-  const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
+  const safe = Math.max(0, Math.floor(Number.isFinite(Number(seconds)) ? Number(seconds) : 0));
   const h = Math.floor(safe / 3600);
   const m = Math.floor((safe % 3600) / 60);
+  const s = safe % 60;
+
+  if (h === 0 && s > 0) {
+    return `${m}m ${s}s`;
+  }
+
   return `${h}h ${m}m`;
 };
 

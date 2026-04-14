@@ -209,6 +209,9 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
 
+    expect(
+      mocks.updateActivityMock.mock.calls.some(([, payload]) => payload?.duration === 300)
+    ).toBe(true);
     expect(mocks.stopMock).toHaveBeenCalledWith({
       timer_slot: 'primary',
       auto_stopped_for_idle: true,

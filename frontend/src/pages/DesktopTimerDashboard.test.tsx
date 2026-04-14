@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   overtimeCreateMock: vi.fn(),
   startMock: vi.fn(),
   stopMock: vi.fn(),
+  activeMock: vi.fn(),
   updateMock: vi.fn(),
   updateTaskStatusMock: vi.fn(),
   todayMock: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('@/services/api', async () => {
     timeEntryApi: {
       start: mocks.startMock,
       stop: mocks.stopMock,
+      active: mocks.activeMock,
       update: mocks.updateMock,
       today: mocks.todayMock,
     },
@@ -136,6 +138,7 @@ describe('DesktopTimerDashboard', () => {
     });
 
     mocks.updateTaskStatusMock.mockResolvedValue({ data: { id: 42, status: 'in_progress' } });
+    mocks.activeMock.mockResolvedValue({ data: null });
 
     mocks.startMock.mockResolvedValue({
       data: {
@@ -500,6 +503,58 @@ describe('DesktopTimerDashboard', () => {
     expect(screen.getByText(/prepare campaign brief/i)).toBeInTheDocument();
     expect(screen.getByText(/today's attendance worked: 0h 5m/i)).toBeInTheDocument();
     expect(screen.getByText(/some dashboard data could not be loaded/i)).toBeInTheDocument();
+  });
+
+  it('keeps a restored running timer after refresh when the active timer endpoint still sees it', async () => {
+    const runningStartTime = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
+    localStorage.setItem('active_timer_snapshot', JSON.stringify({
+      id: 120,
+      start_time: runningStartTime,
+      duration: 300,
+      description: 'Restored timer',
+      timer_slot: 'primary',
+    }));
+
+    mocks.summaryMock.mockReset();
+    mocks.summaryMock.mockResolvedValue({
+      data: {
+        active_timer: null,
+        today_entries: [],
+        today_total_elapsed_duration: 300,
+        all_time_total_elapsed_duration: 300,
+        team_members_count: 4,
+        new_members_this_week: 1,
+        productivity_score: 82,
+        active_tasks_count: 1,
+        total_tasks_count: 1,
+      },
+    });
+
+    mocks.activeMock.mockReset();
+    mocks.activeMock.mockResolvedValue({
+      data: {
+        id: 120,
+        user_id: 1,
+        project_id: null,
+        task_id: null,
+        start_time: runningStartTime,
+        duration: 300,
+        timer_slot: 'primary',
+        created_at: runningStartTime,
+        updated_at: runningStartTime,
+        task: null,
+      },
+    });
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    expect(await screen.findByText(/timer running/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mocks.activeMock).toHaveBeenCalledWith({ timer_slot: 'primary' });
+    });
+    expect(localStorage.getItem('active_timer_snapshot')).not.toBeNull();
+    expect(screen.queryByText(/previous running timer was not found and was cleared/i)).not.toBeInTheDocument();
   });
 
   it('keeps overtime context after reload when summary endpoints fail', async () => {
