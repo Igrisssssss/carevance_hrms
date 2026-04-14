@@ -39,10 +39,13 @@ class ActivityContextNormalizer
         $cleanWindowTitle = $this->cleanBrowserWindowTitle($windowTitle !== '' ? $windowTitle : $rawName);
         $resolvedAppName = $appName !== '' ? $appName : $rawName;
         $normalizedApp = $this->normalizeAppName($resolvedAppName);
-        $domain = $this->extractDomain($url !== '' ? $url : $rawName);
-        $browserContext = $this->isBrowserApp($normalizedApp ?: $resolvedAppName)
-            || $type === 'url'
-            || ($domain !== null && $domain !== '');
+        $isBrowserApp = $this->isBrowserApp($normalizedApp ?: $resolvedAppName) || $type === 'url';
+        $domain = $url !== '' ? $this->extractDomain($url) : null;
+        if ($domain === null && $isBrowserApp) {
+            $domain = $this->extractDomain($rawName);
+        }
+
+        $browserContext = $isBrowserApp || ($domain !== null && $domain !== '');
 
         if ($domain === null && $browserContext) {
             $domain = $this->extractDomain($cleanWindowTitle);

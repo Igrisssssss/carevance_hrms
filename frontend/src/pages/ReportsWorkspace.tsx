@@ -619,10 +619,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
   const usageData = dataQuery.data as any;
   const usageStats = usageData?.stats || {};
-  const usageSelectedTools = usageData?.selected_user_tools || { productive: [], unproductive: [], neutral: [] };
+  const usageSelectedTools = usageData?.selected_user_tools || { productive: [], unproductive: [], neutral: [], context_dependent: [] };
   const usageMatchedUsers = usageData?.matched_users || [];
   const orgSummary = usageData?.organization_summary || {};
-  const usageOrganizationTools = usageData?.organization_tools || { productive: [], unproductive: [] };
+  const usageOrganizationTools = usageData?.organization_tools || { productive: [], unproductive: [], context_dependent: [] };
   const employeeRankings = usageData?.employee_rankings?.by_productive_duration || [];
   const hasSelectedEmployee = effectiveSelectedUserId !== '';
   const usageWorkedDuration = hasSelectedEmployee
@@ -630,6 +630,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     : getWorkingDuration(orgSummary);
   const usageProductiveRows = hasSelectedEmployee ? usageSelectedTools.productive || [] : usageOrganizationTools.productive || [];
   const usageUnproductiveRows = hasSelectedEmployee ? usageSelectedTools.unproductive || [] : usageOrganizationTools.unproductive || [];
+  const usageContextRows = hasSelectedEmployee ? usageSelectedTools.context_dependent || [] : usageOrganizationTools.context_dependent || [];
 
   const handleExport = async () => {
     setExportMessage('');
@@ -1052,7 +1053,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <DataTable
               title={hasSelectedEmployee ? 'Productive Tools' : 'Top Productive Tools'}
               description={hasSelectedEmployee ? 'Top productive websites and apps for the selected employee.' : 'Top productive websites and apps across the current scope.'}
@@ -1073,6 +1074,19 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               emptyMessage="No unproductive tool usage found."
               headerAction={renderPanelRefreshButton()}
               bodyClassName={usageUnproductiveRows.length > 5 ? 'max-h-[320px] overflow-y-auto' : undefined}
+              columns={[
+                { key: 'label', header: 'Tool', render: (row: any) => row.label },
+                { key: 'type', header: 'Type', render: (row: any) => row.type },
+                { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.total_duration || 0) },
+              ]}
+            />
+            <DataTable
+              title={hasSelectedEmployee ? 'Context-Dependent Tools' : 'Top Context-Dependent Tools'}
+              description={hasSelectedEmployee ? 'Tools that need business context for the selected employee.' : 'Tools that need business context across the current scope.'}
+              rows={usageContextRows}
+              emptyMessage="No context-dependent tool usage found."
+              headerAction={renderPanelRefreshButton()}
+              bodyClassName={usageContextRows.length > 5 ? 'max-h-[320px] overflow-y-auto' : undefined}
               columns={[
                 { key: 'label', header: 'Tool', render: (row: any) => row.label },
                 { key: 'type', header: 'Type', render: (row: any) => row.type },

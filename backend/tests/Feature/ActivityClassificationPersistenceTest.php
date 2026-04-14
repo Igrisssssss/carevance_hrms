@@ -61,4 +61,30 @@ class ActivityClassificationPersistenceTest extends TestCase
         $this->assertNull($activity->normalized_domain);
         $this->assertSame('productive', $activity->classification);
     }
+
+    public function test_desktop_shell_names_are_not_mistaken_for_websites_during_activity_classification(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance Labs', 'slug' => 'carevance-labs']);
+        $user = User::create([
+            'name' => 'Messaging User',
+            'email' => 'messaging.user@example.com',
+            'password' => 'password123',
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+
+        $activity = Activity::create([
+            'user_id' => $user->id,
+            'type' => 'app',
+            'name' => 'WhatsApp.Root - WhatsApp',
+            'duration' => 30,
+            'recorded_at' => now(),
+        ]);
+
+        $this->assertSame('software', $activity->tool_type);
+        $this->assertNull($activity->normalized_domain);
+        $this->assertSame('whatsapp', $activity->software_name);
+        $this->assertSame('whatsapp', $activity->normalized_label);
+        $this->assertSame('context_dependent', $activity->classification);
+    }
 }
