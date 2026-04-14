@@ -17,6 +17,7 @@ import type {
   TimeEntry,
   Screenshot,
   Activity,
+  ProductivityRule,
   Invoice,
   DailyReport,
   WeeklyReport,
@@ -424,7 +425,7 @@ export const screenshotApi = {
 
 // Activity API
 export const activityApi = {
-  getAll: (params?: { user_id?: number; group_ids?: number[]; type?: string; start_date?: string; end_date?: string; page?: number; per_page?: number }) => 
+  getAll: (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; page?: number; per_page?: number }) => 
     api.get<{ data: Activity[] }>('/activities', { params }),
   
   get: (id: number) => 
@@ -438,6 +439,19 @@ export const activityApi = {
   
   delete: (id: number) => 
     api.delete(`/activities/${id}`),
+};
+
+export const productivityRuleApi = {
+  list: () =>
+    api.get<{ data: ProductivityRule[]; meta: Record<string, string[]> }>('/settings/productivity-rules'),
+  create: (data: Partial<ProductivityRule>) =>
+    api.post<ProductivityRule>('/settings/productivity-rules', data),
+  update: (id: number, data: Partial<ProductivityRule>) =>
+    api.put<ProductivityRule>(`/settings/productivity-rules/${id}`, data),
+  remove: (id: number) =>
+    api.delete<{ message: string }>(`/settings/productivity-rules/${id}`),
+  test: (data: { name?: string; type?: string; window_title?: string; app_name?: string; url?: string }) =>
+    api.post<Record<string, any>>('/settings/productivity-rules/test', data),
 };
 
 // Invoice API

@@ -1,0 +1,118 @@
+<?php
+
+namespace Tests\Unit;
+
+use App\Models\Organization;
+use App\Models\ProductivityRule;
+use App\Models\User;
+use App\Services\Monitoring\ProductivityClassifier;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class ProductivityClassifierTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_normalizer_extracts_domain_from_browser_title(): void
+    {
+        $result = app(ProductivityClassifier::class)->classifyActivity([
+            'type' => 'url',
+            'name' => 'GitHub - PR review - Google Chrome',
+        ]);
+
+        $this->assertSame('github.com', $result['normalized_domain']);
+        $this->assertSame('productive', $result['classification']);
+    }
+
+    public function test_workspace_rule_beats_global_rule(): void
+    {
+        $organization = Organization::create(['name' => 'Acme', 'slug' => 'acme']);
+        $user = User::create([
+            'name' => 'Example',
+            'email' => 'example@acme.test',
+            'password' => 'password123',
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+
+        ProductivityRule::create([
+            'organization_id' => $organization->id,
+            'target_type' => 'app',
+            'match_mode' => 'contains',
+            'target_value' => 'vscode',
+            'classification' => 'unproductive',
+            'priority' => 999,
+            'scope_type' => 'workspace',
+            'scope_id' => $organization->id,
+            'is_active' => true,
+        ]);
+
+        $result = app(ProductivityClassifier::class)->classifyActivity([
+            'user_id' => $user->id,
+            'type' => 'app',
+            'name' => 'Visual Studio Code',
+        ]);
+
+        $this->assertSame('unproductive', $result['classification']);
+    }
+
+    public function test_group_rule_beats_user_rule(): void
+    {
+        $organization = Organization::create(['name' => 'Acme', 'slug' => 'acme']);
+        $user = User::create([
+            'name' => 'Example',
+            'email' => 'group@acme.test',
+            'password' => 'password123',
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $group = \App\Models\ReportGroup::create([
+            'organization_id' => $organization->id,
+            'name' => 'Engineering',
+        ]);
+        $user->reportGroups()->attach($group->id);
+
+        ProductivityRule::create([
+            'organization_id' => $organization->id,
+            'target_type' => 'app',
+            'match_mode' => 'contains',
+            'target_value' => 'whatsapp',
+            'classification' => 'productive',
+            'priority' => 500,
+            'scope_type' => 'group',
+            'scope_id' => $group->id,
+            'is_active' => true,
+        ]);
+
+        ProductivityRule::create([
+            'organization_id' => $organization->id,
+            'target_type' => 'app',
+            'match_mode' => 'contains',
+            'target_value' => 'whatsapp',
+            'classification' => 'unproductive',
+            'priority' => 400,
+            'scope_type' => 'user',
+            'scope_id' => $user->id,
+            'is_active' => true,
+        ]);
+
+        $result = app(ProductivityClassifier::class)->classifyActivity([
+            'user_id' => $user->id,
+            'type' => 'app',
+            'name' => 'WhatsApp',
+        ]);
+
+        $this->assertSame('productive', $result['classification']);
+    }
+
+    public function test_unknown_activity_defaults_to_neutral(): void
+    {
+        $result = app(ProductivityClassifier::class)->classifyContext([
+            'raw_name' => 'Some New App',
+            'activity_type' => 'app',
+        ]);
+
+        $this->assertSame('neutral', $result['classification']);
+    }
+}

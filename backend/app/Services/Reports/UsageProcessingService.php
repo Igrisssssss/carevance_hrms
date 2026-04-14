@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Services\Monitoring\ProductivityClassifier;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -10,6 +11,7 @@ class UsageProcessingService
 {
     public function __construct(
         private readonly ActivityProductivityService $activityProductivityService,
+        private readonly ProductivityClassifier $productivityClassifier,
     ) {
     }
 
@@ -106,34 +108,13 @@ class UsageProcessingService
 
     public function classifyUsage(?string $tool, ?string $url = null, ?string $activityType = null): string
     {
-        $haystack = strtolower(trim(implode(' ', array_filter([
-            (string) $tool,
-            (string) $url,
-        ]))));
-        $normalizedType = strtolower(trim((string) $activityType));
+        $result = $this->productivityClassifier->classifyContext([
+            'raw_name' => (string) ($tool ?: $url),
+            'activity_type' => (string) $activityType,
+            'url' => (string) $url,
+        ]);
 
-        if ($haystack === '') {
-            return 'neutral';
-        }
-
-        foreach (['unproductive', 'productive', 'neutral'] as $classification) {
-            foreach ((array) config("usage_processing.rules.{$classification}", []) as $rule) {
-                $normalizedRule = strtolower(trim((string) $rule));
-                if ($normalizedRule !== '' && str_contains($haystack, $normalizedRule)) {
-                    return $classification;
-                }
-            }
-        }
-
-        if ($normalizedType === 'idle') {
-            return 'neutral';
-        }
-
-        if (in_array($normalizedType, ['url', 'app'], true)) {
-            return 'productive';
-        }
-
-        return 'neutral';
+        return (string) ($result['classification'] ?? 'neutral');
     }
 
     public function isUnproductiveUsageTool(?string $toolName, ?string $url = null): bool
@@ -208,7 +189,8 @@ class UsageProcessingService
         $productiveTime = (int) $classifiedActiveLogs->where('classification', 'productive')->sum('duration');
         $unproductiveTime = (int) $classifiedActiveLogs->where('classification', 'unproductive')->sum('duration');
         $neutralTime = (int) $classifiedActiveLogs->where('classification', 'neutral')->sum('duration');
-        $totalTime = $productiveTime + $unproductiveTime + $neutralTime;
+        $contextDependentTime = (int) $classifiedActiveLogs->where('classification', 'context_dependent')->sum('duration');
+        $totalTime = $productiveTime + $unproductiveTime + $neutralTime + $contextDependentTime;
         $idleTime = (int) ($idleResult['idle_time'] ?? 0);
 
         return [
@@ -217,6 +199,7 @@ class UsageProcessingService
                 'productive_time' => $productiveTime,
                 'unproductive_time' => $unproductiveTime,
                 'neutral_time' => $neutralTime,
+                'context_dependent_time' => $contextDependentTime,
                 'idle_time' => $idleTime,
                 'productivity_percentage' => $totalTime > 0
                     ? (float) round(($productiveTime / $totalTime) * 100, 2)
@@ -290,7 +273,8 @@ class UsageProcessingService
         $productiveTime = (int) $effectiveClassifiedLogs->where('classification', 'productive')->sum('duration');
         $unproductiveTime = (int) $effectiveClassifiedLogs->where('classification', 'unproductive')->sum('duration');
         $neutralTime = (int) $effectiveClassifiedLogs->where('classification', 'neutral')->sum('duration');
-        $totalTime = $productiveTime + $unproductiveTime + $neutralTime;
+        $contextDependentTime = (int) $effectiveClassifiedLogs->where('classification', 'context_dependent')->sum('duration');
+        $totalTime = $productiveTime + $unproductiveTime + $neutralTime + $contextDependentTime;
         $idleTime = (int) ($idleResult['idle_time'] ?? 0);
 
         return [
@@ -299,6 +283,7 @@ class UsageProcessingService
                 'productive_time' => $productiveTime,
                 'unproductive_time' => $unproductiveTime,
                 'neutral_time' => $neutralTime,
+                'context_dependent_time' => $contextDependentTime,
                 'idle_time' => $idleTime,
                 'productivity_percentage' => $totalTime > 0
                     ? (float) round(($productiveTime / $totalTime) * 100, 2)
@@ -382,6 +367,7 @@ class UsageProcessingService
             'productive_time' => 0,
             'unproductive_time' => 0,
             'neutral_time' => 0,
+            'context_dependent_time' => 0,
             'idle_time' => 0,
             'productivity_percentage' => 0.0,
         ];
@@ -397,9 +383,10 @@ class UsageProcessingService
             $metrics['productive_time'] += (int) ($currentMetrics['productive_time'] ?? 0);
             $metrics['unproductive_time'] += (int) ($currentMetrics['unproductive_time'] ?? 0);
             $metrics['neutral_time'] += (int) ($currentMetrics['neutral_time'] ?? 0);
+            $metrics['context_dependent_time'] += (int) ($currentMetrics['context_dependent_time'] ?? 0);
             $metrics['idle_time'] += (int) ($currentMetrics['idle_time'] ?? 0);
 
-            foreach (['productive', 'unproductive', 'neutral'] as $classification) {
+            foreach (['productive', 'unproductive', 'neutral', 'context_dependent'] as $classification) {
                 foreach ((array) data_get($report, "tools.{$classification}", []) as $toolRow) {
                     $key = strtolower(implode('|', [
                         (string) ($toolRow['classification'] ?? $classification),
@@ -457,6 +444,7 @@ class UsageProcessingService
                 'productive' => $toolCollection->where('classification', 'productive')->values()->all(),
                 'unproductive' => $toolCollection->where('classification', 'unproductive')->values()->all(),
                 'neutral' => $toolCollection->where('classification', 'neutral')->values()->all(),
+                'context_dependent' => $toolCollection->where('classification', 'context_dependent')->values()->all(),
             ],
             'activity_breakdown' => collect(array_values($activityRows))->sortBy('type')->values()->all(),
             'processed_logs' => $processedLogs
@@ -587,7 +575,9 @@ class UsageProcessingService
         }
 
         $rawName = trim((string) data_get($log, 'name', ''));
-        $label = $type === 'idle' ? 'idle' : $this->canonicalizeToolLabel($rawName, $type);
+        $label = $type === 'idle'
+            ? 'idle'
+            : (string) data_get($log, 'normalized_label', $this->canonicalizeToolLabel($rawName, $type));
         if ($type !== 'idle' && $this->isNoiseLabel($label, $rawName)) {
             return null;
         }
@@ -599,7 +589,13 @@ class UsageProcessingService
             'type' => $type,
             'raw_name' => $rawName,
             'label' => $label,
-            'tool_type' => $type === 'idle' ? 'idle' : $this->resolveToolType($type, $rawName, $label),
+            'tool_type' => $type === 'idle'
+                ? 'idle'
+                : (string) data_get($log, 'tool_type', $this->resolveToolType($type, $rawName, $label)),
+            'classification' => $type === 'idle'
+                ? 'neutral'
+                : (string) data_get($log, 'classification', $this->classifyUsage($label, $rawName, $type)),
+            'classification_reason' => (string) data_get($log, 'classification_reason', ''),
             'start_at' => $startAt,
             'end_at' => $recordedAt,
             'start_timestamp' => $startAt->getTimestamp(),
@@ -1004,6 +1000,7 @@ class UsageProcessingService
             'productive' => $tools->where('classification', 'productive')->values()->all(),
             'unproductive' => $tools->where('classification', 'unproductive')->values()->all(),
             'neutral' => $tools->where('classification', 'neutral')->values()->all(),
+            'context_dependent' => $tools->where('classification', 'context_dependent')->values()->all(),
         ];
     }
 

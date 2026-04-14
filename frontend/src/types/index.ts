@@ -135,8 +135,34 @@ export interface Activity {
   name: string;
   duration: number;
   recorded_at: string;
+  normalized_label?: string | null;
+  normalized_domain?: string | null;
+  software_name?: string | null;
+  tool_type?: 'software' | 'website' | 'idle' | null;
+  classification?: 'productive' | 'unproductive' | 'neutral' | 'context_dependent' | null;
+  classification_reason?: string | null;
+  classified_at?: string | null;
+  classifier_version?: string | null;
   user?: User;
   time_entry?: TimeEntry;
+}
+
+export interface ProductivityRule {
+  id: number;
+  organization_id?: number | null;
+  name?: string | null;
+  target_type: 'app' | 'domain' | 'title_pattern' | 'url_pattern';
+  match_mode: 'exact' | 'contains' | 'starts_with' | 'ends_with' | 'regex';
+  target_value: string;
+  classification: 'productive' | 'unproductive' | 'neutral' | 'context_dependent';
+  priority: number;
+  scope_type: 'global' | 'workspace' | 'group' | 'user';
+  scope_id?: number | null;
+  is_active: boolean;
+  reason?: string | null;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // Invoice Types

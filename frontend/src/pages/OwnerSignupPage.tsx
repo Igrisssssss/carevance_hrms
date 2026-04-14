@@ -18,6 +18,7 @@ import BrandLogo from '@/components/branding/BrandLogo';
 import AuthPageFooter from '@/components/auth/AuthPageFooter';
 import { useAuth } from '@/contexts/AuthContext';
 import { analytics } from '@/lib/analytics';
+import { apiUrl } from '@/lib/runtimeConfig';
 import {
   getPlanPrice,
   getPricingPlan,
@@ -32,9 +33,17 @@ const formatError = (error: any) => {
   const firstFieldError = fieldErrors
     ? Object.values(fieldErrors).flat().find(Boolean)
     : null;
+  const isNetworkFailure = !error?.response && (
+    error?.code === 'ERR_NETWORK'
+    || /network error/i.test(String(error?.message || ''))
+  );
 
   return {
-    message: firstFieldError || error?.response?.data?.message || 'Unable to create your workspace right now.',
+    message: firstFieldError
+      || error?.response?.data?.message
+      || (isNetworkFailure
+        ? `Workspace signup could not reach the backend API at ${apiUrl}. Make sure the Laravel server is running, then try again.`
+        : 'Unable to create your workspace right now.'),
     fieldErrors: fieldErrors || {},
   };
 };

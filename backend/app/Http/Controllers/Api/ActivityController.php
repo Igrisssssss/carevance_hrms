@@ -73,6 +73,12 @@ class ActivityController extends Controller
             ->when($request->type, function ($query, $type) {
                 $query->where('type', $type);
             })
+            ->when($request->classification, function ($query, $classification) {
+                $query->where('classification', $classification);
+            })
+            ->when($request->tool_type, function ($query, $toolType) {
+                $query->where('tool_type', $toolType);
+            })
             ->when($request->start_date, function ($query, $startDate) {
                 $query->where('recorded_at', '>=', Carbon::parse((string) $startDate)->startOfDay());
             })

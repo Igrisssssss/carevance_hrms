@@ -2,10 +2,13 @@
 
 namespace App\Services\Reports;
 
+use App\Services\Monitoring\ProductivityClassifier;
+
 class ActivityProductivityService
 {
     public function __construct(
         private readonly ActivityDurationNormalizer $activityDurationNormalizer,
+        private readonly ProductivityClassifier $productivityClassifier,
     ) {
     }
 
@@ -95,31 +98,12 @@ class ActivityProductivityService
 
     public function classifyProductivity(string $toolLabel, string $activityType): string
     {
-        $text = strtolower($toolLabel);
+        $result = $this->productivityClassifier->classifyContext([
+            'raw_name' => $toolLabel,
+            'activity_type' => $activityType,
+        ]);
 
-        $productiveKeywords = (array) config('usage_processing.rules.productive', []);
-        $unproductiveKeywords = (array) config('usage_processing.rules.unproductive', []);
-
-        $isProductive = collect($productiveKeywords)->contains(fn ($keyword) => str_contains($text, $keyword));
-        $isUnproductive = collect($unproductiveKeywords)->contains(fn ($keyword) => str_contains($text, $keyword));
-
-        if ($isUnproductive && ! $isProductive) {
-            return 'unproductive';
-        }
-
-        if ($isProductive && ! $isUnproductive) {
-            return 'productive';
-        }
-
-        if (strtolower(trim($activityType)) === 'idle') {
-            return 'neutral';
-        }
-
-        if (in_array(strtolower(trim($activityType)), ['url', 'app'], true)) {
-            return 'productive';
-        }
-
-        return 'neutral';
+        return (string) ($result['classification'] ?? 'neutral');
     }
 
     public function buildToolBreakdown(iterable $activities): array
@@ -132,9 +116,9 @@ class ActivityProductivityService
                 continue;
             }
 
-            $label = $this->normalizeToolLabel((string) ($activity->name ?? ''), (string) ($activity->type ?? 'app'));
-            $classification = $this->classifyProductivity($label, (string) ($activity->type ?? 'app'));
-            $type = $this->guessToolType((string) ($activity->type ?? 'app'));
+            $label = (string) ($activity->normalized_label ?? $this->normalizeToolLabel((string) ($activity->name ?? ''), (string) ($activity->type ?? 'app')));
+            $classification = (string) ($activity->classification ?? $this->classifyProductivity($label, (string) ($activity->type ?? 'app')));
+            $type = (string) ($activity->tool_type ?? $this->guessToolType((string) ($activity->type ?? 'app')));
             $key = strtolower($classification.'|'.$type.'|'.$label);
 
             if (! isset($rows[$key])) {
@@ -157,6 +141,7 @@ class ActivityProductivityService
             'productive' => $grouped->where('classification', 'productive')->values(),
             'unproductive' => $grouped->where('classification', 'unproductive')->values(),
             'neutral' => $grouped->where('classification', 'neutral')->values(),
+            'context_dependent' => $grouped->where('classification', 'context_dependent')->values(),
         ];
     }
 

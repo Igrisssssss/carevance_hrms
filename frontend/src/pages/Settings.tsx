@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
-import { settingsApi } from '@/services/api';
-import { User, Bell, Lock, CreditCard, Building } from 'lucide-react';
+import { productivityRuleApi, settingsApi } from '@/services/api';
+import type { ProductivityRule as ProductivityRuleType } from '@/types';
+import { User, Bell, Lock, CreditCard, Building, Briefcase } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
@@ -18,6 +19,24 @@ export default function SettingsPage() {
   const [error, setError] = useState('');
   const [canManageOrg, setCanManageOrg] = useState(false);
   const [billingPlan, setBillingPlan] = useState<{ name: string; status: string; renewal_date?: string | null } | null>(null);
+  const [productivityRules, setProductivityRules] = useState<any[]>([]);
+  const [productivityMeta, setProductivityMeta] = useState<Record<string, string[]>>({});
+  const [ruleForm, setRuleForm] = useState({
+    id: 0,
+    name: '',
+    target_type: 'app',
+    match_mode: 'contains',
+    target_value: '',
+    classification: 'productive',
+    priority: '100',
+    scope_type: 'global',
+    scope_id: '',
+    is_active: true,
+    reason: '',
+    notes: '',
+  });
+  const [ruleTest, setRuleTest] = useState({ name: '', type: 'app', window_title: '', app_name: '', url: '' });
+  const [ruleTestResult, setRuleTestResult] = useState<Record<string, any> | null>(null);
 
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileEmail, setProfileEmail] = useState(user?.email || '');
@@ -46,6 +65,7 @@ export default function SettingsPage() {
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'security', name: 'Security', icon: Lock },
     { id: 'billing', name: 'Billing', icon: CreditCard },
+    ...(hasStrictAdminAccess(user) ? [{ id: 'productivity', name: 'Productivity', icon: Briefcase }] : []),
   ];
 
   const timezoneOptions = useMemo(
@@ -69,7 +89,11 @@ export default function SettingsPage() {
       setIsLoading(true);
       setError('');
       try {
-        const [meResult, billingResult] = await Promise.allSettled([settingsApi.me(), settingsApi.billing()]);
+        const [meResult, billingResult, rulesResult] = await Promise.allSettled([
+          settingsApi.me(),
+          settingsApi.billing(),
+          hasStrictAdminAccess(user) ? productivityRuleApi.list() : Promise.resolve({ data: { data: [], meta: {} } }),
+        ]);
 
         if (meResult.status === 'fulfilled') {
           const payload = meResult.value.data;
@@ -97,6 +121,11 @@ export default function SettingsPage() {
           setBillingPlan((billingResult.value.data as any)?.plan || null);
         } else {
           setBillingPlan(null);
+        }
+
+        if (rulesResult.status === 'fulfilled') {
+          setProductivityRules((rulesResult.value.data as any)?.data || []);
+          setProductivityMeta((rulesResult.value.data as any)?.meta || {});
         }
 
         if (meResult.status === 'rejected' && billingResult.status === 'rejected') {
@@ -192,6 +221,51 @@ export default function SettingsPage() {
       setMessage((res.data as any)?.message || 'Password updated');
     } catch (e: any) {
       setError(e?.response?.data?.message || 'Failed to update password');
+    }
+  };
+
+  const saveRule = async () => {
+    setError('');
+    setMessage('');
+    try {
+      const payload: Partial<ProductivityRuleType> = {
+        name: ruleForm.name || null,
+        target_type: ruleForm.target_type as ProductivityRuleType['target_type'],
+        match_mode: ruleForm.match_mode as ProductivityRuleType['match_mode'],
+        target_value: ruleForm.target_value,
+        classification: ruleForm.classification as ProductivityRuleType['classification'],
+        priority: Number(ruleForm.priority || 100),
+        scope_type: ruleForm.scope_type as ProductivityRuleType['scope_type'],
+        scope_id: ruleForm.scope_type === 'global' ? null : Number(ruleForm.scope_id || 0) || null,
+        is_active: ruleForm.is_active,
+        reason: ruleForm.reason || null,
+        notes: ruleForm.notes || null,
+      };
+
+      if (ruleForm.id) {
+        await productivityRuleApi.update(ruleForm.id, payload);
+        setMessage('Productivity rule updated.');
+      } else {
+        await productivityRuleApi.create(payload);
+        setMessage('Productivity rule created.');
+      }
+
+      const refreshed = await productivityRuleApi.list();
+      setProductivityRules(refreshed.data.data || []);
+      setProductivityMeta((refreshed.data as any)?.meta || {});
+      setRuleForm({ id: 0, name: '', target_type: 'app', match_mode: 'contains', target_value: '', classification: 'productive', priority: '100', scope_type: 'global', scope_id: '', is_active: true, reason: '', notes: '' });
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'Failed to save productivity rule');
+    }
+  };
+
+  const runRuleTest = async () => {
+    setError('');
+    try {
+      const res = await productivityRuleApi.test(ruleTest);
+      setRuleTestResult(res.data);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'Failed to test rule');
     }
   };
 
@@ -344,6 +418,60 @@ export default function SettingsPage() {
                 </p>
               </div>
               <Button disabled variant="secondary">Manage Subscription (Coming soon)</Button>
+            </div>
+          )}
+
+          {activeTab === 'productivity' && hasStrictAdminAccess(user) && (
+            <div className="space-y-6">
+              <h2 className="text-lg font-semibold text-gray-900">Productivity Rule Engine</h2>
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <div className="space-y-4 rounded-[24px] border border-slate-200 bg-slate-50/50 p-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div><FieldLabel>Name</FieldLabel><TextInput type="text" value={ruleForm.name} onChange={(e) => setRuleForm((current) => ({ ...current, name: e.target.value }))} /></div>
+                    <div><FieldLabel>Target Value</FieldLabel><TextInput type="text" value={ruleForm.target_value} onChange={(e) => setRuleForm((current) => ({ ...current, target_value: e.target.value }))} /></div>
+                    <div><FieldLabel>Target Type</FieldLabel><SelectInput value={ruleForm.target_type} onChange={(e) => setRuleForm((current) => ({ ...current, target_type: e.target.value }))}>{(productivityMeta.target_types || ['app', 'domain', 'title_pattern', 'url_pattern']).map((option) => <option key={option} value={option}>{option}</option>)}</SelectInput></div>
+                    <div><FieldLabel>Match Mode</FieldLabel><SelectInput value={ruleForm.match_mode} onChange={(e) => setRuleForm((current) => ({ ...current, match_mode: e.target.value }))}>{(productivityMeta.match_modes || ['exact', 'contains', 'starts_with', 'ends_with', 'regex']).map((option) => <option key={option} value={option}>{option}</option>)}</SelectInput></div>
+                    <div><FieldLabel>Classification</FieldLabel><SelectInput value={ruleForm.classification} onChange={(e) => setRuleForm((current) => ({ ...current, classification: e.target.value }))}>{(productivityMeta.classifications || ['productive', 'unproductive', 'neutral', 'context_dependent']).map((option) => <option key={option} value={option}>{option}</option>)}</SelectInput></div>
+                    <div><FieldLabel>Priority</FieldLabel><TextInput type="number" value={ruleForm.priority} onChange={(e) => setRuleForm((current) => ({ ...current, priority: e.target.value }))} /></div>
+                    <div><FieldLabel>Scope Type</FieldLabel><SelectInput value={ruleForm.scope_type} onChange={(e) => setRuleForm((current) => ({ ...current, scope_type: e.target.value }))}>{(productivityMeta.scope_types || ['global', 'workspace', 'group', 'user']).map((option) => <option key={option} value={option}>{option}</option>)}</SelectInput></div>
+                    <div><FieldLabel>Scope Id</FieldLabel><TextInput type="number" value={ruleForm.scope_id} onChange={(e) => setRuleForm((current) => ({ ...current, scope_id: e.target.value }))} disabled={ruleForm.scope_type === 'global'} /></div>
+                  </div>
+                  <div><FieldLabel>Reason</FieldLabel><TextInput type="text" value={ruleForm.reason} onChange={(e) => setRuleForm((current) => ({ ...current, reason: e.target.value }))} /></div>
+                  <div><FieldLabel>Notes</FieldLabel><TextInput type="text" value={ruleForm.notes} onChange={(e) => setRuleForm((current) => ({ ...current, notes: e.target.value }))} /></div>
+                  <div className="flex items-center justify-between rounded-[20px] border border-slate-200 bg-white px-4 py-3"><span className="text-sm text-slate-700">Rule enabled</span><ToggleInput checked={ruleForm.is_active} onChange={(checked) => setRuleForm((current) => ({ ...current, is_active: checked }))} /></div>
+                  <div className="flex gap-3">
+                    <Button onClick={saveRule}>{ruleForm.id ? 'Update Rule' : 'Create Rule'}</Button>
+                    <Button variant="secondary" onClick={() => setRuleForm({ id: 0, name: '', target_type: 'app', match_mode: 'contains', target_value: '', classification: 'productive', priority: '100', scope_type: 'global', scope_id: '', is_active: true, reason: '', notes: '' })}>Reset</Button>
+                  </div>
+                </div>
+                <div className="space-y-4 rounded-[24px] border border-slate-200 bg-slate-50/50 p-4">
+                  <h3 className="font-semibold text-slate-900">Test Classification</h3>
+                  <div><FieldLabel>Name</FieldLabel><TextInput type="text" value={ruleTest.name} onChange={(e) => setRuleTest((current) => ({ ...current, name: e.target.value }))} /></div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div><FieldLabel>Type</FieldLabel><SelectInput value={ruleTest.type} onChange={(e) => setRuleTest((current) => ({ ...current, type: e.target.value }))}><option value="app">app</option><option value="url">url</option><option value="idle">idle</option></SelectInput></div>
+                    <div><FieldLabel>App Name</FieldLabel><TextInput type="text" value={ruleTest.app_name} onChange={(e) => setRuleTest((current) => ({ ...current, app_name: e.target.value }))} /></div>
+                  </div>
+                  <div><FieldLabel>Window Title</FieldLabel><TextInput type="text" value={ruleTest.window_title} onChange={(e) => setRuleTest((current) => ({ ...current, window_title: e.target.value }))} /></div>
+                  <div><FieldLabel>URL</FieldLabel><TextInput type="text" value={ruleTest.url} onChange={(e) => setRuleTest((current) => ({ ...current, url: e.target.value }))} /></div>
+                  <Button variant="secondary" onClick={runRuleTest}>Run Test</Button>
+                  {ruleTestResult ? <div className="rounded-[20px] border border-slate-200 bg-white p-4 text-sm text-slate-700"><p><strong>Classification:</strong> {String(ruleTestResult.classification || 'neutral')}</p><p><strong>Label:</strong> {String(ruleTestResult.normalized_label || 'n/a')}</p><p><strong>Reason:</strong> {String(ruleTestResult.classification_reason || 'n/a')}</p></div> : null}
+                </div>
+              </div>
+              <div className="space-y-3">
+                {productivityRules.map((rule) => (
+                  <div key={rule.id} className="flex flex-col gap-3 rounded-[22px] border border-slate-200 bg-white px-4 py-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="font-medium text-slate-950">{rule.name || rule.target_value}</p>
+                      <p className="text-sm text-slate-500">{rule.scope_type} • {rule.target_type} • {rule.match_mode} • {rule.classification}</p>
+                      <p className="text-xs text-slate-500">priority {rule.priority}{rule.reason ? ` • ${rule.reason}` : ''}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => setRuleForm({ id: rule.id, name: rule.name || '', target_type: rule.target_type, match_mode: rule.match_mode, target_value: rule.target_value, classification: rule.classification, priority: String(rule.priority || 100), scope_type: rule.scope_type, scope_id: rule.scope_id ? String(rule.scope_id) : '', is_active: !!rule.is_active, reason: rule.reason || '', notes: rule.notes || '' })}>Edit</Button>
+                      <Button variant="secondary" size="sm" onClick={async () => { await productivityRuleApi.update(rule.id, { is_active: !rule.is_active }); const refreshed = await productivityRuleApi.list(); setProductivityRules(refreshed.data.data || []); }}>{rule.is_active ? 'Disable' : 'Enable'}</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </SurfaceCard>

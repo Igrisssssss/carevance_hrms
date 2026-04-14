@@ -867,14 +867,17 @@ class ReportController extends Controller
                         'selected_user' => null,
                         'stats' => null,
                         'activity_breakdown' => [],
-                        'selected_user_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => []],
-                        'organization_tools' => ['productive' => [], 'unproductive' => []],
+                        'selected_user_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
+                        'organization_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
                         'organization_summary' => [
                             'productive_duration' => 0,
                             'unproductive_duration' => 0,
                             'neutral_duration' => 0,
+                            'context_dependent_duration' => 0,
                             'productive_share' => 0,
                             'unproductive_share' => 0,
+                            'neutral_share' => 0,
+                            'context_dependent_share' => 0,
                         ],
                         'employee_rankings' => [
                             'most_productive' => null,
@@ -962,7 +965,7 @@ class ReportController extends Controller
         $idleCount = max(1, (int) ($selectedUsageSummary['idle_segments_count'] ?? 0));
         $avgIdle = (float) round(((int) ($selectedTimeBreakdown['idle_duration'] ?? 0)) / $idleCount, 2);
         $activityBreakdown = collect($selectedUsageSummary['activity_breakdown'] ?? [])->values();
-        $selectedToolBreakdown = (array) ($selectedUsageSummary['tools'] ?? ['productive' => [], 'unproductive' => [], 'neutral' => []]);
+        $selectedToolBreakdown = (array) ($selectedUsageSummary['tools'] ?? ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []]);
 
         $recentScreenshots = Screenshot::query()
             ->whereHas('timeEntry', function ($query) use ($selectedUser, $startDate, $endDate) {
@@ -1018,6 +1021,7 @@ class ReportController extends Controller
                 'productive_duration' => (int) ($userMetrics['productive_time'] ?? 0),
                 'unproductive_duration' => (int) ($userMetrics['unproductive_time'] ?? 0),
                 'neutral_duration' => (int) ($userMetrics['neutral_time'] ?? 0),
+                'context_dependent_duration' => (int) ($userMetrics['context_dependent_time'] ?? 0),
                 'activity_total_duration' => $activityTotalDuration,
                 'tracked_duration' => (int) ($userTimeBreakdown['total_duration'] ?? 0),
                 'total_duration' => (int) ($userTimeBreakdown['total_duration'] ?? 0),
@@ -1025,7 +1029,7 @@ class ReportController extends Controller
                 'idle_duration' => (int) ($userTimeBreakdown['idle_duration'] ?? 0),
             ];
 
-            foreach (['productive', 'unproductive', 'neutral'] as $classification) {
+            foreach (['productive', 'unproductive', 'neutral', 'context_dependent'] as $classification) {
                 foreach ((array) data_get($userUsageSummary, "tools.{$classification}", []) as $toolRow) {
                     $toolKey = strtolower(implode('|', [
                         (string) ($toolRow['classification'] ?? $classification),
@@ -1075,6 +1079,14 @@ class ReportController extends Controller
             ->where('classification', 'unproductive')
             ->sortByDesc('total_duration')
             ->values();
+        $neutralTools = $toolAnalytics
+            ->where('classification', 'neutral')
+            ->sortByDesc('total_duration')
+            ->values();
+        $contextDependentTools = $toolAnalytics
+            ->where('classification', 'context_dependent')
+            ->sortByDesc('total_duration')
+            ->values();
 
         $employeeScores = collect(array_values($perUserScore))
             ->filter(fn (array $row) => strtolower((string) ($row['user']['role'] ?? '')) === 'employee')
@@ -1082,6 +1094,8 @@ class ReportController extends Controller
                 $activityTotal = max(1, (int) ($row['activity_total_duration'] ?? 0));
                 $row['productive_share'] = (float) round(($row['productive_duration'] / $activityTotal) * 100, 2);
                 $row['unproductive_share'] = (float) round(($row['unproductive_duration'] / $activityTotal) * 100, 2);
+                $row['neutral_share'] = (float) round((((int) ($row['neutral_duration'] ?? 0)) / $activityTotal) * 100, 2);
+                $row['context_dependent_share'] = (float) round((((int) ($row['context_dependent_duration'] ?? 0)) / $activityTotal) * 100, 2);
                 return $row;
             })
             ->sortByDesc('productive_duration')
@@ -1096,8 +1110,9 @@ class ReportController extends Controller
 
         $orgProductiveDuration = (int) $productiveTools->sum('total_duration');
         $orgUnproductiveDuration = (int) $unproductiveTools->sum('total_duration');
-        $orgNeutralDuration = (int) $toolAnalytics->where('classification', 'neutral')->sum('total_duration');
-        $orgActivityDuration = $orgProductiveDuration + $orgUnproductiveDuration + $orgNeutralDuration;
+        $orgNeutralDuration = (int) $neutralTools->sum('total_duration');
+        $orgContextDependentDuration = (int) $contextDependentTools->sum('total_duration');
+        $orgActivityDuration = $orgProductiveDuration + $orgUnproductiveDuration + $orgNeutralDuration + $orgContextDependentDuration;
         $orgTimeBreakdown = $this->timeBreakdownService->build(
             (int) collect($perUserScore)->sum('total_duration'),
             (int) collect($perUserScore)->sum('idle_duration'),
@@ -1148,7 +1163,8 @@ class ReportController extends Controller
             $productive = (int) $memberScores->sum(fn ($row) => (int) ($row['productive_duration'] ?? 0));
             $unproductive = (int) $memberScores->sum(fn ($row) => (int) ($row['unproductive_duration'] ?? 0));
             $neutral = (int) $memberScores->sum(fn ($row) => (int) ($row['neutral_duration'] ?? 0));
-            $total = $productive + $unproductive + $neutral;
+            $contextDependent = (int) $memberScores->sum(fn ($row) => (int) ($row['context_dependent_duration'] ?? 0));
+            $total = $productive + $unproductive + $neutral + $contextDependent;
             $score = $total > 0 ? (float) round(($productive / $total) * 100, 2) : 0.0;
 
             return [
@@ -1162,6 +1178,7 @@ class ReportController extends Controller
                 'productive_duration' => $productive,
                 'unproductive_duration' => $unproductive,
                 'neutral_duration' => $neutral,
+                'context_dependent_duration' => $contextDependent,
                 'total_duration' => $total,
                 'efficiency_score' => $score,
             ];
@@ -1244,6 +1261,7 @@ class ReportController extends Controller
                 'productive_duration' => (int) ($selectedMetrics['productive_time'] ?? 0),
                 'unproductive_duration' => (int) ($selectedMetrics['unproductive_time'] ?? 0),
                 'neutral_duration' => (int) ($selectedMetrics['neutral_time'] ?? 0),
+                'context_dependent_duration' => (int) ($selectedMetrics['context_dependent_time'] ?? 0),
                 'activity_total_duration' => (int) ($selectedMetrics['total_time'] ?? 0),
                 'idle_total_duration' => (int) ($selectedTimeBreakdown['idle_duration'] ?? 0),
                 'idle_avg_duration' => $avgIdle,
@@ -1254,6 +1272,8 @@ class ReportController extends Controller
             'organization_tools' => [
                 'productive' => $productiveTools->take(10)->values(),
                 'unproductive' => $unproductiveTools->take(10)->values(),
+                'neutral' => $neutralTools->take(10)->values(),
+                'context_dependent' => $contextDependentTools->take(10)->values(),
             ],
             'organization_summary' => [
                 'tracked_duration' => (int) ($orgTimeBreakdown['total_duration'] ?? 0),
@@ -1264,8 +1284,11 @@ class ReportController extends Controller
                 'productive_duration' => $orgProductiveDuration,
                 'unproductive_duration' => $orgUnproductiveDuration,
                 'neutral_duration' => $orgNeutralDuration,
+                'context_dependent_duration' => $orgContextDependentDuration,
                 'productive_share' => (float) round(($orgProductiveDuration / max(1, $orgActivityDuration)) * 100, 2),
                 'unproductive_share' => (float) round(($orgUnproductiveDuration / max(1, $orgActivityDuration)) * 100, 2),
+                'neutral_share' => (float) round(($orgNeutralDuration / max(1, $orgActivityDuration)) * 100, 2),
+                'context_dependent_share' => (float) round(($orgContextDependentDuration / max(1, $orgActivityDuration)) * 100, 2),
             ],
             'employee_rankings' => [
                 'most_productive' => $mostProductiveEmployee,
