@@ -115,6 +115,111 @@ class ReportWorkingTimeTest extends TestCase
             ->assertJsonPath('productivity_score', 75);
     }
 
+    public function test_dashboard_summary_counts_approved_time_edits_in_tracked_time(): void
+    {
+        [$user, $headers] = $this->createAuthenticatedEmployee();
+
+        TimeEntry::create([
+            'user_id' => $user->id,
+            'start_time' => now()->subMinutes(44),
+            'end_time' => now(),
+            'duration' => 44 * 60,
+            'billable' => true,
+        ]);
+
+        AttendanceRecord::create([
+            'organization_id' => $user->organization_id,
+            'user_id' => $user->id,
+            'attendance_date' => now()->toDateString(),
+            'check_in_at' => now()->subHours(2),
+            'check_out_at' => now(),
+            'worked_seconds' => 44 * 60,
+            'manual_adjustment_seconds' => 3600,
+            'late_minutes' => 0,
+            'status' => 'present',
+        ]);
+
+        $this->getJson('/api/dashboard', $headers)
+            ->assertOk()
+            ->assertJsonPath('today_total_duration', 6240)
+            ->assertJsonPath('today_total_elapsed_duration', 6240);
+    }
+
+    public function test_overall_report_counts_approved_time_edits_as_tracked_and_working_time(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-04-14 10:00:00',
+            'end_time' => '2026-04-14 10:44:00',
+            'duration' => 44 * 60,
+            'billable' => true,
+        ]);
+
+        AttendanceRecord::create([
+            'organization_id' => $employee->organization_id,
+            'user_id' => $employee->id,
+            'attendance_date' => '2026-04-14',
+            'check_in_at' => '2026-04-14 09:00:00',
+            'check_out_at' => '2026-04-14 10:44:00',
+            'worked_seconds' => 44 * 60,
+            'manual_adjustment_seconds' => 3600,
+            'late_minutes' => 0,
+            'status' => 'present',
+        ]);
+
+        $this->getJson('/api/reports/overall?start_date=2026-04-14&end_date=2026-04-14&user_ids[]='.$employee->id, $headers)
+            ->assertOk()
+            ->assertJsonPath('summary.total_duration', 6240)
+            ->assertJsonPath('summary.working_duration', 6240)
+            ->assertJsonPath('summary.idle_duration', 0)
+            ->assertJsonPath('by_user.0.total_duration', 6240)
+            ->assertJsonPath('by_user.0.working_duration', 6240)
+            ->assertJsonPath('by_day.0.total_duration', 6240)
+            ->assertJsonPath('by_day.0.working_duration', 6240);
+    }
+
+    public function test_profile360_counts_approved_time_edits_in_summary_totals(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-04-14 10:00:00',
+            'end_time' => '2026-04-14 10:44:00',
+            'duration' => 44 * 60,
+            'billable' => true,
+        ]);
+
+        AttendanceRecord::create([
+            'organization_id' => $employee->organization_id,
+            'user_id' => $employee->id,
+            'attendance_date' => '2026-04-14',
+            'check_in_at' => '2026-04-14 09:00:00',
+            'check_out_at' => '2026-04-14 10:44:00',
+            'worked_seconds' => 44 * 60,
+            'manual_adjustment_seconds' => 3600,
+            'late_minutes' => 0,
+            'status' => 'present',
+        ]);
+
+        AttendanceTimeEditRequest::create([
+            'organization_id' => $employee->organization_id,
+            'user_id' => $employee->id,
+            'attendance_date' => '2026-04-14',
+            'extra_seconds' => 3600,
+            'message' => 'Approved extra hour',
+            'status' => 'approved',
+        ]);
+
+        $this->getJson("/api/users/{$employee->id}/profile-360?start_date=2026-04-14&end_date=2026-04-14", $headers)
+            ->assertOk()
+            ->assertJsonPath('summary.total_duration', 6240)
+            ->assertJsonPath('summary.working_duration', 6240)
+            ->assertJsonPath('summary.approved_time_edit_seconds', 3600);
+    }
+
     public function test_duplicate_idle_snapshots_are_counted_once_in_time_breakdowns(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-03-16 11:15:00'));
