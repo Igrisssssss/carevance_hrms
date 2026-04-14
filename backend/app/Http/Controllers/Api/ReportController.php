@@ -228,7 +228,12 @@ class ReportController extends Controller
             ->whereBetween('start_time', [$startDate, $endDate])
             ->get();
 
-        $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries);
+        $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries)
+            + (int) AttendanceRecord::query()
+                ->where('user_id', $user->id)
+                ->whereDate('attendance_date', '>=', $startDate->toDateString())
+                ->whereDate('attendance_date', '<=', $endDate->toDateString())
+                ->sum('manual_adjustment_seconds');
         $activities = Activity::where('user_id', $user->id)
             ->whereBetween('recorded_at', [$startDate, $endDate])
             ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
@@ -367,6 +372,11 @@ class ReportController extends Controller
         $entries = TimeEntry::whereIn('user_id', $userIds)
             ->whereBetween('start_time', [$startDate, $endDate])
             ->get(['id', 'user_id', 'start_time', 'end_time', 'duration']);
+        $attendanceAdjustments = AttendanceRecord::query()
+            ->whereIn('user_id', $userIds)
+            ->whereDate('attendance_date', '>=', $startDate->toDateString())
+            ->whereDate('attendance_date', '<=', $endDate->toDateString())
+            ->get(['id', 'user_id', 'attendance_date', 'manual_adjustment_seconds']);
 
         $activities = Activity::whereIn('user_id', $userIds)
             ->whereBetween('recorded_at', [$startDate, $endDate])
@@ -379,6 +389,7 @@ class ReportController extends Controller
             ->map(fn ($id) => (int) $id);
 
         $entriesByUser = $entries->groupBy('user_id');
+        $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
         $activitiesByUser = $activities->groupBy('user_id');
         $activitiesByUserAndDay = collect($activities)
             ->groupBy(fn ($activity) => sprintf(
@@ -389,12 +400,14 @@ class ReportController extends Controller
 
         $resolvedNow = now();
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $activitiesByUser, $activeUserIds, $resolvedNow) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $activeUserIds, $resolvedNow) {
             $userEntries = $entriesByUser->get($user->id, collect());
             $userActivities = $activitiesByUser->get($user->id, collect());
+            $userAdjustmentDuration = (int) $adjustmentsByUser->get($user->id, collect())
+                ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
             $idleDuration = $this->usageProcessingService->calculateIdleTime($userActivities);
             $timeBreakdown = $this->timeBreakdownService->build(
-                $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow),
+                $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $userAdjustmentDuration,
                 $idleDuration
             );
 
@@ -420,6 +433,26 @@ class ReportController extends Controller
             }
 
             $dayUserBuckets[$key]['total_duration'] += $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
+        }
+
+        foreach ($attendanceAdjustments as $record) {
+            $adjustmentSeconds = (int) ($record->manual_adjustment_seconds ?? 0);
+            if ($adjustmentSeconds <= 0) {
+                continue;
+            }
+
+            $date = Carbon::parse($record->attendance_date)->toDateString();
+            $key = (string) $record->user_id.'|'.$date;
+
+            if (! isset($dayUserBuckets[$key])) {
+                $dayUserBuckets[$key] = [
+                    'date' => $date,
+                    'total_duration' => 0,
+                    'idle_duration' => 0,
+                ];
+            }
+
+            $dayUserBuckets[$key]['total_duration'] += $adjustmentSeconds;
         }
 
         foreach ($activitiesByUserAndDay as $key => $dayActivities) {

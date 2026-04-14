@@ -3,6 +3,7 @@
 namespace App\Services\Reports;
 
 use App\Models\Activity;
+use App\Models\AttendanceRecord;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TimeEntry;
@@ -60,16 +61,19 @@ class DashboardSummaryService
             return $entry;
         });
 
-        $todayDuration = (int) $todayEntries->sum(fn (TimeEntry $entry) => $this->storedDuration($entry));
-        $todayElapsedDuration = (int) $todayEntries->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now));
+        $todayAdjustmentDuration = $this->manualAdjustmentDurationForRange($user->id, $todayStart, $todayEnd);
+        $todayDuration = (int) $todayEntries->sum(fn (TimeEntry $entry) => $this->storedDuration($entry)) + $todayAdjustmentDuration;
+        $todayElapsedDuration = (int) $todayEntries->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now)) + $todayAdjustmentDuration;
         $allEntries = TimeEntry::where('user_id', $user->id)->get(['id', 'start_time', 'end_time', 'duration', 'billable']);
-        $allTimeDuration = (int) $allEntries->sum(fn (TimeEntry $entry) => $this->storedDuration($entry));
-        $allTimeElapsedDuration = (int) $allEntries->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now));
+        $allAdjustmentDuration = $this->manualAdjustmentDurationForUser($user->id);
+        $allTimeDuration = (int) $allEntries->sum(fn (TimeEntry $entry) => $this->storedDuration($entry)) + $allAdjustmentDuration;
+        $allTimeElapsedDuration = (int) $allEntries->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now)) + $allAdjustmentDuration;
 
         $yesterdayDuration = (int) TimeEntry::where('user_id', $user->id)
             ->whereBetween('start_time', [$yesterdayStart, $yesterdayEnd])
             ->get(['id', 'start_time', 'end_time', 'duration'])
-            ->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now));
+            ->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now))
+            + $this->manualAdjustmentDurationForRange($user->id, $yesterdayStart, $yesterdayEnd);
 
         $todayChangePercent = null;
         if ($yesterdayDuration > 0) {
@@ -105,7 +109,8 @@ class DashboardSummaryService
         $weekEntries = TimeEntry::where('user_id', $user->id)
             ->whereBetween('start_time', [$weekStart, $weekEnd])
             ->get(['id', 'start_time', 'end_time', 'duration', 'billable']);
-        $weekTotal = (int) $weekEntries->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now));
+        $weekTotal = (int) $weekEntries->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now))
+            + $this->manualAdjustmentDurationForRange($user->id, $weekStart, $weekEnd);
         $weekActivities = Activity::where('user_id', $user->id)
             ->whereBetween('recorded_at', [$weekStart, $weekEnd])
             ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
@@ -149,5 +154,21 @@ class DashboardSummaryService
             $this->storedDuration($entry),
             Carbon::parse($entry->start_time)->diffInSeconds($now)
         );
+    }
+
+    private function manualAdjustmentDurationForRange(int $userId, Carbon $start, Carbon $end): int
+    {
+        return (int) AttendanceRecord::query()
+            ->where('user_id', $userId)
+            ->whereDate('attendance_date', '>=', $start->toDateString())
+            ->whereDate('attendance_date', '<=', $end->toDateString())
+            ->sum('manual_adjustment_seconds');
+    }
+
+    private function manualAdjustmentDurationForUser(int $userId): int
+    {
+        return (int) AttendanceRecord::query()
+            ->where('user_id', $userId)
+            ->sum('manual_adjustment_seconds');
     }
 }

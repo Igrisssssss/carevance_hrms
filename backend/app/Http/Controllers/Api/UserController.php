@@ -296,8 +296,13 @@ class UserController extends Controller
         }
 
         $activities = $activityQuery->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+        $manualAdjustmentDuration = (int) AttendanceRecord::query()
+            ->where('user_id', $user->id)
+            ->when($request->start_date, fn ($query, $startDate) => $query->whereDate('attendance_date', '>=', $startDate))
+            ->when($request->end_date, fn ($query, $endDate) => $query->whereDate('attendance_date', '<=', $endDate))
+            ->sum('manual_adjustment_seconds');
         $timeBreakdown = $this->timeBreakdownService->build(
-            $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
+            $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow) + $manualAdjustmentDuration,
             $this->usageProcessingService->calculateIdleTime($activities)
         );
 
@@ -399,8 +404,9 @@ class UserController extends Controller
             ->where('user_id', $user->id)
             ->whereBetween('recorded_at', [$startDate, $endDate])
             ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+        $manualAdjustmentDuration = (int) $attendanceSummaryRecords->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
         $timeBreakdown = $this->timeBreakdownService->build(
-            $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
+            $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow) + $manualAdjustmentDuration,
             $this->usageProcessingService->calculateIdleTime($activities)
         );
         $presentAttendanceDays = (int) $attendanceSummaryRecords
