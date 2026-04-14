@@ -219,9 +219,18 @@ export default function DesktopTimerDashboard() {
 
       const data = dashboardSucceeded ? (dashboardResult.value.data as any) : null;
       const attendancePayload = attendanceSucceeded ? (attendanceResult.value.data as any) : null;
-      const activeFromApi = data?.active_timer || null;
+      let activeFromApi = data?.active_timer || null;
       const snapshot = dashboardSucceeded && !activeFromApi ? localStorage.getItem(ACTIVE_TIMER_KEY) : null;
       let todayElapsedSeconds = Number(data?.today_total_elapsed_duration ?? data?.today_total_duration ?? 0) || 0;
+
+      if (dashboardSucceeded && !activeFromApi && snapshot) {
+        try {
+          const activeResponse = await timeEntryApi.active({ timer_slot: 'primary' });
+          activeFromApi = activeResponse.data || null;
+        } catch (activeError) {
+          console.error('Failed to verify active timer after dashboard returned no running entry:', activeError);
+        }
+      }
 
       if (dashboardSucceeded) {
         setActiveTimer(activeFromApi);

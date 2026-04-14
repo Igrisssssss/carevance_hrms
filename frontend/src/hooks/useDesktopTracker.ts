@@ -299,6 +299,48 @@ export const useDesktopTracker = () => {
       }));
     };
 
+    const syncIdleActivitySnapshot = async (
+      activeEntry: TimeEntry,
+      idleSeconds: number,
+      lastActivityAtMs: number,
+      recordedAt: string,
+      contextName?: string,
+    ) => {
+      const idleName = (`System Idle - ${contextName || 'Active Input'}`).slice(0, 255);
+      const idleSignature = `${activeEntry.id}:idle:${lastActivityAtMs}`;
+
+      if (activeSegmentRef.current?.kind !== 'idle') {
+        if (pendingIdleRewindRef.current.size > 0) {
+          await rewindTrackedIdleWindow(recordedAt);
+        }
+        activeSegmentRef.current = null;
+      }
+
+      if (activeSegmentRef.current?.signature === idleSignature) {
+        await activityApi.update(activeSegmentRef.current.activityId, {
+          name: idleName,
+          duration: idleSeconds,
+          recorded_at: recordedAt,
+        });
+        activeSegmentRef.current.durationSeconds = idleSeconds;
+        return;
+      }
+
+      const response = await activityApi.create({
+        time_entry_id: activeEntry.id,
+        type: 'idle' as const,
+        name: idleName,
+        duration: idleSeconds,
+        recorded_at: recordedAt,
+      });
+      activeSegmentRef.current = {
+        activityId: response.data.id,
+        durationSeconds: idleSeconds,
+        signature: idleSignature,
+        kind: 'idle',
+      };
+    };
+
     const attemptIdleAutoStop = async (
       activeEntry: TimeEntry,
       idleSeconds: number,
@@ -494,39 +536,7 @@ export const useDesktopTracker = () => {
 
         if (idleSeconds >= IDLE_THRESHOLD_SECONDS) {
           pendingTrackedSecondsRef.current = 0;
-          const idleName = (`System Idle - ${contextName}`).slice(0, 255);
-          const idleSignature = `${activeEntry.id}:idle:${lastActivityAtMs}`;
-          const currentSegment = activeSegmentRef.current;
-
-          if (currentSegment?.kind !== 'idle') {
-            if (pendingIdleRewindRef.current.size > 0) {
-              await rewindTrackedIdleWindow(recordedAt);
-            }
-            activeSegmentRef.current = null;
-          }
-
-          if (activeSegmentRef.current?.signature === idleSignature) {
-            await activityApi.update(activeSegmentRef.current.activityId, {
-              name: idleName,
-              duration: idleSeconds,
-              recorded_at: recordedAt,
-            });
-            activeSegmentRef.current.durationSeconds = idleSeconds;
-          } else {
-            const response = await activityApi.create({
-              time_entry_id: activeEntry.id,
-              type: 'idle' as const,
-              name: idleName,
-              duration: idleSeconds,
-              recorded_at: recordedAt,
-            });
-            activeSegmentRef.current = {
-              activityId: response.data.id,
-              durationSeconds: idleSeconds,
-              signature: idleSignature,
-              kind: 'idle',
-            };
-          }
+          await syncIdleActivitySnapshot(activeEntry, idleSeconds, lastActivityAtMs, recordedAt, contextName);
 
           if (await attemptIdleAutoStop(activeEntry, idleSeconds, lastActivityAtMs, recordedAt)) {
             return;
@@ -611,7 +621,10 @@ export const useDesktopTracker = () => {
         return;
       }
 
-      await attemptIdleAutoStop(activeEntry, idleSeconds, lastActivityAtMs, new Date(now).toISOString());
+      const recordedAt = new Date(now).toISOString();
+      const idleContextName = activeSegmentRef.current?.contextName || 'Active Input';
+      await syncIdleActivitySnapshot(activeEntry, idleSeconds, lastActivityAtMs, recordedAt, idleContextName);
+      await attemptIdleAutoStop(activeEntry, idleSeconds, lastActivityAtMs, recordedAt);
     };
 
     const captureScreenshotOnInterval = async () => {

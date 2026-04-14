@@ -100,9 +100,15 @@ const readPersistedReportsWorkspaceFilters = (mode: ReportsWorkspaceMode): Persi
   };
 };
 const formatDuration = (seconds: number) => {
-  const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
+  const safe = Math.max(0, Math.floor(Number.isFinite(Number(seconds)) ? Number(seconds) : 0));
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
+  const remainingSeconds = safe % 60;
+
+  if (hours === 0 && remainingSeconds > 0) {
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+
   return `${hours}h ${minutes}m`;
 };
 const formatTimelineDuration = (seconds: number) => {
