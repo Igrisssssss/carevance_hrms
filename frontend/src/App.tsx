@@ -309,13 +309,13 @@ function App() {
             <Route path="monitoring/website-usage" element={<AdminRoute><MonitoringWorkspace mode="website-usage" /></AdminRoute>} />
             <Route path="approval-inbox" element={<AdminRoute><ApprovalInbox /></AdminRoute>} />
             <Route path="reports" element={<Navigate to="/reports/attendance" replace />} />
-            <Route path="reports/attendance" element={<AdminRoute><ReportsWorkspace mode="attendance" /></AdminRoute>} />
-            <Route path="reports/hours-tracked" element={<AdminRoute><ReportsWorkspace mode="hours-tracked" /></AdminRoute>} />
-            <Route path="reports/projects-tasks" element={<AdminRoute><ReportsWorkspace mode="projects-tasks" /></AdminRoute>} />
-            <Route path="reports/timeline" element={<AdminRoute><ReportsWorkspace mode="timeline" /></AdminRoute>} />
-            <Route path="reports/web-app-usage" element={<AdminRoute><ReportsWorkspace mode="web-app-usage" /></AdminRoute>} />
-            <Route path="reports/productivity" element={<AdminRoute><ReportsWorkspace mode="productivity" /></AdminRoute>} />
-            <Route path="reports/custom-export" element={<AdminRoute><ReportsWorkspace mode="custom-export" /></AdminRoute>} />
+            <Route path="reports/attendance" element={<AdminRoute><ReportsWorkspace key="attendance" mode="attendance" /></AdminRoute>} />
+            <Route path="reports/hours-tracked" element={<AdminRoute><ReportsWorkspace key="hours-tracked" mode="hours-tracked" /></AdminRoute>} />
+            <Route path="reports/projects-tasks" element={<AdminRoute><ReportsWorkspace key="projects-tasks" mode="projects-tasks" /></AdminRoute>} />
+            <Route path="reports/timeline" element={<AdminRoute><ReportsWorkspace key="timeline" mode="timeline" /></AdminRoute>} />
+            <Route path="reports/web-app-usage" element={<AdminRoute><ReportsWorkspace key="web-app-usage" mode="web-app-usage" /></AdminRoute>} />
+            <Route path="reports/productivity" element={<AdminRoute><ReportsWorkspace key="productivity" mode="productivity" /></AdminRoute>} />
+            <Route path="reports/custom-export" element={<AdminRoute><ReportsWorkspace key="custom-export" mode="custom-export" /></AdminRoute>} />
             <Route path="invoices" element={<AdminRoute><Invoices /></AdminRoute>} />
             <Route path="payroll" element={<PayrollWorkspace mode="overview" />} />
             <Route path="payroll/runs" element={<PayrollWorkspace mode="runs" />} />

@@ -99,6 +99,16 @@ const readPersistedReportsWorkspaceFilters = (mode: ReportsWorkspaceMode): Persi
     selectedGroupId: coercePositiveNumber(parsed.selectedGroupId) ?? '',
   };
 };
+
+const shouldReuseReportPlaceholderData = (
+  previousQueryKey: readonly unknown[] | undefined,
+  mode: ReportsWorkspaceMode
+) => (
+  Array.isArray(previousQueryKey)
+  && previousQueryKey[0] === 'report-workspace-data'
+  && previousQueryKey[1] === mode
+);
+
 const formatDuration = (seconds: number) => {
   const safe = Math.max(0, Math.floor(Number.isFinite(Number(seconds)) ? Number(seconds) : 0));
   const hours = Math.floor(safe / 3600);
@@ -319,7 +329,11 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const dataQuery = useQuery({
     queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, selectedGroupId],
     enabled: usersQuery.isSuccess && groupsQuery.isSuccess,
-    placeholderData: (previousData) => previousData,
+    placeholderData: (previousData, previousQuery) => (
+      shouldReuseReportPlaceholderData(previousQuery?.queryKey, mode)
+        ? previousData
+        : undefined
+    ),
     refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 10000 : false,
     refetchIntervalInBackground: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity',
     queryFn: async () => {
@@ -586,7 +600,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     return taskAllocationRows.find((row: any) => Number(row.id) === Number(effectiveSelectedTaskId)) || null;
   }, [effectiveSelectedTaskId, hasSelectedTask, mode, taskAllocationRows]);
 
-  const timelineRows = (dataQuery.data as any[]) || [];
+  const timelineRows = Array.isArray(dataQuery.data) ? dataQuery.data : [];
   const timelineSummary = useMemo(() => {
     if (mode !== 'timeline') return null;
     return {
