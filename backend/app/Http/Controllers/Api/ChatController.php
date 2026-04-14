@@ -7,6 +7,8 @@ use App\Http\Requests\Api\Chat\CreateChatGroupRequest;
 use App\Http\Requests\Api\Chat\SendChatMessageRequest;
 use App\Http\Requests\Api\Chat\SetTypingStatusRequest;
 use App\Http\Requests\Api\Chat\StartConversationRequest;
+use App\Http\Requests\Api\Chat\ToggleChatReactionRequest;
+use App\Http\Requests\Api\Chat\UpdateChatMessageRequest;
 use App\Services\Chat\ChatService;
 use Illuminate\Http\Request;
 
@@ -75,6 +77,34 @@ class ChatController extends Controller
     public function sendGroupMessage(SendChatMessageRequest $request, int $groupId)
     {
         $result = $this->chatService->sendGroupMessage($request, $request->user(), $groupId);
+
+        return response()->json($result['payload'], $result['status']);
+    }
+
+    public function updateMessage(UpdateChatMessageRequest $request, int $conversationId, int $messageId)
+    {
+        $result = $this->chatService->updateMessage($request->user(), $conversationId, $messageId, (string) $request->body);
+
+        return response()->json($result['payload'], $result['status']);
+    }
+
+    public function updateGroupMessage(UpdateChatMessageRequest $request, int $groupId, int $messageId)
+    {
+        $result = $this->chatService->updateGroupMessage($request->user(), $groupId, $messageId, (string) $request->body);
+
+        return response()->json($result['payload'], $result['status']);
+    }
+
+    public function toggleMessageReaction(ToggleChatReactionRequest $request, int $conversationId, int $messageId)
+    {
+        $result = $this->chatService->toggleMessageReaction($request->user(), $conversationId, $messageId, (string) $request->emoji);
+
+        return response()->json($result['payload'], $result['status']);
+    }
+
+    public function toggleGroupMessageReaction(ToggleChatReactionRequest $request, int $groupId, int $messageId)
+    {
+        $result = $this->chatService->toggleGroupMessageReaction($request->user(), $groupId, $messageId, (string) $request->emoji);
 
         return response()->json($result['payload'], $result['status']);
     }

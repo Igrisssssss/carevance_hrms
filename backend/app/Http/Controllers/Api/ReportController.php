@@ -674,6 +674,7 @@ class ReportController extends Controller
                 ->filter(fn (User $user) => AttendanceHoliday::countryForSettings($user->settings) === $countryFilter)
                 ->values();
         }
+        $calendarDaysCount = max(1, $allDatesInRange->count());
         $workingDaysCount = max(1, $workingDates->count());
         $userIds = $users->pluck('id')->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->values();
         $activeTimeEntryUserIds = $userIds->isEmpty()
@@ -701,6 +702,7 @@ class ReportController extends Controller
         $rows = $users->map(function (User $user) use (
             $startDate,
             $endDate,
+            $calendarDaysCount,
             $workingDaysCount,
             $workingDates,
             $weekendDates,
@@ -744,7 +746,7 @@ class ReportController extends Controller
             $workedSeconds = (int) $records->sum(fn (AttendanceRecord $record) => $this->calculateAttendanceWorkedSeconds($record));
             $daysPresent = $presentDates->count();
             $leaveDays = $approvedLeaveDates->count();
-            $attendanceRate = (float) round(($daysPresent / $workingDaysCount) * 100, 2);
+            $attendanceRate = (float) round(($daysPresent / $calendarDaysCount) * 100, 2);
 
             $isWorking = $activeTimeEntryUserIds->contains((int) $user->id)
                 || $openAttendanceUserIds->contains((int) $user->id);
@@ -757,6 +759,7 @@ class ReportController extends Controller
                     'role' => $user->role,
                 ],
                 'days_present' => $daysPresent,
+                'calendar_days_in_range' => $calendarDaysCount,
                 'working_days_in_range' => $workingDaysCount,
                 'leave_days' => $leaveDays,
                 'attendance_rate' => $attendanceRate,
@@ -773,6 +776,7 @@ class ReportController extends Controller
         return response()->json([
             'start_date' => $startDate->toDateString(),
             'end_date' => $endDate->toDateString(),
+            'calendar_days' => $allDatesInRange->count(),
             'weekend_days' => $weekendDates->count(),
             'working_days' => $workingDates->count(),
             'data' => $rows,

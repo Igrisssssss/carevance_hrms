@@ -378,16 +378,25 @@ export interface ChatGroup {
   updated_at?: string;
 }
 
+export interface ChatMessageReaction {
+  emoji: string;
+  count: number;
+  reacted_by_me?: boolean;
+}
+
 export interface ChatMessage {
   id: number;
   conversation_id: number;
   sender_id: number;
   body: string;
+  edited_at?: string | null;
   attachment_path?: string | null;
   attachment_name?: string | null;
   attachment_mime?: string | null;
   attachment_size?: number | null;
   has_attachment?: boolean;
+  is_edited?: boolean;
+  reactions?: ChatMessageReaction[];
   read_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -403,11 +412,14 @@ export interface ChatGroupMessage {
   group_id: number;
   sender_id: number;
   body: string;
+  edited_at?: string | null;
   attachment_path?: string | null;
   attachment_name?: string | null;
   attachment_mime?: string | null;
   attachment_size?: number | null;
   has_attachment?: boolean;
+  is_edited?: boolean;
+  reactions?: ChatMessageReaction[];
   created_at: string;
   updated_at: string;
   sender?: {

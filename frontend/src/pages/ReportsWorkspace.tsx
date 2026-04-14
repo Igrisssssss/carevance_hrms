@@ -773,7 +773,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             headerAction={renderPanelRefreshButton()}
             columns={[
               { key: 'employee', header: 'Employee', render: (row: any) => <div><p className="font-medium text-slate-950">{row.user?.name}</p><p className="text-xs text-slate-500">{row.user?.email}</p></div> },
-              { key: 'present', header: 'Present', render: (row: any) => `${row.days_present} / ${row.working_days_in_range}` },
+              { key: 'present', header: 'Present', render: (row: any) => `${row.days_present} / ${row.calendar_days_in_range || row.working_days_in_range}` },
               { key: 'leave', header: 'Leave', render: (row: any) => row.leave_days },
               { key: 'attendance_rate', header: 'Attendance %', render: (row: any) => `${row.attendance_rate}%` },
               { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.worked_seconds) },

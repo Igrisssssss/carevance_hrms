@@ -6,7 +6,7 @@ use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/users', [UserController::class, 'index']);
-Route::post('/users', [UserController::class, 'store'])->middleware('role:admin,manager');
+Route::post('/users', [UserController::class, 'store'])->middleware('role:admin');
 Route::get('/users/{user}', [UserController::class, 'show']);
 Route::get('/users/{user}/groups', [UserController::class, 'groups']);
 Route::match(['put', 'patch'], '/users/{user}', [UserController::class, 'update'])->middleware('role:admin,manager');

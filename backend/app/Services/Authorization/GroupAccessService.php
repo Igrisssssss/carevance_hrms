@@ -11,7 +11,7 @@ class GroupAccessService
 {
     public function canManageGroups(?User $user): bool
     {
-        return $user && in_array($user->role, ['admin', 'manager'], true);
+        return $user?->role === 'admin';
     }
 
     public function canManageTasks(?User $user): bool

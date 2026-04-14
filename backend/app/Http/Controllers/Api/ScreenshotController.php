@@ -28,6 +28,11 @@ class ScreenshotController extends Controller
         return $user && in_array($user->role, ['admin', 'manager'], true);
     }
 
+    private function canDeleteScreenshots(?User $user): bool
+    {
+        return $user?->role === 'admin';
+    }
+
     private function restrictMonitoringToEmployees(?User $user): bool
     {
         return $user?->role === 'manager';
@@ -65,6 +70,9 @@ class ScreenshotController extends Controller
         $user = $request->user();
         if (!$user) {
             return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+        if (!$this->canDeleteScreenshots($user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
 
         $selectedIds = collect($validated['screenshot_ids'] ?? [])
@@ -344,6 +352,10 @@ class ScreenshotController extends Controller
      */
     public function destroy(Screenshot $screenshot)
     {
+        if (!$this->canDeleteScreenshots(request()->user())) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         if (!$this->canAccessScreenshot($screenshot)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }

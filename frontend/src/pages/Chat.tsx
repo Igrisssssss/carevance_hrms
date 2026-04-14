@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { chatApi } from '@/services/api';
+import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { useAuth } from '@/contexts/AuthContext';
+import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue } from '@/lib/searchSuggestions';
+import { chatApi } from '@/services/api';
 import type { ChatConversation, ChatGroup, ChatGroupMessage, ChatMessage, ChatTypingUser } from '@/types';
 
 type ThreadSelection =
@@ -9,6 +11,14 @@ type ThreadSelection =
   | null;
 
 type ChatFeedMessage = ChatMessage | ChatGroupMessage;
+type MessageContextMenuState = {
+  message: ChatFeedMessage;
+  mine: boolean;
+  x: number;
+  y: number;
+};
+
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮'];
 
 export default function Chat() {
   const { user } = useAuth();
@@ -19,14 +29,20 @@ export default function Chat() {
   const [messages, setMessages] = useState<ChatFeedMessage[]>([]);
   const [typingUsers, setTypingUsers] = useState<ChatTypingUser[]>([]);
   const [startEmail, setStartEmail] = useState('');
+  const [selectedStartUserId, setSelectedStartUserId] = useState<number | null>(null);
   const [groupName, setGroupName] = useState('');
   const [groupMemberIds, setGroupMemberIds] = useState<number[]>([]);
   const [messageText, setMessageText] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [messageContextMenu, setMessageContextMenu] = useState<MessageContextMenuState | null>(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messageContextMenuRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const shouldStickToBottomRef = useRef(true);
 
@@ -41,6 +57,15 @@ export default function Chat() {
   );
 
   const selectedThreadLabel = selectedThread?.type === 'group' ? 'group' : 'conversation';
+  const selectedStartUser = useMemo(
+    () => availableUsers.find((candidate) => Number(candidate.id) === Number(selectedStartUserId)) || null,
+    [availableUsers, selectedStartUserId]
+  );
+  const availableUserSuggestions = useMemo(
+    () => buildEmployeeSearchSuggestions(availableUsers),
+    [availableUsers]
+  );
+  const persistedQuickReactions = ['\u{1F44D}', '\u2764\uFE0F', '\u{1F602}', '\u{1F389}', '\u{1F62E}'];
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -177,6 +202,10 @@ export default function Chat() {
 
     shouldStickToBottomRef.current = true;
     setAttachmentFile(null);
+    setEditingMessageId(null);
+    setEditingMessageText('');
+    setIsSavingEdit(false);
+    setMessageContextMenu(null);
     setError('');
 
     loadMessages(selectedThread);
@@ -200,20 +229,71 @@ export default function Chat() {
   }, []);
 
   useEffect(() => {
+    if (!messageContextMenu) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+
+      if (messageContextMenuRef.current?.contains(target)) {
+        return;
+      }
+
+      setMessageContextMenu(null);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMessageContextMenu(null);
+      }
+    };
+
+    const handleViewportChange = () => setMessageContextMenu(null);
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [messageContextMenu]);
+
+  useEffect(() => {
     if (shouldStickToBottomRef.current) {
       scrollToBottom();
     }
   }, [messages.length]);
 
-  const handleStartConversation = async (e: FormEvent) => {
-    e.preventDefault();
+  const startConversationFromDraft = async () => {
     setError('');
-    if (!startEmail.trim()) return;
+    const typedValue = startEmail.trim();
+    if (!typedValue) return;
+
+    const normalizedTypedValue = normalizeSearchValue(typedValue);
+    const matchedUser =
+      selectedStartUser ||
+      availableUsers.find((candidate) => (
+        normalizeSearchValue(candidate.name) === normalizedTypedValue ||
+        normalizeSearchValue(candidate.email) === normalizedTypedValue
+      )) ||
+      null;
+
+    const email = matchedUser?.email?.trim() || typedValue;
 
     try {
-      const response = await chatApi.startConversation(startEmail.trim());
+      const response = await chatApi.startConversation(email);
       const created = response.data;
       setStartEmail('');
+      setSelectedStartUserId(null);
       await loadThreads();
       if (created?.id) {
         setSelectedThread({ type: 'direct', id: created.id });
@@ -221,6 +301,11 @@ export default function Chat() {
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Could not start conversation');
     }
+  };
+
+  const handleStartConversation = async (e: FormEvent) => {
+    e.preventDefault();
+    await startConversationFromDraft();
   };
 
   const handleCreateGroup = async (e: FormEvent) => {
@@ -279,6 +364,46 @@ export default function Chat() {
     }
   };
 
+  const handleEditMessage = (message: ChatFeedMessage) => {
+    setEditingMessageId(message.id);
+    setEditingMessageText(message.body || '');
+    setError('');
+  };
+
+  const cancelEditingMessage = () => {
+    setEditingMessageId(null);
+    setEditingMessageText('');
+    setIsSavingEdit(false);
+  };
+
+  const handleSaveEditedMessage = async (message: ChatFeedMessage) => {
+    if (!selectedThread || editingMessageId !== message.id) {
+      return;
+    }
+
+    const nextBody = editingMessageText.trim();
+    if (!nextBody) {
+      setError('Message cannot be empty.');
+      return;
+    }
+
+    try {
+      setError('');
+      setIsSavingEdit(true);
+      setMessageContextMenu(null);
+      const response = selectedThread.type === 'direct'
+        ? await chatApi.updateMessage(selectedThread.id, message.id, { body: nextBody })
+        : await chatApi.updateGroupMessage(selectedThread.id, message.id, { body: nextBody });
+
+      setMessages((prev) => prev.map((candidate) => (candidate.id === message.id ? response.data : candidate)));
+      cancelEditingMessage();
+      await loadThreads();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Could not edit message');
+      setIsSavingEdit(false);
+    }
+  };
+
   const handleMessageChange = (value: string) => {
     setMessageText(value);
     if (!selectedThread) {
@@ -332,17 +457,83 @@ export default function Chat() {
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const openMessageContextMenu = (event: React.MouseEvent<HTMLDivElement>, message: ChatFeedMessage, mine: boolean) => {
+    if (editingMessageId === message.id) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setMessageContextMenu({
+      message,
+      mine,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  };
+
+  const handleCopyMessage = async (message: ChatFeedMessage) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(message.body || '');
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = message.body || '';
+        textArea.setAttribute('readonly', 'true');
+        textArea.style.position = 'absolute';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+
+      setError('');
+    } catch {
+      setError('Could not copy message.');
+    } finally {
+      setMessageContextMenu(null);
+    }
+  };
+
+  const handleReactToMessage = async (message: ChatFeedMessage, emoji: string) => {
+    if (!selectedThread) {
+      return;
+    }
+
+    try {
+      const response = selectedThread.type === 'direct'
+        ? await chatApi.reactToMessage(selectedThread.id, message.id, { emoji })
+        : await chatApi.reactToGroupMessage(selectedThread.id, message.id, { emoji });
+
+      setMessages((prev) => prev.map((candidate) => (candidate.id === message.id ? response.data : candidate)));
+      setError('');
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Could not react to message.');
+    } finally {
+      setMessageContextMenu(null);
+    }
+  };
+
+  const renderMessageTimestamp = (message: ChatFeedMessage, mine: boolean, groupMessage: boolean) => (
+    <div className={`mt-1 flex items-center gap-2 text-[10px] ${mine ? 'text-primary-100' : 'text-gray-400'}`}>
+      <span>{new Date(message.created_at).toLocaleString()}</span>
+      {message.is_edited ? <span>Edited</span> : null}
+      {!groupMessage && mine ? <span>{(message as ChatMessage).read_at ? 'Read' : 'Sent'}</span> : null}
+    </div>
+  );
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="h-[calc(100vh-10rem)] bg-white border border-gray-200 rounded-xl overflow-hidden grid grid-cols-1 lg:grid-cols-3">
-      <div className="border-r border-gray-200 p-4 space-y-4 min-h-0 overflow-y-auto">
+    <div className="grid h-[calc(100vh-10rem)] grid-cols-1 overflow-hidden rounded-xl border border-gray-200 bg-white lg:grid-cols-3">
+      <div className="min-h-0 space-y-4 overflow-y-auto border-r border-gray-200 p-4">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Chat</h1>
           <p className="text-sm text-gray-500">Private chats and group rooms for your organization</p>
@@ -350,14 +541,38 @@ export default function Chat() {
 
         <form onSubmit={handleStartConversation} className="space-y-2 rounded-lg border border-gray-200 p-3">
           <h2 className="text-sm font-semibold text-gray-900">Start private chat</h2>
-          <input
-            type="email"
+          <SearchSuggestInput
+            type="text"
             value={startEmail}
-            onChange={(e) => setStartEmail(e.target.value)}
-            placeholder="colleague@company.com"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            onValueChange={(value) => {
+              setStartEmail(value);
+
+              if (!selectedStartUser) {
+                return;
+              }
+
+              const normalizedValue = normalizeSearchValue(value);
+              if (
+                normalizedValue !== normalizeSearchValue(selectedStartUser.name) &&
+                normalizedValue !== normalizeSearchValue(selectedStartUser.email)
+              ) {
+                setSelectedStartUserId(null);
+              }
+            }}
+            onSuggestionSelect={(suggestion) => {
+              const nextUserId = Number((suggestion.payload as { id?: number } | undefined)?.id || suggestion.id || 0);
+              setStartEmail(getSuggestionDisplayValue(suggestion));
+              setSelectedStartUserId(Number.isFinite(nextUserId) && nextUserId > 0 ? nextUserId : null);
+            }}
+            onCommit={() => {
+              void startConversationFromDraft();
+            }}
+            suggestions={availableUserSuggestions}
+            placeholder="Search teammate by name or enter email"
+            emptyMessage="No teammate names match this search."
+            autoComplete="off"
           />
-          <button type="submit" className="w-full px-3 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">
+          <button type="submit" className="w-full rounded-lg bg-primary-600 px-3 py-2 text-sm text-white hover:bg-primary-700">
             Start / Open Chat
           </button>
         </form>
@@ -372,9 +587,9 @@ export default function Chat() {
             value={groupName}
             onChange={(e) => setGroupName(e.target.value)}
             placeholder="Group name"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
           />
-          <div className="max-h-36 overflow-y-auto space-y-2 pr-1">
+          <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
             {availableUsers.length === 0 ? (
               <p className="text-xs text-gray-500">No teammates available.</p>
             ) : (
@@ -391,7 +606,7 @@ export default function Chat() {
               ))
             )}
           </div>
-          <button type="submit" className="w-full px-3 py-2 bg-gray-900 text-white rounded-lg text-sm hover:bg-gray-800">
+          <button type="submit" className="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm text-white hover:bg-gray-800">
             Create Group
           </button>
         </form>
@@ -402,7 +617,7 @@ export default function Chat() {
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Private chats</h2>
               <span className="text-xs text-gray-400">{conversations.length}</span>
             </div>
-            <div className="space-y-2 overflow-y-auto max-h-[24vh] pr-1">
+            <div className="max-h-[24vh] space-y-2 overflow-y-auto pr-1">
               {conversations.length === 0 ? (
                 <p className="text-sm text-gray-500">No conversations yet.</p>
               ) : (
@@ -410,7 +625,7 @@ export default function Chat() {
                   <button
                     key={conversation.id}
                     onClick={() => setSelectedThread({ type: 'direct', id: conversation.id })}
-                    className={`w-full text-left p-3 rounded-lg border ${
+                    className={`w-full rounded-lg border p-3 text-left ${
                       selectedThread?.type === 'direct' && selectedThread.id === conversation.id
                         ? 'border-primary-300 bg-primary-50'
                         : 'border-gray-200'
@@ -419,10 +634,10 @@ export default function Chat() {
                     <p className="font-medium text-gray-900">{conversation.other_user?.name}</p>
                     <p className="text-xs text-gray-500">{conversation.other_user?.email}</p>
                     {conversation.last_message?.body && (
-                      <p className="text-xs text-gray-600 mt-1 truncate">{conversation.last_message.body}</p>
+                      <p className="mt-1 truncate text-xs text-gray-600">{conversation.last_message.body}</p>
                     )}
                     {!!conversation.unread_count && conversation.unread_count > 0 && (
-                      <span className="inline-block mt-1 text-xs px-2 py-0.5 bg-primary-600 text-white rounded-full">
+                      <span className="mt-1 inline-block rounded-full bg-primary-600 px-2 py-0.5 text-xs text-white">
                         {conversation.unread_count}
                       </span>
                     )}
@@ -437,7 +652,7 @@ export default function Chat() {
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Group chats</h2>
               <span className="text-xs text-gray-400">{groups.length}</span>
             </div>
-            <div className="space-y-2 overflow-y-auto max-h-[24vh] pr-1">
+            <div className="max-h-[24vh] space-y-2 overflow-y-auto pr-1">
               {groups.length === 0 ? (
                 <p className="text-sm text-gray-500">No groups yet.</p>
               ) : (
@@ -445,24 +660,24 @@ export default function Chat() {
                   <button
                     key={group.id}
                     onClick={() => setSelectedThread({ type: 'group', id: group.id })}
-                    className={`w-full text-left p-3 rounded-lg border ${
+                    className={`w-full rounded-lg border p-3 text-left ${
                       selectedThread?.type === 'group' && selectedThread.id === group.id
                         ? 'border-primary-300 bg-primary-50'
                         : 'border-gray-200'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="font-medium text-gray-900 truncate">{group.name}</p>
-                      <span className="text-[10px] uppercase tracking-wide text-primary-700 bg-primary-100 px-2 py-0.5 rounded-full">
+                      <p className="truncate font-medium text-gray-900">{group.name}</p>
+                      <span className="rounded-full bg-primary-100 px-2 py-0.5 text-[10px] uppercase tracking-wide text-primary-700">
                         Group
                       </span>
                     </div>
                     <p className="text-xs text-gray-500">{group.member_count || 0} members</p>
                     {group.last_message?.body && (
-                      <p className="text-xs text-gray-600 mt-1 truncate">{group.last_message.body}</p>
+                      <p className="mt-1 truncate text-xs text-gray-600">{group.last_message.body}</p>
                     )}
                     {!!group.unread_count && group.unread_count > 0 && (
-                      <span className="inline-block mt-1 text-xs px-2 py-0.5 bg-primary-600 text-white rounded-full">
+                      <span className="mt-1 inline-block rounded-full bg-primary-600 px-2 py-0.5 text-xs text-white">
                         {group.unread_count}
                       </span>
                     )}
@@ -474,11 +689,11 @@ export default function Chat() {
         </div>
       </div>
 
-      <div className="lg:col-span-2 flex min-h-0 flex-col">
-        <div className="px-4 py-3 border-b border-gray-200">
+      <div className="flex min-h-0 flex-col lg:col-span-2">
+        <div className="border-b border-gray-200 px-4 py-3">
           {selectedConversation ? (
             <>
-              <p className="font-semibold text-gray-900 flex items-center gap-2">
+              <p className="flex items-center gap-2 font-semibold text-gray-900">
                 <span>{selectedConversation.other_user?.name}</span>
                 <span className={`inline-flex h-2.5 w-2.5 rounded-full ${selectedConversation.other_user?.is_online ? 'bg-green-500' : 'bg-gray-300'}`}></span>
                 <span className="text-xs font-normal text-gray-500">
@@ -510,7 +725,7 @@ export default function Chat() {
         <div
           ref={messagesContainerRef}
           onScroll={handleMessagesScroll}
-          className="flex-1 min-h-0 overflow-y-auto bg-gray-50 p-4 space-y-3"
+          className="flex-1 min-h-0 space-y-3 overflow-y-auto bg-gray-50 p-4"
         >
           {!selectedThread ? (
             <p className="text-sm text-gray-500">Choose or start a private chat, or create a group.</p>
@@ -522,14 +737,45 @@ export default function Chat() {
               const groupMessage = isGroupMessage(message);
 
               return (
-                <div key={`${groupMessage ? 'group' : 'direct'}-${message.id}`} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[70%] rounded-xl px-3 py-2 text-sm ${mine ? 'bg-primary-600 text-white' : 'bg-white border border-gray-200 text-gray-800'}`}>
+                <div key={`${groupMessage ? 'group' : 'direct'}-${message.id}`} className={`group flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    onContextMenu={(event) => openMessageContextMenu(event, message, mine)}
+                    className={`max-w-[70%] rounded-xl px-3 py-2 text-sm ${mine ? 'bg-primary-600 text-white' : 'border border-gray-200 bg-white text-gray-800'}`}
+                  >
                     {!mine && groupMessage && (
                       <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-primary-700">
                         {message.sender?.name || 'Teammate'}
                       </p>
                     )}
-                    <p>{message.body}</p>
+                    {editingMessageId === message.id ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={editingMessageText}
+                          onChange={(e) => setEditingMessageText(e.target.value)}
+                          rows={3}
+                          className="w-full resize-y rounded-lg border border-white/50 bg-white px-3 py-2 text-sm text-gray-900 focus:border-white focus:outline-none"
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={cancelEditingMessage}
+                            className="rounded-md border border-white/50 px-2 py-1 text-xs text-white hover:bg-white/10"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEditedMessage(message)}
+                            disabled={isSavingEdit || !editingMessageText.trim()}
+                            className="rounded-md bg-white px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-60"
+                          >
+                            {isSavingEdit ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="break-words whitespace-pre-wrap">{message.body}</p>
+                    )}
                     {message.has_attachment && (
                       <button
                         onClick={() => openAttachment(message)}
@@ -540,24 +786,88 @@ export default function Chat() {
                         {message.attachment_name ? ` (${message.attachment_name}${message.attachment_size ? `, ${formatBytes(message.attachment_size)}` : ''})` : ''}
                       </button>
                     )}
-                    <p className={`text-[10px] mt-1 ${mine ? 'text-primary-100' : 'text-gray-400'}`}>
-                      {new Date(message.created_at).toLocaleString()}
-                      {!groupMessage && mine ? ` • ${message.read_at ? 'Read' : 'Sent'}` : ''}
-                    </p>
+                    {renderMessageTimestamp(message, mine, groupMessage)}
+                    {(message.reactions || []).length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {(message.reactions || []).map((reaction) => (
+                          <span
+                            key={`${message.id}-${reaction.emoji}`}
+                            className={`inline-flex min-w-8 items-center justify-center rounded-full px-2 py-0.5 text-xs ${
+                              reaction.reacted_by_me
+                                ? mine
+                                  ? 'bg-white/25 text-white'
+                                  : 'bg-primary-100 text-primary-800'
+                                : mine
+                                  ? 'bg-white/20 text-white'
+                                  : 'bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {reaction.emoji} {reaction.count > 1 ? reaction.count : ''}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );
             })
           )}
           {typingUsers.length > 0 && (
-            <p className="text-xs text-gray-500 italic">
+            <p className="text-xs italic text-gray-500">
               {typingUsers.map((typingUser) => typingUser.name).join(', ')} typing...
             </p>
           )}
           <div ref={messagesEndRef} />
         </div>
+        {messageContextMenu ? (
+          <div
+            ref={messageContextMenuRef}
+            className="fixed z-[70] min-w-52 rounded-xl border border-gray-200 bg-white p-2 shadow-[0_18px_40px_-18px_rgba(15,23,42,0.45)]"
+            style={{
+              left: Math.min(messageContextMenu.x, window.innerWidth - 220),
+              top: Math.min(messageContextMenu.y, window.innerHeight - 220),
+            }}
+            onClick={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <div className="rounded-lg bg-gray-50 px-3 py-2">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">React</p>
+              <div className="flex flex-wrap gap-2">
+                {persistedQuickReactions.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => void handleReactToMessage(messageContextMenu.message, emoji)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg shadow-sm transition hover:bg-primary-50"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleCopyMessage(messageContextMenu.message)}
+              className="mt-2 flex w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50"
+            >
+              Copy message
+            </button>
+            {messageContextMenu.mine ? (
+              <button
+                type="button"
+                onClick={() => {
+                  handleEditMessage(messageContextMenu.message);
+                  setMessageContextMenu(null);
+                }}
+                className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50"
+              >
+                Edit message
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
-        <form onSubmit={handleSendMessage} className="p-3 border-t border-gray-200 flex gap-2">
+        <form onSubmit={handleSendMessage} className="flex gap-2 border-t border-gray-200 p-3">
           <div className="flex-1 space-y-2">
             <input
               type="text"
@@ -565,7 +875,7 @@ export default function Chat() {
               onChange={(e) => handleMessageChange(e.target.value)}
               placeholder={selectedThread ? `Type a message to this ${selectedThreadLabel}...` : 'Select chat first'}
               disabled={!selectedThread}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-100"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
             />
             <div className="flex items-center gap-2">
               <input
@@ -578,7 +888,7 @@ export default function Chat() {
                 <button
                   type="button"
                   onClick={() => setAttachmentFile(null)}
-                  className="text-xs px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50"
+                  className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
                 >
                   Clear
                 </button>
@@ -588,7 +898,7 @@ export default function Chat() {
           <button
             type="submit"
             disabled={!selectedThread || (!messageText.trim() && !attachmentFile)}
-            className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-50"
+            className="rounded-lg bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
           >
             Send
           </button>

@@ -120,6 +120,7 @@ const SCREENSHOT_REFRESH_INTERVAL_MS = 60_000;
 
 export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspaceMode }) {
   const { user } = useAuth();
+  const canDeleteScreenshots = user?.role === 'admin';
   const navigate = useNavigate();
   const location = useLocation();
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedMonitoringWorkspaceFilters(mode).datePreset);
@@ -725,15 +726,17 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                     >
                       View all screenshots
                     </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      iconLeft={<Trash2 className="h-4 w-4" />}
-                      onClick={() => void handleDeleteAllScreenshotsInRange()}
-                      disabled={!hasExplicitEmployeeSelection || screenshotTotal === 0 || isDeletingScreenshots}
-                    >
-                      {isDeletingScreenshots ? 'Deleting...' : 'Delete all in range'}
-                    </Button>
+                    {canDeleteScreenshots ? (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        iconLeft={<Trash2 className="h-4 w-4" />}
+                        onClick={() => void handleDeleteAllScreenshotsInRange()}
+                        disabled={!hasExplicitEmployeeSelection || screenshotTotal === 0 || isDeletingScreenshots}
+                      >
+                        {isDeletingScreenshots ? 'Deleting...' : 'Delete all in range'}
+                      </Button>
+                    ) : null}
                     {renderPanelRefreshButton()}
                   </div>
                 </div>
@@ -902,42 +905,48 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Total in range</p>
                     <p className="mt-2 text-lg font-semibold text-slate-950">{screenshotTotal}</p>
                   </div>
-                  <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Selected</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-950">{selectedScreenshotIds.length}</p>
-                  </div>
+                  {canDeleteScreenshots ? (
+                    <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Selected</p>
+                      <p className="mt-2 text-lg font-semibold text-slate-950">{selectedScreenshotIds.length}</p>
+                    </div>
+                  ) : null}
                   <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Date range</p>
                     <p className="mt-2 text-sm font-semibold text-slate-950">{startDate} to {endDate}</p>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 lg:justify-end">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={toggleVisibleScreenshotSelection}
-                    disabled={screenshots.length === 0}
-                  >
-                    {allVisibleScreenshotsSelected ? 'Unselect visible' : 'Select visible'}
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    iconLeft={<Trash2 className="h-4 w-4" />}
-                    onClick={() => void handleDeleteSelectedScreenshots()}
-                    disabled={selectedScreenshotIds.length === 0 || isDeletingScreenshots}
-                  >
-                    Delete selected
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    iconLeft={<Trash2 className="h-4 w-4" />}
-                    onClick={() => void handleDeleteAllScreenshotsInRange()}
-                    disabled={!hasExplicitEmployeeSelection || screenshotTotal === 0 || isDeletingScreenshots}
-                  >
-                    {isDeletingScreenshots ? 'Deleting...' : 'Delete all in range'}
-                  </Button>
+                  {canDeleteScreenshots ? (
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={toggleVisibleScreenshotSelection}
+                        disabled={screenshots.length === 0}
+                      >
+                        {allVisibleScreenshotsSelected ? 'Unselect visible' : 'Select visible'}
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        iconLeft={<Trash2 className="h-4 w-4" />}
+                        onClick={() => void handleDeleteSelectedScreenshots()}
+                        disabled={selectedScreenshotIds.length === 0 || isDeletingScreenshots}
+                      >
+                        Delete selected
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        iconLeft={<Trash2 className="h-4 w-4" />}
+                        onClick={() => void handleDeleteAllScreenshotsInRange()}
+                        disabled={!hasExplicitEmployeeSelection || screenshotTotal === 0 || isDeletingScreenshots}
+                      >
+                        {isDeletingScreenshots ? 'Deleting...' : 'Delete all in range'}
+                      </Button>
+                    </>
+                  ) : null}
                   {renderPanelRefreshButton()}
                 </div>
               </div>
@@ -973,15 +982,17 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                             void refreshScreenshotPath(Number(shot.id));
                           }}
                         />
-                        <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-400"
-                            checked={isSelected}
-                            onChange={() => toggleScreenshotSelection(Number(shot.id))}
-                          />
-                          Select
-                        </label>
+                        {canDeleteScreenshots ? (
+                          <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-400"
+                              checked={isSelected}
+                              onChange={() => toggleScreenshotSelection(Number(shot.id))}
+                            />
+                            Select
+                          </label>
+                        ) : null}
                         <a
                           href={shotPath}
                           target="_blank"

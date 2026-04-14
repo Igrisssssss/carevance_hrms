@@ -739,6 +739,14 @@ export const chatApi = {
 
     return api.post<ChatGroupMessage>(`/chat/groups/${groupId}/messages`, { body: data.body || '' });
   },
+  updateMessage: (conversationId: number, messageId: number, data: { body: string }) =>
+    api.patch<ChatMessage>(`/chat/conversations/${conversationId}/messages/${messageId}`, { body: data.body }),
+  updateGroupMessage: (groupId: number, messageId: number, data: { body: string }) =>
+    api.patch<ChatGroupMessage>(`/chat/groups/${groupId}/messages/${messageId}`, { body: data.body }),
+  reactToMessage: (conversationId: number, messageId: number, data: { emoji: string }) =>
+    api.post<ChatMessage>(`/chat/conversations/${conversationId}/messages/${messageId}/reactions`, { emoji: data.emoji }),
+  reactToGroupMessage: (groupId: number, messageId: number, data: { emoji: string }) =>
+    api.post<ChatGroupMessage>(`/chat/groups/${groupId}/messages/${messageId}/reactions`, { emoji: data.emoji }),
   markRead: (conversationId: number) =>
     api.post(`/chat/conversations/${conversationId}/read`),
   markGroupRead: (groupId: number) =>
