@@ -122,6 +122,9 @@ class SettingsController extends Controller
             'notifications' => array_merge(
                 [
                     'email' => true,
+                    'in_app' => true,
+                    'desktop_push' => true,
+                    'chat_messages' => true,
                     'weekly_summary' => true,
                     'project_updates' => true,
                     'task_assignments' => true,

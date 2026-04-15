@@ -42,11 +42,17 @@ class SettingsApiFlowTest extends TestCase
             'timezone' => 'Asia/Kolkata',
             'notifications' => [
                 'email' => false,
+                'in_app' => false,
+                'desktop_push' => false,
+                'chat_messages' => false,
             ],
         ], $headers)
             ->assertOk()
             ->assertJsonPath('settings.timezone', 'Asia/Kolkata')
             ->assertJsonPath('settings.notifications.email', false)
+            ->assertJsonPath('settings.notifications.in_app', false)
+            ->assertJsonPath('settings.notifications.desktop_push', false)
+            ->assertJsonPath('settings.notifications.chat_messages', false)
             ->assertJsonPath('settings.notifications.weekly_summary', true);
 
         $this->putJson('/api/settings/password', [

@@ -2,11 +2,14 @@ import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
+import { getNotificationDisplay } from '@/lib/notificationDisplay';
 import { webAppUrl } from '@/lib/runtimeConfig';
 import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi } from '@/services/api';
+import type { AppNotificationItem } from '@/types';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import DesktopUpdatePanel from '@/components/desktop/DesktopUpdatePanel';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
+import StatusBadge from '@/components/ui/StatusBadge';
 import { topNavigation } from '@/navigation/dashboardNavigation';
 import {
   CalendarClock,
@@ -35,10 +38,14 @@ export default function Layout() {
   const [updatePanelOpen, setUpdatePanelOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
+  const seenNotificationIdsRef = useRef<Set<number>>(new Set());
+  const hasLoadedNotificationsRef = useRef(false);
   const isAdminView = hasAdminAccess(user);
   const isStrictAdminView = hasStrictAdminAccess(user);
   const isDesktopShell = Boolean(window.desktopTracker);
   const webAppBaseUrl = webAppUrl.replace(/\/+$/, '');
+  const notificationSettings = (user?.settings?.notifications || {}) as Record<string, boolean | undefined>;
+  const desktopPushEnabled = notificationSettings.desktop_push ?? true;
 
   const openWebDashboard = (path: string) => {
     const target = path.startsWith('/') ? path : `/${path}`;
@@ -47,6 +54,47 @@ export default function Layout() {
       nextUrl.searchParams.set('desktop_token', token);
     }
     window.open(nextUrl.toString(), '_blank', 'noopener,noreferrer');
+  };
+
+  const resolveNotificationRoute = (notification: AppNotificationItem) =>
+    String(notification.meta?.route || '/notifications').trim() || '/notifications';
+
+  const openNotification = async (notification: AppNotificationItem) => {
+    if (!notification.is_read) {
+      try {
+        await notificationApi.markRead(notification.id);
+      } catch {
+        // Keep navigation working even if mark-read fails.
+      }
+      setNotifications((prev) => prev.map((item) => item.id === notification.id ? { ...item, is_read: true } : item));
+      setUnreadNotifications((prev) => Math.max(0, prev - 1));
+    }
+
+    setNotificationsOpen(false);
+    setProfileOpen(false);
+    setMobileNavigationOpen(false);
+    navigate(resolveNotificationRoute(notification));
+  };
+
+  const showDesktopNotification = (notification: AppNotificationItem) => {
+    if (!desktopPushEnabled || typeof window === 'undefined' || !('Notification' in window)) {
+      return;
+    }
+
+    if (Notification.permission !== 'granted') {
+      return;
+    }
+
+    const systemNotification = new Notification(notification.title, {
+      body: notification.message,
+      tag: `app-notification-${notification.id}`,
+    });
+
+    systemNotification.onclick = () => {
+      window.focus();
+      void openNotification(notification);
+      systemNotification.close();
+    };
   };
 
   const primaryNavigation = useMemo(
@@ -183,7 +231,8 @@ export default function Layout() {
         ]);
 
         if (!active) return;
-        setNotifications(notificationResponse.data?.data || []);
+        const nextNotifications = (notificationResponse.data?.data || []) as AppNotificationItem[];
+        setNotifications(nextNotifications);
         setUnreadNotifications(Number(notificationResponse.data?.unread_count || 0));
         setUnreadChatMessages(Number(chatUnreadResponse.data?.unread_messages || 0));
         if (approvalResponses) {
@@ -193,6 +242,18 @@ export default function Layout() {
           setPendingApprovals(leaveCount + timeEditCount);
         } else {
           setPendingApprovals(0);
+        }
+
+        const nextIds = new Set<number>(nextNotifications.map((item) => Number(item.id)).filter((id) => id > 0));
+        if (!hasLoadedNotificationsRef.current) {
+          seenNotificationIdsRef.current = nextIds;
+          hasLoadedNotificationsRef.current = true;
+        } else {
+          nextNotifications
+            .filter((item) => !item.is_read)
+            .filter((item) => !seenNotificationIdsRef.current.has(Number(item.id)))
+            .forEach((item) => showDesktopNotification(item));
+          seenNotificationIdsRef.current = nextIds;
         }
       } catch {
         if (active) {
@@ -212,6 +273,16 @@ export default function Layout() {
       clearInterval(interval);
     };
   }, [isAdminView]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window) || !desktopPushEnabled) {
+      return;
+    }
+
+    if (Notification.permission === 'default') {
+      void Notification.requestPermission();
+    }
+  }, [desktopPushEnabled]);
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#eef5ff_45%,#f8fafc_100%)]">
@@ -281,16 +352,23 @@ export default function Layout() {
                     notifications.map((n) => (
                       <button
                         key={n.id}
-                        onClick={async () => {
-                          if (!n.is_read) {
-                            await notificationApi.markRead(n.id);
-                            setNotifications((prev) => prev.map((item) => item.id === n.id ? { ...item, is_read: true } : item));
-                            setUnreadNotifications((prev) => Math.max(0, prev - 1));
-                          }
+                        onClick={() => {
+                          void openNotification(n as AppNotificationItem);
                         }}
                         className={`w-full border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50/80 ${n.is_read ? '' : 'bg-sky-50/70'}`}
                       >
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] contrast-text-muted">{n.type?.replace('_', ' ')}</p>
+                        {(() => {
+                          const notificationDisplay = getNotificationDisplay(String(n.type || ''));
+
+                          return (
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-500">{notificationDisplay.icon}</span>
+                              <StatusBadge tone={notificationDisplay.tone} className="gap-1 tracking-[0.14em]">
+                                {notificationDisplay.label}
+                              </StatusBadge>
+                            </div>
+                          );
+                        })()}
                         <p className="mt-1 text-sm font-semibold contrast-text-primary">{n.title}</p>
                         <p className="mt-1 text-xs leading-6 contrast-text-secondary">{n.message}</p>
                       </button>

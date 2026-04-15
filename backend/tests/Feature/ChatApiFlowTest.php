@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AppNotification;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -68,6 +69,22 @@ class ChatApiFlowTest extends TestCase
             ->assertJsonPath('body', 'Daily sync complete')
             ->assertJsonPath('sender.id', $admin->id)
             ->json('id');
+
+        $this->assertDatabaseHas('app_notifications', [
+            'organization_id' => $primaryOrg->id,
+            'user_id' => $employee->id,
+            'type' => 'chat_direct_message',
+            'title' => 'New message from Admin User',
+        ]);
+
+        $directNotification = AppNotification::query()
+            ->where('organization_id', $primaryOrg->id)
+            ->where('user_id', $employee->id)
+            ->where('type', 'chat_direct_message')
+            ->latest('id')
+            ->first();
+        $this->assertNotNull($directNotification);
+        $this->assertSame("/chat?threadType=direct&threadId={$conversationId}", data_get($directNotification?->meta, 'route'));
 
         $this->patchJson("/api/chat/conversations/{$conversationId}/messages/{$directMessageId}", [
             'body' => 'Daily sync completed and shared',
@@ -162,6 +179,22 @@ class ChatApiFlowTest extends TestCase
         ], $adminHeaders)
             ->assertCreated()
             ->json('id');
+
+        $this->assertDatabaseHas('app_notifications', [
+            'organization_id' => $primaryOrg->id,
+            'user_id' => $employee->id,
+            'type' => 'chat_group_message',
+            'title' => 'Admin User sent a message in Ops Team',
+        ]);
+
+        $groupNotification = AppNotification::query()
+            ->where('organization_id', $primaryOrg->id)
+            ->where('user_id', $employee->id)
+            ->where('type', 'chat_group_message')
+            ->latest('id')
+            ->first();
+        $this->assertNotNull($groupNotification);
+        $this->assertSame("/chat?threadType=group&threadId={$groupId}", data_get($groupNotification?->meta, 'route'));
 
         $this->patchJson("/api/chat/groups/{$groupId}/messages/{$groupMessageId}", [
             'body' => 'Updated group announcement',

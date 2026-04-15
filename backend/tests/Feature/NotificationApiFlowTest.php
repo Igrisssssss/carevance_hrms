@@ -81,7 +81,8 @@ class NotificationApiFlowTest extends TestCase
         $listResponse = $this->getJson('/api/notifications?unread_only=1&type=announcement&q=Deployment', $employeeHeaders)
             ->assertOk()
             ->assertJsonPath('unread_count', 1)
-            ->assertJsonCount(1, 'data');
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.meta.route', '/notifications');
 
         $notificationId = (int) $listResponse->json('data.0.id');
         $this->assertGreaterThan(0, $notificationId);

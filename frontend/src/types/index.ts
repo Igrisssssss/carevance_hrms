@@ -855,12 +855,16 @@ export interface AppNotificationItem {
   message: string;
   is_read: boolean;
   created_at: string;
+  read_at?: string | null;
   sender?: {
     id: number;
     name: string;
     email: string;
   } | null;
-  meta?: Record<string, any> | null;
+  meta?: {
+    route?: string;
+    [key: string]: any;
+  } | null;
 }
 
 export interface UserProfile360 {

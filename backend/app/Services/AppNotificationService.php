@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AppNotification;
+use App\Models\User;
 use Illuminate\Support\Collection;
 
 class AppNotificationService
@@ -19,19 +20,34 @@ class AppNotificationService
         string $message,
         ?array $meta = null
     ): void {
-        $rows = $userIds
+        $normalizedUserIds = $userIds
             ->unique()
             ->filter(fn ($id) => (int) $id > 0)
-            ->map(function ($userId) use ($organizationId, $senderId, $type, $title, $message, $meta) {
+            ->values();
+
+        if ($normalizedUserIds->isEmpty()) {
+            return;
+        }
+
+        $users = User::query()
+            ->where('organization_id', $organizationId)
+            ->whereIn('id', $normalizedUserIds)
+            ->get(['id', 'settings']);
+
+        $rows = $users
+            ->filter(fn (User $user) => $this->shouldStoreNotification($user, $type))
+            ->map(function (User $user) use ($organizationId, $senderId, $type, $title, $message, $meta) {
+                $resolvedMeta = $this->resolveMeta($type, $meta);
+
                 return [
                     'organization_id' => $organizationId,
-                    'user_id' => (int) $userId,
+                    'user_id' => (int) $user->id,
                     'sender_id' => $senderId,
                     'type' => $type,
                     'title' => $title,
                     'message' => $message,
                     // insert() bypasses Eloquent casts, so JSON must be encoded explicitly.
-                    'meta' => $meta ? json_encode($meta) : null,
+                    'meta' => $resolvedMeta ? json_encode($resolvedMeta) : null,
                     'is_read' => false,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -43,5 +59,45 @@ class AppNotificationService
         if (!empty($rows)) {
             AppNotification::insert($rows);
         }
+    }
+
+    private function shouldStoreNotification(User $user, string $type): bool
+    {
+        $settings = is_array($user->settings) ? $user->settings : [];
+        $notificationSettings = is_array($settings['notifications'] ?? null)
+            ? $settings['notifications']
+            : [];
+
+        $inAppEnabled = (bool) ($notificationSettings['in_app'] ?? true);
+        if (! $inAppEnabled) {
+            return false;
+        }
+
+        return match ($type) {
+            'chat_direct_message', 'chat_group_message' => (bool) ($notificationSettings['chat_messages'] ?? true),
+            'news' => (bool) ($notificationSettings['weekly_summary'] ?? true),
+            'announcement' => (bool) ($notificationSettings['project_updates'] ?? true),
+            default => true,
+        };
+    }
+
+    private function resolveMeta(string $type, ?array $meta): ?array
+    {
+        $resolvedMeta = is_array($meta) ? $meta : [];
+
+        if (! isset($resolvedMeta['route'])) {
+            $resolvedMeta['route'] = match ($type) {
+                'chat_direct_message' => ! empty($resolvedMeta['conversation_id'])
+                    ? sprintf('/chat?threadType=direct&threadId=%d', (int) $resolvedMeta['conversation_id'])
+                    : '/chat',
+                'chat_group_message' => ! empty($resolvedMeta['group_id'])
+                    ? sprintf('/chat?threadType=group&threadId=%d', (int) $resolvedMeta['group_id'])
+                    : '/chat',
+                'salary_credited' => '/payroll',
+                default => '/notifications',
+            };
+        }
+
+        return $resolvedMeta === [] ? null : $resolvedMeta;
     }
 }

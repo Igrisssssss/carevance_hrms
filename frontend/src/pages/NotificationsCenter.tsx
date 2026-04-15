@@ -1,18 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { notificationApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { getNotificationDisplay } from '@/lib/notificationDisplay';
 import { hasAdminAccess } from '@/lib/permissions';
 import type { AppNotificationItem } from '@/types';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
+import StatusBadge from '@/components/ui/StatusBadge';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
 import { buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
 import { BellRing, Send } from 'lucide-react';
 
+const HIDDEN_NOTIFICATION_TYPES = new Set(['chat_direct_message', 'chat_group_message']);
+
 export default function NotificationsCenter() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = hasAdminAccess(user);
   const [notifications, setNotifications] = useState<AppNotificationItem[]>([]);
@@ -40,7 +46,9 @@ export default function NotificationsCenter() {
         isAdmin ? userApi.getAll({ period: 'all' }) : Promise.resolve({ data: [] }),
       ]);
 
-      let nextNotifications = notificationResponse.data?.data || [];
+      let nextNotifications = (notificationResponse.data?.data || []).filter(
+        (item: AppNotificationItem) => !HIDDEN_NOTIFICATION_TYPES.has(String(item.type || '').trim())
+      );
       if (statusFilter === 'read') {
         nextNotifications = nextNotifications.filter((item) => item.is_read);
       }
@@ -91,6 +99,11 @@ export default function NotificationsCenter() {
     }
   };
 
+  const openNotification = async (item: AppNotificationItem) => {
+    await markRead(item.id);
+    navigate(String(item.meta?.route || '/notifications').trim() || '/notifications');
+  };
+
   const markAllRead = async () => {
     try {
       await notificationApi.markAllRead();
@@ -129,7 +142,7 @@ export default function NotificationsCenter() {
       <PageHeader
         eyebrow="Communication"
         title="Notifications Center"
-        description="Track announcements, salary alerts, and internal updates with proper read state and search."
+        description="Track salary alerts, announcements, and internal updates with proper read state and search."
         actions={
           <div className="flex gap-2">
             <Button onClick={markAllRead} variant="secondary">Mark all read</Button>
@@ -278,15 +291,22 @@ export default function NotificationsCenter() {
             <SurfaceCard key={item.id} className={`p-5 ${item.is_read ? '' : 'border-sky-200 bg-sky-50/40'}`}>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                      {item.type.replace('_', ' ')}
-                    </span>
-                    {!item.is_read ? (
-                      <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700">Unread</span>
-                    ) : null}
-                    <span className="text-xs text-slate-500">{new Date(item.created_at).toLocaleString()}</span>
-                  </div>
+                  {(() => {
+                    const notificationDisplay = getNotificationDisplay(item.type);
+
+                    return (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-slate-500">{notificationDisplay.icon}</span>
+                        <StatusBadge tone={notificationDisplay.tone} className="gap-1 tracking-[0.14em]">
+                          {notificationDisplay.label}
+                        </StatusBadge>
+                        {!item.is_read ? (
+                          <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700">Unread</span>
+                        ) : null}
+                        <span className="text-xs text-slate-500">{new Date(item.created_at).toLocaleString()}</span>
+                      </div>
+                    );
+                  })()}
                   <h2 className="text-lg font-semibold text-slate-950">{item.title}</h2>
                   <p className="text-sm text-slate-600">{item.message}</p>
                   {item.sender ? (
@@ -294,11 +314,16 @@ export default function NotificationsCenter() {
                   ) : null}
                 </div>
 
-                {!item.is_read ? (
-                  <Button size="sm" variant="secondary" onClick={() => markRead(item.id)}>
-                    Mark read
+                <div className="flex gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => openNotification(item)}>
+                    Open
                   </Button>
-                ) : null}
+                  {!item.is_read ? (
+                    <Button size="sm" variant="secondary" onClick={() => markRead(item.id)}>
+                      Mark read
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             </SurfaceCard>
           ))}

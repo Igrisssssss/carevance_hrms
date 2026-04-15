@@ -1036,6 +1036,9 @@ export const settingsApi = {
     timezone?: string;
     notifications?: {
       email?: boolean;
+      in_app?: boolean;
+      desktop_push?: boolean;
+      chat_messages?: boolean;
       weekly_summary?: boolean;
       project_updates?: boolean;
       task_assignments?: boolean;

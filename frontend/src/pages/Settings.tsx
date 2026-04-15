@@ -46,6 +46,9 @@ export default function SettingsPage() {
   const [orgSlug, setOrgSlug] = useState(organization?.slug || '');
 
   const [notifyEmail, setNotifyEmail] = useState(true);
+  const [notifyInApp, setNotifyInApp] = useState(true);
+  const [notifyDesktopPush, setNotifyDesktopPush] = useState(true);
+  const [notifyChatMessages, setNotifyChatMessages] = useState(true);
   const [notifyWeekly, setNotifyWeekly] = useState(true);
   const [notifyProject, setNotifyProject] = useState(true);
   const [notifyTask, setNotifyTask] = useState(true);
@@ -110,6 +113,9 @@ export default function SettingsPage() {
           setOrgSlug(fetchedOrg?.slug || '');
           setTimezone(settings.timezone || 'UTC');
           setNotifyEmail(notifications.email ?? true);
+          setNotifyInApp(notifications.in_app ?? true);
+          setNotifyDesktopPush(notifications.desktop_push ?? true);
+          setNotifyChatMessages(notifications.chat_messages ?? true);
           setNotifyWeekly(notifications.weekly_summary ?? true);
           setNotifyProject(notifications.project_updates ?? true);
           setNotifyTask(notifications.task_assignments ?? true);
@@ -191,11 +197,33 @@ export default function SettingsPage() {
         timezone,
         notifications: {
           email: notifyEmail,
+          in_app: notifyInApp,
+          desktop_push: notifyDesktopPush,
+          chat_messages: notifyChatMessages,
           weekly_summary: notifyWeekly,
           project_updates: notifyProject,
           task_assignments: notifyTask,
         },
       });
+      if (user) {
+        updateUser({
+          ...user,
+          settings: {
+            ...(user.settings || {}),
+            timezone,
+            notifications: {
+              ...((user.settings as Record<string, any> | undefined)?.notifications || {}),
+              email: notifyEmail,
+              in_app: notifyInApp,
+              desktop_push: notifyDesktopPush,
+              chat_messages: notifyChatMessages,
+              weekly_summary: notifyWeekly,
+              project_updates: notifyProject,
+              task_assignments: notifyTask,
+            },
+          },
+        });
+      }
       setMessage((res.data as any)?.message || 'Preferences updated');
     } catch (e: any) {
       setError(e?.response?.data?.message || 'Failed to update preferences');
@@ -384,6 +412,9 @@ export default function SettingsPage() {
               </div>
               {[
                 { label: 'Email notifications', value: notifyEmail, set: setNotifyEmail },
+                { label: 'In-app notifications', value: notifyInApp, set: setNotifyInApp },
+                { label: 'Desktop popup notifications', value: notifyDesktopPush, set: setNotifyDesktopPush },
+                { label: 'Chat message notifications', value: notifyChatMessages, set: setNotifyChatMessages },
                 { label: 'Weekly summary', value: notifyWeekly, set: setNotifyWeekly },
                 { label: 'Project updates', value: notifyProject, set: setNotifyProject },
                 { label: 'Task assignments', value: notifyTask, set: setNotifyTask },
