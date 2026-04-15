@@ -1,6 +1,6 @@
 {
   "name": "carevance-desktop",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "CareVance Tracker desktop timer and activity tracker",
   "private": true,
   "author": "CareVance",
@@ -9,8 +9,8 @@
     "prepare:app-config": "node scripts/write-app-config.cjs",
     "start": "npm run prepare:app-config && node scripts/run-electron.cjs .",
     "pack": "npm run prepare:app-config && electron-builder --dir",
-    "dist:win": "npm run prepare:app-config && electron-builder --win nsis --config.win.artifactName=\"${productName}-Setup-${version}-${arch}.${ext}\"",
-    "dist:portable": "npm run prepare:app-config && electron-builder --win portable --config.win.artifactName=\"${productName}-Portable-${version}-${arch}.${ext}\""
+    "dist:win": "npm run prepare:app-config && electron-builder --win nsis",
+    "dist:portable": "npm run prepare:app-config && electron-builder --win portable"
   },
   "build": {
     "appId": "com.carevance.tracker",
@@ -42,7 +42,7 @@
         "nsis"
       ],
       "icon": "assets/icon.ico",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "CareVance-Tracker-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

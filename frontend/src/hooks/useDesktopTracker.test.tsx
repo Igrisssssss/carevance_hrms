@@ -484,4 +484,39 @@ describe('useDesktopTracker', () => {
       name: 'New Tab',
     }));
   });
+
+  it('stops reusing the last website context after the generic browser fallback window expires', async () => {
+    mocks.getActiveWindowContextMock
+      .mockResolvedValueOnce({
+        app: 'Google Chrome',
+        title: 'Instagram - Google Chrome',
+        url: null,
+      })
+      .mockResolvedValue({
+        app: 'Google Chrome',
+        title: 'New Tab - Google Chrome',
+        url: null,
+      });
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(40 * 1000);
+    });
+
+    const trackedDurations = mocks.updateActivityMock.mock.calls
+      .map(([, payload]) => Number(payload?.duration ?? 0))
+      .filter((duration) => Number.isFinite(duration));
+
+    expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'url',
+      name: 'Instagram',
+      duration: 5,
+    }));
+    expect(Math.max(...trackedDurations)).toBe(30);
+    expect(trackedDurations).not.toContain(40);
+    expect(mocks.createActivityMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      name: 'New Tab',
+    }));
+  });
 });

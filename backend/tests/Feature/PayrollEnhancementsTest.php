@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Organization;
+use App\Models\Payroll;
 use App\Models\PayrollAdjustment;
 use App\Models\PayrollProfile;
 use App\Models\PayrollStructure;
@@ -182,6 +183,52 @@ class PayrollEnhancementsTest extends TestCase
             ->postJson("/api/payroll/workspace/runs/{$runId}/status", ['status' => 'finance_approved'])
             ->assertOk()
             ->assertJsonPath('status', 'finance_approved');
+    }
+
+    public function test_payroll_workspace_reports_load_successfully(): void
+    {
+        [$org, $admin, $employee] = $this->baseSetup();
+
+        PayrollProfile::query()->create([
+            'organization_id' => $org->id,
+            'user_id' => $employee->id,
+            'payroll_code' => 'EMP-REPORT-001',
+            'pay_group' => 'Monthly',
+            'payout_method' => 'mock',
+            'tax_identifier' => 'ABCDE1234F',
+            'payroll_eligible' => true,
+            'reimbursements_eligible' => true,
+            'is_active' => true,
+        ]);
+
+        Payroll::query()->create([
+            'organization_id' => $org->id,
+            'user_id' => $employee->id,
+            'payroll_month' => now()->format('Y-m'),
+            'basic_salary' => 25000,
+            'allowances' => 2500,
+            'deductions' => 500,
+            'bonus' => 1000,
+            'tax' => 1500,
+            'net_salary' => 26500,
+            'payment_status' => 'pending',
+            'payroll_status' => 'draft',
+        ]);
+
+        $this->actingAs($admin)
+            ->getJson('/api/payroll/workspace/reports?payroll_month='.now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonStructure([
+                'monthly_summary',
+                'monthly_trend',
+                'component_totals',
+                'employee_payroll_sheet',
+                'department_payroll_cost',
+                'deductions_report',
+                'tax_report',
+                'compliance_report',
+                'payout_status_report',
+            ]);
     }
 
     private function baseSetup(): array

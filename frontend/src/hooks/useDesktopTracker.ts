@@ -507,24 +507,27 @@ export const useDesktopTracker = () => {
             ? lastReliableTrackingContextRef.current
             : null;
         const compatibleReliableTrackingContext = !hasReliableDesktopContext
-          && lastReliableTrackingContextRef.current
+          && recentReliableTrackingContext
           && rawAppFamily
-          && lastReliableTrackingContextRef.current.appFamily
-          && rawAppFamily === lastReliableTrackingContextRef.current.appFamily
+          && recentReliableTrackingContext.appFamily
+          && rawAppFamily === recentReliableTrackingContext.appFamily
           && (
             isGenericBrowserContext(rawContextName, rawActivityType)
-            || (!rawContextName && rawActivityType === lastReliableTrackingContextRef.current.activityType)
+            || (!rawContextName && rawActivityType === recentReliableTrackingContext.activityType)
           )
-            ? lastReliableTrackingContextRef.current
+            ? recentReliableTrackingContext
             : null;
-        const fallbackTrackingContext = recentReliableTrackingContext
-          || compatibleReliableTrackingContext
-          || (currentTrackedSegment?.contextName && currentTrackedSegment.activityType
+        const currentSegmentFallbackContext = recentReliableTrackingContext
+          && currentTrackedSegment?.contextName
+          && currentTrackedSegment.activityType
             ? {
                 contextName: currentTrackedSegment.contextName,
                 activityType: currentTrackedSegment.activityType,
               }
-            : null);
+            : null;
+        const fallbackTrackingContext = recentReliableTrackingContext
+          || compatibleReliableTrackingContext
+          || currentSegmentFallbackContext;
         const resolvedTrackingContext = hasReliableDesktopContext
           ? {
               contextName: rawContextName,
