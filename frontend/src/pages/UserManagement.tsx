@@ -10,6 +10,7 @@ import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import Button from '@/components/ui/Button';
+import { SelectInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 
 type OrgUser = {
@@ -382,19 +383,19 @@ export default function UserManagement() {
       <div className="bg-white rounded-xl border border-gray-200 p-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Country</label>
-          <select value={country} onChange={(e) => setCountry(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <SelectInput value={country} onChange={(e) => setCountry(e.target.value)} className="border-gray-300 shadow-none">
             {Object.keys(COUNTRY_TIMEZONES).map((countryName) => (
               <option key={countryName} value={countryName}>{countryName}</option>
             ))}
-          </select>
+          </SelectInput>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Timezone</label>
-          <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <SelectInput value={timezone} onChange={(e) => setTimezone(e.target.value)} className="border-gray-300 shadow-none">
             {(COUNTRY_TIMEZONES[country] || []).map((tz) => (
               <option key={tz} value={tz}>{tz}</option>
             ))}
-          </select>
+          </SelectInput>
         </div>
         <DateRangeFields
           datePreset={datePreset}
@@ -642,11 +643,11 @@ export default function UserManagement() {
           <h2 className="font-semibold text-gray-900">{userForm.id ? 'Edit User' : 'Add User'}</h2>
           <input value={userForm.name} onChange={(e) => setUserForm((p) => ({ ...p, name: e.target.value }))} placeholder="Name" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
           <input value={userForm.email} onChange={(e) => setUserForm((p) => ({ ...p, email: e.target.value }))} placeholder="Email" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-          <select value={userForm.role} onChange={(e) => setUserForm((p) => ({ ...p, role: e.target.value as OrgUser['role'] }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <SelectInput value={userForm.role} onChange={(e) => setUserForm((p) => ({ ...p, role: e.target.value as OrgUser['role'] }))} className="border-gray-300 shadow-none">
             <option value="employee">Employee</option>
             <option value="manager">Manager</option>
             <option value="admin">Admin</option>
-          </select>
+          </SelectInput>
           {!userForm.id ? (
             <input type="password" value={userForm.password} onChange={(e) => setUserForm((p) => ({ ...p, password: e.target.value }))} placeholder="Password (optional)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
           ) : null}

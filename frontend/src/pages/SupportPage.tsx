@@ -4,6 +4,7 @@ import { AlertCircle, ArrowRight, LifeBuoy, Mail, MessageSquareWarning } from 'l
 import Navbar from '@/components/landing/Navbar';
 import Footer from '@/components/landing/Footer';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
+import { SelectInput } from '@/components/ui/FormField';
 import PublicPageTransition from '@/components/public/PublicPageTransition';
 import { useAuth } from '@/contexts/AuthContext';
 import { supportApi } from '@/services/api';
@@ -211,18 +212,18 @@ export default function SupportPage() {
                     <label htmlFor="issue-category" className="mb-2 block text-sm font-semibold text-white">
                       Issue category
                     </label>
-                    <select
+                    <SelectInput
                       id="issue-category"
                       value={issueCategory}
                       onChange={(event) => setIssueCategory(event.target.value as (typeof issueCategories)[number]['value'])}
-                      className="block w-full rounded-[22px] border border-white/10 bg-white px-4 py-3.5 text-sm text-slate-950 outline-none transition focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
+                      className="block w-full border-white/10 bg-white px-4 py-3.5 text-slate-950 shadow-none focus:border-cyan-200/50 focus:ring-cyan-200/20"
                     >
                       {issueCategories.map((category) => (
-                        <option key={category.value} value={category.value} className="text-slate-950">
-                          {category.label}
-                        </option>
-                      ))}
-                    </select>
+                          <option key={category.value} value={category.value}>
+                            {category.label}
+                          </option>
+                        ))}
+                      </SelectInput>
                   </div>
 
                   <div>

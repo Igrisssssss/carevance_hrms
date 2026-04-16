@@ -14,6 +14,7 @@ import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import { SelectInput } from '@/components/ui/FormField';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import { BarChart3, Calendar, Clock, Download, TrendingUp, Users } from 'lucide-react';
 
@@ -322,14 +323,14 @@ export default function Reports() {
             inputClassName="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2.5 text-sm shadow-none"
           />
           {isAdmin ? (
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Report Type</label>
-              <select value={filterMode} onChange={(e) => setFilterMode(e.target.value as 'team' | 'user' | 'group')} className="w-full rounded-2xl border border-slate-200 bg-white/80 px-3 py-2.5 text-sm">
-                <option value="team">Team Report</option>
-                <option value="user">User Report</option>
-                <option value="group">Group Report</option>
-              </select>
-            </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Report Type</label>
+                <SelectInput value={filterMode} onChange={(e) => setFilterMode(e.target.value as 'team' | 'user' | 'group')}>
+                  <option value="team">Team Report</option>
+                  <option value="user">User Report</option>
+                  <option value="group">Group Report</option>
+                </SelectInput>
+              </div>
           ) : (
             <div className="flex items-end">
               <div className="text-sm text-gray-500">Employee view shows your own data for {datePreset === 'custom' ? 'the custom range' : getDateRangePresetLabel(datePreset).toLowerCase()}.</div>
