@@ -47,6 +47,7 @@ export default function Chat() {
   const messageContextMenuRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const shouldStickToBottomRef = useRef(true);
+  const messagesRef = useRef<ChatFeedMessage[]>([]);
 
   const selectedConversation = useMemo(
     () => (selectedThread?.type === 'direct' ? conversations.find((c) => c.id === selectedThread.id) || null : null),
@@ -174,6 +175,9 @@ export default function Chat() {
   useEffect(() => {
     const threadType = searchParams.get('threadType');
     const threadId = Number(searchParams.get('threadId') || 0);
+    const requestedThread = threadType === 'direct' || threadType === 'group'
+      ? { type: threadType, id: threadId }
+      : null;
 
     if (threadType === 'direct' && threadId > 0 && conversations.some((conversation) => conversation.id === threadId)) {
       if (selectedThread?.type !== 'direct' || selectedThread.id !== threadId) {
@@ -195,6 +199,21 @@ export default function Chat() {
         : groups.some((group) => group.id === selectedThread.id);
 
       if (exists) {
+        return;
+      }
+
+      // Keep the current selection while thread data is catching up instead of
+      // snapping back to the first conversation and causing the UI to flicker.
+      if (
+        requestedThread &&
+        requestedThread.id > 0 &&
+        requestedThread.type === selectedThread.type &&
+        requestedThread.id === selectedThread.id
+      ) {
+        return;
+      }
+
+      if (threadId <= 0) {
         return;
       }
     }
@@ -229,6 +248,10 @@ export default function Chat() {
   }, [searchParams, selectedThread, setSearchParams]);
 
   useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
     if (!selectedThread) {
       setMessages([]);
       setTypingUsers([]);
@@ -247,13 +270,13 @@ export default function Chat() {
     loadTyping(selectedThread);
 
     const interval = setInterval(() => {
-      const last = messages[messages.length - 1];
+      const last = messagesRef.current[messagesRef.current.length - 1];
       loadMessages(selectedThread, last?.id);
       loadTyping(selectedThread);
     }, 2500);
 
     return () => clearInterval(interval);
-  }, [selectedThread, messages.length]);
+  }, [selectedThread]);
 
   useEffect(() => {
     return () => {
