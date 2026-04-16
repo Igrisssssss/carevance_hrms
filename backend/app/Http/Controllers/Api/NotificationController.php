@@ -27,10 +27,16 @@ class NotificationController extends Controller
         }
 
         $limit = (int) ($request->limit ?: 30);
+        $excludeTypes = collect((array) $request->input('exclude_types', []))
+            ->map(fn ($type) => trim((string) $type))
+            ->filter()
+            ->unique()
+            ->values();
         $query = AppNotification::with('sender:id,name,email')
             ->where('organization_id', $currentUser->organization_id)
             ->where('user_id', $currentUser->id)
             ->when($request->filled('type'), fn ($builder) => $builder->where('type', (string) $request->type))
+            ->when($excludeTypes->isNotEmpty(), fn ($builder) => $builder->whereNotIn('type', $excludeTypes->all()))
             ->when($request->boolean('unread_only'), fn ($builder) => $builder->where('is_read', false))
             ->when($request->filled('q'), function ($builder) use ($request) {
                 $term = trim((string) $request->q);
@@ -109,9 +115,16 @@ class NotificationController extends Controller
             return response()->json(['message' => 'Organization is required.'], 422);
         }
 
+        $excludeTypes = collect((array) $request->input('exclude_types', []))
+            ->map(fn ($type) => trim((string) $type))
+            ->filter()
+            ->unique()
+            ->values();
+
         AppNotification::where('organization_id', $currentUser->organization_id)
             ->where('user_id', $currentUser->id)
             ->where('is_read', false)
+            ->when($excludeTypes->isNotEmpty(), fn ($builder) => $builder->whereNotIn('type', $excludeTypes->all()))
             ->update([
                 'is_read' => true,
                 'read_at' => now(),

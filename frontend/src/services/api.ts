@@ -950,7 +950,7 @@ export const payrollWorkspaceApi = {
 };
 
 export const notificationApi = {
-  list: (params?: { limit?: number; type?: string; q?: string; unread_only?: boolean }) =>
+  list: (params?: { limit?: number; type?: string; exclude_types?: string[]; q?: string; unread_only?: boolean }) =>
     api.get<{
       data: AppNotificationItem[];
       unread_count: number;
@@ -962,8 +962,8 @@ export const notificationApi = {
   markRead: (id: number) =>
     api.post(`/notifications/${id}/read`),
 
-  markAllRead: () =>
-    api.post('/notifications/read-all'),
+  markAllRead: (data?: { exclude_types?: string[] }) =>
+    api.post('/notifications/read-all', data),
 };
 
 export const reportGroupApi = {

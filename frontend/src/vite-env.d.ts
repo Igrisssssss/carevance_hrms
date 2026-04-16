@@ -21,12 +21,21 @@ interface DesktopTrackerBridge {
     url: string | null;
   } | null>;
   revealWindow: () => Promise<boolean>;
+  showNotification?: (payload: {
+    id?: number;
+    title: string;
+    body?: string;
+    route?: string;
+    type?: string;
+  }) => Promise<boolean>;
   getUpdateState?: () => Promise<DesktopUpdateState>;
   checkForUpdates?: () => Promise<DesktopUpdateState>;
   downloadUpdate?: () => Promise<DesktopUpdateState>;
   installUpdate?: () => Promise<boolean>;
-  onUpdateState?: (callback: (state: DesktopUpdateState) => void) => void;
+  onUpdateState?: (callback: (state: DesktopUpdateState) => void) => (() => void) | void;
   clearUpdateStateListeners?: () => void;
+  onNotificationClicked?: (callback: (payload: { id?: number; route?: string; type?: string }) => void) => (() => void) | void;
+  clearNotificationClickListeners?: () => void;
   onPrepareForClose?: (callback: () => void | Promise<void>) => void;
   clearPrepareForCloseListeners?: () => void;
   confirmCloseReady?: () => Promise<boolean>;

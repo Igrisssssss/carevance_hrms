@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { useAuth } from '@/contexts/AuthContext';
 import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue } from '@/lib/searchSuggestions';
@@ -21,6 +22,7 @@ type MessageContextMenuState = {
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮'];
 
 export default function Chat() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [groups, setGroups] = useState<ChatGroup[]>([]);
@@ -170,6 +172,23 @@ export default function Chat() {
   }, [user?.id]);
 
   useEffect(() => {
+    const threadType = searchParams.get('threadType');
+    const threadId = Number(searchParams.get('threadId') || 0);
+
+    if (threadType === 'direct' && threadId > 0 && conversations.some((conversation) => conversation.id === threadId)) {
+      if (selectedThread?.type !== 'direct' || selectedThread.id !== threadId) {
+        setSelectedThread({ type: 'direct', id: threadId });
+      }
+      return;
+    }
+
+    if (threadType === 'group' && threadId > 0 && groups.some((group) => group.id === threadId)) {
+      if (selectedThread?.type !== 'group' || selectedThread.id !== threadId) {
+        setSelectedThread({ type: 'group', id: threadId });
+      }
+      return;
+    }
+
     if (selectedThread) {
       const exists = selectedThread.type === 'direct'
         ? conversations.some((conversation) => conversation.id === selectedThread.id)
@@ -191,7 +210,23 @@ export default function Chat() {
     }
 
     setSelectedThread(null);
-  }, [conversations, groups, selectedThread]);
+  }, [conversations, groups, searchParams, selectedThread]);
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (!selectedThread) {
+      nextParams.delete('threadType');
+      nextParams.delete('threadId');
+    } else {
+      nextParams.set('threadType', selectedThread.type);
+      nextParams.set('threadId', String(selectedThread.id));
+    }
+
+    if (nextParams.toString() !== searchParams.toString()) {
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [searchParams, selectedThread, setSearchParams]);
 
   useEffect(() => {
     if (!selectedThread) {

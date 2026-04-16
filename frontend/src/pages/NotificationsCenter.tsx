@@ -12,6 +12,8 @@ import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/
 import { buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
 import { BellRing, Send } from 'lucide-react';
 
+const CHAT_NOTIFICATION_TYPES = ['chat_direct_message', 'chat_group_message'];
+
 export default function NotificationsCenter() {
   const { user } = useAuth();
   const isAdmin = hasAdminAccess(user);
@@ -35,6 +37,7 @@ export default function NotificationsCenter() {
         notificationApi.list({
           limit: 100,
           type: typeFilter || undefined,
+          exclude_types: CHAT_NOTIFICATION_TYPES,
           unread_only: statusFilter === 'unread' ? true : undefined,
         }),
         isAdmin ? userApi.getAll({ period: 'all' }) : Promise.resolve({ data: [] }),
@@ -93,7 +96,7 @@ export default function NotificationsCenter() {
 
   const markAllRead = async () => {
     try {
-      await notificationApi.markAllRead();
+      await notificationApi.markAllRead({ exclude_types: CHAT_NOTIFICATION_TYPES });
       setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
       setFeedback({ tone: 'success', message: 'All notifications marked as read.' });
     } catch (error: any) {

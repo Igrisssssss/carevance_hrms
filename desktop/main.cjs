@@ -1,4 +1,4 @@
-const { app, BrowserWindow, desktopCapturer, ipcMain, powerMonitor, screen, shell } = require('electron');
+const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { NsisUpdater } = require('electron-updater');
@@ -624,6 +624,38 @@ ipcMain.handle('desktop:get-active-window-context', async () => {
 
 ipcMain.handle('desktop:reveal-window', async () => {
   return revealMainWindow();
+});
+
+ipcMain.handle('desktop:show-notification', async (_event, payload = {}) => {
+  if (!Notification.isSupported()) {
+    return false;
+  }
+
+  const title = String(payload.title || 'CareVance').trim() || 'CareVance';
+  const body = String(payload.body || '').trim();
+  const id = Number(payload.id || 0);
+  const route = String(payload.route || '').trim();
+  const type = String(payload.type || '').trim();
+
+  const notification = new Notification({
+    title,
+    body,
+    silent: false,
+  });
+
+  notification.on('click', () => {
+    revealMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('desktop:notification-clicked', {
+        id,
+        route,
+        type,
+      });
+    }
+  });
+
+  notification.show();
+  return true;
 });
 
 ipcMain.handle('desktop:confirm-close-ready', async () => {

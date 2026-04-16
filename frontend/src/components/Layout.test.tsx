@@ -44,6 +44,7 @@ describe('Layout navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete window.desktopTracker;
+    window.localStorage.clear();
     apiMocks.getUnreadSummary.mockResolvedValue({ data: { unread_messages: 0, unread_conversations: 0, unread_senders: 0 } });
     apiMocks.leaveList.mockResolvedValue({ data: { data: [] } });
     apiMocks.attendanceTimeEditList.mockResolvedValue({ data: { data: [] } });
@@ -189,6 +190,59 @@ describe('Layout navigation', () => {
 
     expect(await screen.findByText(/desktop updates/i)).toBeInTheDocument();
     expect(screen.getByText(/carevance tracker v1.0.2/i)).toBeInTheDocument();
+  });
+
+  it('shows the desktop update dot on the profile name until updates are opened', async () => {
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+      getUpdateState: vi.fn().mockResolvedValue({
+        enabled: true,
+        status: 'available',
+        currentVersion: '1.0.1',
+        message: 'Version 1.0.2 is available.',
+        releaseNotes: 'Update polish',
+        releaseDate: '2026-04-15T00:00:00.000Z',
+        availableVersion: '1.0.2',
+        downloadedVersion: null,
+        progressPercent: 0,
+      }),
+      checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(),
+      installUpdate: vi.fn(),
+      onUpdateState: vi.fn(),
+      clearUpdateStateListeners: vi.fn(),
+    };
+
+    authState.value = {
+      user: {
+        id: 2,
+        name: 'Employee',
+        email: 'employee@example.com',
+        role: 'employee',
+        organization_id: 1,
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+      logout: vi.fn(),
+      token: 'test-token',
+    };
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    const profileButton = await screen.findByRole('button', { name: /desktop update available/i });
+    fireEvent.click(profileButton);
+    fireEvent.click(await screen.findByRole('button', { name: /^updates$/i }));
+
+    expect(await screen.findByText(/desktop updates/i)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^employee$/i })).toBeInTheDocument();
+    });
+    expect(window.localStorage.getItem('carevance.desktopUpdate.seen.2')).toBe('1.0.2:2026-04-15T00:00:00.000Z');
   });
 
   it('shows a direct payroll navigation item in desktop shell for admins only', async () => {

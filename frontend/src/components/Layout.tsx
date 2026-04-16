@@ -1,9 +1,11 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
+import { useDesktopUpdater } from '@/hooks/useDesktopUpdater';
 import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { webAppUrl } from '@/lib/runtimeConfig';
 import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi } from '@/services/api';
+import type { AppNotificationItem } from '@/types';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import DesktopUpdatePanel from '@/components/desktop/DesktopUpdatePanel';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
@@ -21,24 +23,49 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+const CHAT_NOTIFICATION_TYPES = ['chat_direct_message', 'chat_group_message'];
+
+const isChatNotificationType = (type: string | null | undefined) =>
+  CHAT_NOTIFICATION_TYPES.includes(String(type || '').trim());
+
 export default function Layout() {
   const { user, logout, token } = useAuth();
   useDesktopTracker();
   const navigate = useNavigate();
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<AppNotificationItem[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [unreadChatMessages, setUnreadChatMessages] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [updatePanelOpen, setUpdatePanelOpen] = useState(false);
+  const [seenDesktopUpdateKey, setSeenDesktopUpdateKey] = useState<string | null>(null);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
+  const seenNotificationIdsRef = useRef<Set<number>>(new Set());
+  const desktopNotificationByIdRef = useRef<Map<number, AppNotificationItem>>(new Map());
+  const hasLoadedNotificationsRef = useRef(false);
   const isAdminView = hasAdminAccess(user);
   const isStrictAdminView = hasStrictAdminAccess(user);
   const isDesktopShell = Boolean(window.desktopTracker);
   const webAppBaseUrl = webAppUrl.replace(/\/+$/, '');
+  const notificationSettings = (user?.settings?.notifications || {}) as Record<string, boolean | undefined>;
+  const desktopPushEnabled = notificationSettings.desktop_push ?? true;
+  const { state: desktopUpdateState } = useDesktopUpdater();
+  const desktopUpdateKey = useMemo(() => {
+    const updateVersion = desktopUpdateState.downloadedVersion || desktopUpdateState.availableVersion;
+    if (!updateVersion || !['available', 'downloading', 'downloaded'].includes(desktopUpdateState.status)) {
+      return '';
+    }
+
+    return [updateVersion, desktopUpdateState.releaseDate || 'no-date'].join(':');
+  }, [desktopUpdateState.availableVersion, desktopUpdateState.downloadedVersion, desktopUpdateState.releaseDate, desktopUpdateState.status]);
+  const desktopUpdateSeenStorageKey = useMemo(
+    () => (user?.id ? `carevance.desktopUpdate.seen.${user.id}` : ''),
+    [user?.id]
+  );
+  const hasUnreadDesktopUpdate = Boolean(isDesktopShell && desktopUpdateKey && seenDesktopUpdateKey !== desktopUpdateKey);
 
   const openWebDashboard = (path: string) => {
     const target = path.startsWith('/') ? path : `/${path}`;
@@ -47,6 +74,68 @@ export default function Layout() {
       nextUrl.searchParams.set('desktop_token', token);
     }
     window.open(nextUrl.toString(), '_blank', 'noopener,noreferrer');
+  };
+
+  const resolveNotificationRoute = (notification: AppNotificationItem) =>
+    String(notification.meta?.route || '/notifications').trim() || '/notifications';
+
+  const openNotification = async (notification: AppNotificationItem) => {
+    if (!notification.is_read) {
+      try {
+        await notificationApi.markRead(notification.id);
+      } catch {
+        // Keep navigation working even if mark-read fails.
+      }
+
+      setNotifications((prev) => prev.map((item) => item.id === notification.id ? { ...item, is_read: true } : item));
+      if (isChatNotificationType(notification.type)) {
+        setUnreadChatMessages((prev) => Math.max(0, prev - 1));
+      } else {
+        setUnreadNotifications((prev) => Math.max(0, prev - 1));
+      }
+    }
+
+    setNotificationsOpen(false);
+    setProfileOpen(false);
+    setMobileNavigationOpen(false);
+    navigate(resolveNotificationRoute(notification));
+  };
+
+  const showDesktopNotification = (notification: AppNotificationItem) => {
+    if (!desktopPushEnabled || typeof window === 'undefined') {
+      return;
+    }
+
+    const notificationId = Number(notification.id);
+    if (Number.isFinite(notificationId) && notificationId > 0) {
+      desktopNotificationByIdRef.current.set(notificationId, notification);
+    }
+
+    if (window.desktopTracker?.showNotification) {
+      void window.desktopTracker.showNotification({
+        id: notificationId,
+        title: notification.title,
+        body: notification.message,
+        route: resolveNotificationRoute(notification),
+        type: notification.type,
+      });
+      return;
+    }
+
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      return;
+    }
+
+    const systemNotification = new Notification(notification.title, {
+      body: notification.message,
+      tag: `app-notification-${notification.id}`,
+    });
+
+    systemNotification.onclick = () => {
+      window.focus();
+      void openNotification(notification);
+      systemNotification.close();
+    };
   };
 
   const primaryNavigation = useMemo(
@@ -141,6 +230,55 @@ export default function Layout() {
     navigate('/add-user');
   };
 
+  const markDesktopUpdateSeen = () => {
+    if (!desktopUpdateKey) {
+      return;
+    }
+
+    setSeenDesktopUpdateKey(desktopUpdateKey);
+    if (desktopUpdateSeenStorageKey) {
+      window.localStorage.setItem(desktopUpdateSeenStorageKey, desktopUpdateKey);
+    }
+  };
+
+  useEffect(() => {
+    if (!desktopUpdateSeenStorageKey) {
+      setSeenDesktopUpdateKey(null);
+      return;
+    }
+
+    setSeenDesktopUpdateKey(window.localStorage.getItem(desktopUpdateSeenStorageKey));
+  }, [desktopUpdateSeenStorageKey]);
+
+  useEffect(() => {
+    if (!window.desktopTracker?.onNotificationClicked) {
+      return;
+    }
+
+    const unsubscribe = window.desktopTracker.onNotificationClicked((payload) => {
+      const notificationId = Number(payload?.id || 0);
+      const notification = desktopNotificationByIdRef.current.get(notificationId);
+      if (notification) {
+        void openNotification(notification);
+        return;
+      }
+
+      const route = String(payload?.route || '').trim();
+      if (route) {
+        setNotificationsOpen(false);
+        setProfileOpen(false);
+        setMobileNavigationOpen(false);
+        navigate(route);
+      }
+    });
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [navigate]);
+
   useEffect(() => {
     const handleOutside = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node | null;
@@ -176,14 +314,17 @@ export default function Layout() {
             ])
           : Promise.resolve(null);
 
-        const [notificationResponse, chatUnreadResponse, approvalResponses] = await Promise.all([
+        const [notificationResponse, desktopNotificationResponse, chatUnreadResponse, approvalResponses] = await Promise.all([
+          notificationApi.list({ limit: 20, exclude_types: CHAT_NOTIFICATION_TYPES }),
           notificationApi.list({ limit: 20 }),
           chatApi.getUnreadSummary(),
           approvalPromise,
         ]);
 
         if (!active) return;
-        setNotifications(notificationResponse.data?.data || []);
+        const nextNotifications = (notificationResponse.data?.data || []) as AppNotificationItem[];
+        const nextDesktopNotifications = (desktopNotificationResponse.data?.data || []) as AppNotificationItem[];
+        setNotifications(nextNotifications);
         setUnreadNotifications(Number(notificationResponse.data?.unread_count || 0));
         setUnreadChatMessages(Number(chatUnreadResponse.data?.unread_messages || 0));
         if (approvalResponses) {
@@ -193,6 +334,18 @@ export default function Layout() {
           setPendingApprovals(leaveCount + timeEditCount);
         } else {
           setPendingApprovals(0);
+        }
+
+        const nextIds = new Set<number>(nextDesktopNotifications.map((item) => Number(item.id)).filter((id) => id > 0));
+        if (!hasLoadedNotificationsRef.current) {
+          seenNotificationIdsRef.current = nextIds;
+          hasLoadedNotificationsRef.current = true;
+        } else {
+          nextDesktopNotifications
+            .filter((item) => !item.is_read)
+            .filter((item) => !seenNotificationIdsRef.current.has(Number(item.id)))
+            .forEach((item) => showDesktopNotification(item));
+          seenNotificationIdsRef.current = nextIds;
         }
       } catch {
         if (active) {
@@ -212,6 +365,16 @@ export default function Layout() {
       clearInterval(interval);
     };
   }, [isAdminView]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window) || !desktopPushEnabled) {
+      return;
+    }
+
+    if (Notification.permission === 'default') {
+      void Notification.requestPermission();
+    }
+  }, [desktopPushEnabled]);
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#eef5ff_45%,#f8fafc_100%)]">
@@ -244,6 +407,7 @@ export default function Layout() {
           onOpenExternal={openWebDashboard}
           onOpenAddUser={handleOpenAddUser}
           showAddUserButton={isStrictAdminView && !isDesktopShell}
+          profileHasUnreadUpdate={hasUnreadDesktopUpdate}
           notificationPanel={
             <div ref={notificationsRef}>
             {notificationsOpen && (
@@ -265,7 +429,7 @@ export default function Layout() {
                     <button
                       className="text-xs font-semibold text-sky-700 hover:underline"
                       onClick={async () => {
-                        await notificationApi.markAllRead();
+                        await notificationApi.markAllRead({ exclude_types: CHAT_NOTIFICATION_TYPES });
                         setUnreadNotifications(0);
                         setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
                       }}
@@ -281,12 +445,8 @@ export default function Layout() {
                     notifications.map((n) => (
                       <button
                         key={n.id}
-                        onClick={async () => {
-                          if (!n.is_read) {
-                            await notificationApi.markRead(n.id);
-                            setNotifications((prev) => prev.map((item) => item.id === n.id ? { ...item, is_read: true } : item));
-                            setUnreadNotifications((prev) => Math.max(0, prev - 1));
-                          }
+                        onClick={() => {
+                          void openNotification(n);
                         }}
                         className={`w-full border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50/80 ${n.is_read ? '' : 'bg-sky-50/70'}`}
                       >
@@ -327,12 +487,16 @@ export default function Layout() {
                         type="button"
                         onClick={() => {
                           setProfileOpen(false);
+                          markDesktopUpdateSeen();
                           setUpdatePanelOpen(true);
                         }}
-                        className="flex w-full items-center gap-3 rounded-[18px] px-3 py-2.5 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
+                        className="relative flex w-full items-center gap-3 rounded-[18px] px-3 py-2.5 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                       >
                         <Sparkles className="h-4 w-4 text-slate-400" />
                         Updates
+                        {hasUnreadDesktopUpdate ? (
+                          <span className="ml-auto h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-500" />
+                        ) : null}
                       </button>
                     ) : null}
                     <button
