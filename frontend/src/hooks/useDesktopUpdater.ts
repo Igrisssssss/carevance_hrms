@@ -52,7 +52,7 @@ export const useDesktopUpdater = (): {
 
     void bootstrap();
 
-    desktopApi.onUpdateState?.((nextState) => {
+    const unsubscribe = desktopApi.onUpdateState?.((nextState) => {
       if (!active) {
         return;
       }
@@ -65,7 +65,11 @@ export const useDesktopUpdater = (): {
 
     return () => {
       active = false;
-      desktopApi.clearUpdateStateListeners?.();
+      if (unsubscribe) {
+        unsubscribe();
+      } else {
+        desktopApi.clearUpdateStateListeners?.();
+      }
     };
   }, []);
 

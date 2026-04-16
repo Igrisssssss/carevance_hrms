@@ -30,6 +30,8 @@ class ListNotificationsRequest extends ApiFormRequest
         return [
             'limit' => 'nullable|integer|min:1|max:100',
             'type' => 'nullable|string|max:50',
+            'exclude_types' => 'nullable|array|max:20',
+            'exclude_types.*' => 'string|max:50',
             'q' => 'nullable|string|max:255',
             'unread_only' => 'nullable|boolean',
         ];

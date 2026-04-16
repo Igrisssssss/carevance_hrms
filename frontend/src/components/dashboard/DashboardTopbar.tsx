@@ -24,6 +24,7 @@ interface DashboardTopbarProps {
   notificationPanel?: ReactNode;
   profilePanel?: ReactNode;
   showAddUserButton?: boolean;
+  profileHasUnreadUpdate?: boolean;
 }
 
 export default function DashboardTopbar({
@@ -42,6 +43,7 @@ export default function DashboardTopbar({
   notificationPanel,
   profilePanel,
   showAddUserButton = false,
+  profileHasUnreadUpdate = false,
 }: DashboardTopbarProps) {
   const location = useLocation();
   const notificationsActive = location.pathname === '/notifications';
@@ -151,9 +153,9 @@ export default function DashboardTopbar({
                   onClick={onToggleProfile}
                   aria-haspopup="menu"
                   aria-expanded={profileOpen}
-                  aria-label={user?.name || 'Account'}
+                  aria-label={`${user?.name || 'Account'}${profileHasUnreadUpdate ? ' account, desktop update available' : ''}`}
                   className={cn(
-                    'flex h-11 shrink-0 items-center rounded-full border shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80',
+                    'relative flex h-11 shrink-0 items-center rounded-full border shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80',
                     profileOpen
                       ? 'border-sky-200 bg-sky-50 text-sky-900'
                       : 'border-white/80 bg-white/88 hover:bg-white',
@@ -167,6 +169,9 @@ export default function DashboardTopbar({
                       {user?.name?.charAt(0).toUpperCase() || 'A'}
                     </div>
                   )}
+                  {profileHasUnreadUpdate ? (
+                    <span className="absolute right-0 top-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-500 xl:left-[4.05rem] xl:right-auto xl:top-2.5" />
+                  ) : null}
                   <div className="hidden min-w-0 text-left xl:block">
                     <p className="max-w-[8.5rem] truncate text-sm font-semibold contrast-text-primary">{user?.name || 'Admin'}</p>
                     <p className="hidden text-xs capitalize contrast-text-muted min-[1380px]:block">{user?.role || 'user'}</p>
