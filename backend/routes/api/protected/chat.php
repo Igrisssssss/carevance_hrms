@@ -10,6 +10,7 @@ Route::post('/chat/conversations', [ChatController::class, 'startConversation'])
 Route::get('/chat/conversations/{conversationId}/messages', [ChatController::class, 'messages']);
 Route::post('/chat/conversations/{conversationId}/messages', [ChatController::class, 'sendMessage'])->middleware('throttle:chat.messages');
 Route::patch('/chat/conversations/{conversationId}/messages/{messageId}', [ChatController::class, 'updateMessage']);
+Route::delete('/chat/conversations/{conversationId}/messages/{messageId}', [ChatController::class, 'deleteMessage']);
 Route::post('/chat/conversations/{conversationId}/messages/{messageId}/reactions', [ChatController::class, 'toggleMessageReaction']);
 Route::post('/chat/conversations/{conversationId}/read', [ChatController::class, 'markRead']);
 Route::post('/chat/conversations/{conversationId}/typing', [ChatController::class, 'setTyping']);
@@ -20,6 +21,7 @@ Route::post('/chat/groups', [ChatController::class, 'createGroup']);
 Route::get('/chat/groups/{groupId}/messages', [ChatController::class, 'groupMessages']);
 Route::post('/chat/groups/{groupId}/messages', [ChatController::class, 'sendGroupMessage'])->middleware('throttle:chat.messages');
 Route::patch('/chat/groups/{groupId}/messages/{messageId}', [ChatController::class, 'updateGroupMessage']);
+Route::delete('/chat/groups/{groupId}/messages/{messageId}', [ChatController::class, 'deleteGroupMessage']);
 Route::post('/chat/groups/{groupId}/messages/{messageId}/reactions', [ChatController::class, 'toggleGroupMessageReaction']);
 Route::post('/chat/groups/{groupId}/read', [ChatController::class, 'markGroupRead']);
 Route::post('/chat/groups/{groupId}/typing', [ChatController::class, 'setGroupTyping']);

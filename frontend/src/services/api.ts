@@ -759,6 +759,10 @@ export const chatApi = {
     api.patch<ChatMessage>(`/chat/conversations/${conversationId}/messages/${messageId}`, { body: data.body }),
   updateGroupMessage: (groupId: number, messageId: number, data: { body: string }) =>
     api.patch<ChatGroupMessage>(`/chat/groups/${groupId}/messages/${messageId}`, { body: data.body }),
+  deleteMessage: (conversationId: number, messageId: number) =>
+    api.delete<{ message: string }>(`/chat/conversations/${conversationId}/messages/${messageId}`),
+  deleteGroupMessage: (groupId: number, messageId: number) =>
+    api.delete<{ message: string }>(`/chat/groups/${groupId}/messages/${messageId}`),
   reactToMessage: (conversationId: number, messageId: number, data: { emoji: string }) =>
     api.post<ChatMessage>(`/chat/conversations/${conversationId}/messages/${messageId}/reactions`, { emoji: data.emoji }),
   reactToGroupMessage: (groupId: number, messageId: number, data: { emoji: string }) =>

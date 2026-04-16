@@ -447,6 +447,60 @@ class ChatService
         return ['status' => 200, 'payload' => $message->fresh()->load(['sender:id,name,email', 'reactionEntries'])];
     }
 
+    public function deleteMessage(?User $user, int $conversationId, int $messageId): array
+    {
+        $conversation = $this->findUserConversation($user?->id, $conversationId);
+        if (!$conversation || !$user) {
+            return ['status' => 404, 'payload' => ['message' => 'Conversation not found']];
+        }
+
+        $message = ChatMessage::query()
+            ->where('id', $messageId)
+            ->where('conversation_id', $conversation->id)
+            ->first();
+
+        if (!$message) {
+            return ['status' => 404, 'payload' => ['message' => 'Message not found']];
+        }
+
+        if ((int) $message->sender_id !== (int) $user->id) {
+            return ['status' => 403, 'payload' => ['message' => 'You can only delete your own messages.']];
+        }
+
+        $this->deleteMessageAttachment($message->attachment_path);
+        $message->delete();
+        $conversation->touch();
+
+        return ['status' => 200, 'payload' => ['message' => 'Message deleted.']];
+    }
+
+    public function deleteGroupMessage(?User $user, int $groupId, int $messageId): array
+    {
+        $group = $this->findUserGroup($user?->id, $groupId);
+        if (!$group || !$user) {
+            return ['status' => 404, 'payload' => ['message' => 'Group not found']];
+        }
+
+        $message = ChatGroupMessage::query()
+            ->where('id', $messageId)
+            ->where('group_id', $group->id)
+            ->first();
+
+        if (!$message) {
+            return ['status' => 404, 'payload' => ['message' => 'Message not found']];
+        }
+
+        if ((int) $message->sender_id !== (int) $user->id) {
+            return ['status' => 403, 'payload' => ['message' => 'You can only delete your own messages.']];
+        }
+
+        $this->deleteMessageAttachment($message->attachment_path);
+        $message->delete();
+        $group->touch();
+
+        return ['status' => 200, 'payload' => ['message' => 'Message deleted.']];
+    }
+
     public function toggleMessageReaction(?User $user, int $conversationId, int $messageId, string $emoji): array
     {
         $conversation = $this->findUserConversation($user?->id, $conversationId);
@@ -736,6 +790,15 @@ class ChatService
             'Content-Disposition' => 'inline; filename="' . addslashes($name ?: 'attachment') . '"',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    private function deleteMessageAttachment(?string $path): void
+    {
+        $safePath = $path ? basename($path) : null;
+
+        if ($safePath && Storage::disk('chat_attachments')->exists($safePath)) {
+            Storage::disk('chat_attachments')->delete($safePath);
+        }
     }
 
     private function normalizeParticipants(int $a, int $b): array

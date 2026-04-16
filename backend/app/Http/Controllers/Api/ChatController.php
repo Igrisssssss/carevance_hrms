@@ -95,6 +95,20 @@ class ChatController extends Controller
         return response()->json($result['payload'], $result['status']);
     }
 
+    public function deleteMessage(Request $request, int $conversationId, int $messageId)
+    {
+        $result = $this->chatService->deleteMessage($request->user(), $conversationId, $messageId);
+
+        return response()->json($result['payload'], $result['status']);
+    }
+
+    public function deleteGroupMessage(Request $request, int $groupId, int $messageId)
+    {
+        $result = $this->chatService->deleteGroupMessage($request->user(), $groupId, $messageId);
+
+        return response()->json($result['payload'], $result['status']);
+    }
+
     public function toggleMessageReaction(ToggleChatReactionRequest $request, int $conversationId, int $messageId)
     {
         $result = $this->chatService->toggleMessageReaction($request->user(), $conversationId, $messageId, (string) $request->emoji);

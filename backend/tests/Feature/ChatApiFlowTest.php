@@ -140,6 +140,18 @@ class ChatApiFlowTest extends TestCase
             ->assertForbidden()
             ->assertJsonPath('message', 'You can only edit your own messages.');
 
+        $this->deleteJson("/api/chat/conversations/{$conversationId}/messages/{$directMessageId}", [], $employeeHeaders)
+            ->assertForbidden()
+            ->assertJsonPath('message', 'You can only delete your own messages.');
+
+        $this->deleteJson("/api/chat/conversations/{$conversationId}/messages/{$directMessageId}", [], $adminHeaders)
+            ->assertOk()
+            ->assertJsonPath('message', 'Message deleted.');
+
+        $this->assertDatabaseMissing('chat_messages', [
+            'id' => $directMessageId,
+        ]);
+
         $this->postJson("/api/chat/conversations/{$conversationId}/typing", [
             'is_typing' => true,
         ], $employeeHeaders)->assertOk();
@@ -165,6 +177,15 @@ class ChatApiFlowTest extends TestCase
         $this->postJson("/api/chat/conversations/{$conversationId}/messages", [
             'body' => 'This should fail',
         ], $outsiderHeaders)->assertNotFound();
+
+        $replacementDirectMessageId = (int) $this->postJson("/api/chat/conversations/{$conversationId}/messages", [
+            'body' => 'Replacement direct message',
+        ], $adminHeaders)
+            ->assertCreated()
+            ->json('id');
+
+        $this->postJson("/api/chat/conversations/{$conversationId}/read", [], $employeeHeaders)
+            ->assertOk();
 
         $groupResponse = $this->postJson('/api/chat/groups', [
             'name' => 'Ops Team',
@@ -252,6 +273,23 @@ class ChatApiFlowTest extends TestCase
             ->assertJsonPath('0.reactions.0.emoji', "\u{1F389}")
             ->assertJsonPath('0.reactions.0.count', 1)
             ->assertJsonPath('0.reactions.0.reacted_by_me', true);
+
+        $this->deleteJson("/api/chat/groups/{$groupId}/messages/{$groupMessageId}", [], $employeeHeaders)
+            ->assertForbidden()
+            ->assertJsonPath('message', 'You can only delete your own messages.');
+
+        $this->deleteJson("/api/chat/groups/{$groupId}/messages/{$groupMessageId}", [], $adminHeaders)
+            ->assertOk()
+            ->assertJsonPath('message', 'Message deleted.');
+
+        $this->assertDatabaseMissing('chat_group_messages', [
+            'id' => $groupMessageId,
+        ]);
+
+        $this->getJson("/api/chat/conversations/{$conversationId}/messages", $employeeHeaders)
+            ->assertOk()
+            ->assertJsonCount(1)
+            ->assertJsonPath('0.id', $replacementDirectMessageId);
 
         $this->postJson('/api/chat/groups', [
             'name' => 'Invalid Group',

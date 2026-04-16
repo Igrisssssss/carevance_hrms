@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { useAuth } from '@/contexts/AuthContext';
@@ -21,6 +21,58 @@ type MessageContextMenuState = {
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮'];
 
+type MessageContextMenuLayout = {
+  left: number;
+  top: number;
+  maxHeight: number;
+};
+
+const NORMALIZED_QUICK_REACTIONS = ['\u{1F44D}', '\u2764\uFE0F', '\u{1F602}', '\u{1F389}', '\u{1F62E}'];
+const EMOJI_PICKER_GROUPS = [
+  {
+    label: 'Smileys',
+    emojis: ['\u{1F600}', '\u{1F604}', '\u{1F601}', '\u{1F602}', '\u{1F923}', '\u{1F60A}', '\u{1F60D}', '\u{1F618}', '\u{1F60E}', '\u{1F914}', '\u{1F62D}', '\u{1F62E}'],
+  },
+  {
+    label: 'Gestures',
+    emojis: ['\u{1F44D}', '\u{1F44E}', '\u{1F44F}', '\u{1F64C}', '\u{1F64F}', '\u{1F44C}', '\u270C\uFE0F', '\u{1F91D}', '\u{1F4AA}', '\u{1F525}', '\u2705', '\u{1F440}'],
+  },
+  {
+    label: 'Hearts',
+    emojis: ['\u2764\uFE0F', '\u{1F9E1}', '\u{1F49B}', '\u{1F49A}', '\u{1F499}', '\u{1F49C}', '\u{1F90D}', '\u{1F5A4}', '\u{1F496}', '\u{1F4AF}', '\u2728', '\u{1F389}'],
+  },
+  {
+    label: 'Work',
+    emojis: ['\u{1F4CC}', '\u{1F4CE}', '\u{1F4E3}', '\u{1F4DD}', '\u{1F4AC}', '\u{1F4C5}', '\u23F0', '\u{1F680}', '\u{1F3AF}', '\u{1F91D}', '\u{1F4C8}', '\u{1F3C6}'],
+  },
+];
+
+const calculateContextMenuLayout = (
+  anchorX: number,
+  anchorY: number,
+  menuWidth: number,
+  menuHeight: number
+): MessageContextMenuLayout => {
+  const margin = 12;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const safeWidth = Math.min(menuWidth, viewportWidth - margin * 2);
+  const safeHeight = Math.min(menuHeight, viewportHeight - margin * 2);
+  const spaceAbove = anchorY - margin;
+  const spaceBelow = viewportHeight - anchorY - margin;
+  const shouldOpenBelow = spaceBelow >= safeHeight || spaceBelow >= spaceAbove;
+  const maxHeight = Math.max(260, shouldOpenBelow ? spaceBelow : spaceAbove);
+  const left = Math.max(margin, Math.min(anchorX, viewportWidth - safeWidth - margin));
+  const unclampedTop = shouldOpenBelow ? anchorY : anchorY - safeHeight;
+  const top = Math.max(margin, Math.min(unclampedTop, viewportHeight - safeHeight - margin));
+
+  return {
+    left,
+    top,
+    maxHeight: Math.min(viewportHeight - margin * 2, maxHeight),
+  };
+};
+
 export default function Chat() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
@@ -40,6 +92,8 @@ export default function Chat() {
   const [editingMessageText, setEditingMessageText] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [messageContextMenu, setMessageContextMenu] = useState<MessageContextMenuState | null>(null);
+  const [messageContextMenuLayout, setMessageContextMenuLayout] = useState<MessageContextMenuLayout | null>(null);
+  const [isDeletingMessage, setIsDeletingMessage] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -47,7 +101,6 @@ export default function Chat() {
   const messageContextMenuRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const shouldStickToBottomRef = useRef(true);
-  const messagesRef = useRef<ChatFeedMessage[]>([]);
 
   const selectedConversation = useMemo(
     () => (selectedThread?.type === 'direct' ? conversations.find((c) => c.id === selectedThread.id) || null : null),
@@ -68,7 +121,25 @@ export default function Chat() {
     () => buildEmployeeSearchSuggestions(availableUsers),
     [availableUsers]
   );
-  const persistedQuickReactions = ['\u{1F44D}', '\u2764\uFE0F', '\u{1F602}', '\u{1F389}', '\u{1F62E}'];
+  const persistedQuickReactions = NORMALIZED_QUICK_REACTIONS;
+  const emojiPickerGroups = [
+    {
+      label: 'Smileys',
+      emojis: ['😀', '😄', '😁', '😂', '🤣', '😊', '😍', '😘', '😎', '🤔', '😭', '😮'],
+    },
+    {
+      label: 'Gestures',
+      emojis: ['👍', '👎', '👏', '🙌', '🙏', '👌', '✌️', '🤝', '💪', '🔥', '✅', '👀'],
+    },
+    {
+      label: 'Hearts',
+      emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🤍', '🖤', '💖', '💯', '✨', '🎉'],
+    },
+    {
+      label: 'Work',
+      emojis: ['📌', '📎', '📣', '📝', '💬', '📅', '⏰', '🚀', '🎯', '🤝', '📈', '🏆'],
+    },
+  ];
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -248,10 +319,6 @@ export default function Chat() {
   }, [searchParams, selectedThread, setSearchParams]);
 
   useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  useEffect(() => {
     if (!selectedThread) {
       setMessages([]);
       setTypingUsers([]);
@@ -270,8 +337,7 @@ export default function Chat() {
     loadTyping(selectedThread);
 
     const interval = setInterval(() => {
-      const last = messagesRef.current[messagesRef.current.length - 1];
-      loadMessages(selectedThread, last?.id);
+      loadMessages(selectedThread);
       loadTyping(selectedThread);
     }, 2500);
 
@@ -310,19 +376,60 @@ export default function Chat() {
       }
     };
 
-    const handleViewportChange = () => setMessageContextMenu(null);
+    const handleViewportResize = () => setMessageContextMenu(null);
+    const handleViewportScroll = (event: Event) => {
+      const target = event.target as Node | null;
+      if (target && messageContextMenuRef.current?.contains(target)) {
+        return;
+      }
+
+      setMessageContextMenu(null);
+    };
 
     window.addEventListener('mousedown', handlePointerDown);
-    window.addEventListener('resize', handleViewportChange);
-    window.addEventListener('scroll', handleViewportChange, true);
+    window.addEventListener('resize', handleViewportResize);
+    window.addEventListener('scroll', handleViewportScroll, true);
     window.addEventListener('keydown', handleEscape);
 
     return () => {
       window.removeEventListener('mousedown', handlePointerDown);
-      window.removeEventListener('resize', handleViewportChange);
-      window.removeEventListener('scroll', handleViewportChange, true);
+      window.removeEventListener('resize', handleViewportResize);
+      window.removeEventListener('scroll', handleViewportScroll, true);
       window.removeEventListener('keydown', handleEscape);
     };
+  }, [messageContextMenu]);
+
+  useLayoutEffect(() => {
+    if (!messageContextMenu || !messageContextMenuRef.current) {
+      return;
+    }
+
+    const rect = messageContextMenuRef.current.getBoundingClientRect();
+    const nextLayout = calculateContextMenuLayout(
+      messageContextMenu.x,
+      messageContextMenu.y,
+      rect.width || 336,
+      rect.height || 520
+    );
+
+    setMessageContextMenuLayout((current) => {
+      if (
+        current &&
+        current.left === nextLayout.left &&
+        current.top === nextLayout.top &&
+        current.maxHeight === nextLayout.maxHeight
+      ) {
+        return current;
+      }
+
+      return nextLayout;
+    });
+  }, [messageContextMenu]);
+
+  useEffect(() => {
+    if (!messageContextMenu) {
+      setMessageContextMenuLayout(null);
+    }
   }, [messageContextMenu]);
 
   useEffect(() => {
@@ -330,6 +437,16 @@ export default function Chat() {
       scrollToBottom();
     }
   }, [messages.length]);
+
+  useEffect(() => {
+    if (editingMessageId && !messages.some((message) => message.id === editingMessageId)) {
+      cancelEditingMessage();
+    }
+
+    if (messageContextMenu && !messages.some((message) => message.id === messageContextMenu.message.id)) {
+      setMessageContextMenu(null);
+    }
+  }, [editingMessageId, messageContextMenu, messages]);
 
   const startConversationFromDraft = async () => {
     setError('');
@@ -522,6 +639,7 @@ export default function Chat() {
 
     event.preventDefault();
     event.stopPropagation();
+    setMessageContextMenuLayout(calculateContextMenuLayout(event.clientX, event.clientY, 336, 520));
     setMessageContextMenu({
       message,
       mine,
@@ -570,6 +688,39 @@ export default function Chat() {
       setError(err?.response?.data?.message || 'Could not react to message.');
     } finally {
       setMessageContextMenu(null);
+    }
+  };
+
+  const handleDeleteMessage = async (message: ChatFeedMessage) => {
+    if (!selectedThread || isDeletingMessage) {
+      return;
+    }
+
+    const confirmed = window.confirm('Delete this message? This cannot be undone.');
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setIsDeletingMessage(true);
+      setMessageContextMenu(null);
+      setError('');
+
+      if (selectedThread.type === 'direct') {
+        await chatApi.deleteMessage(selectedThread.id, message.id);
+      } else {
+        await chatApi.deleteGroupMessage(selectedThread.id, message.id);
+      }
+
+      setMessages((prev) => prev.filter((candidate) => candidate.id !== message.id));
+      if (editingMessageId === message.id) {
+        cancelEditingMessage();
+      }
+      await loadThreads();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Could not delete message.');
+    } finally {
+      setIsDeletingMessage(false);
     }
   };
 
@@ -793,78 +944,87 @@ export default function Chat() {
             messages.map((message) => {
               const mine = Number(message.sender_id) === Number(user?.id);
               const groupMessage = isGroupMessage(message);
+              const hasReactions = (message.reactions || []).length > 0;
 
               return (
-                <div key={`${groupMessage ? 'group' : 'direct'}-${message.id}`} className={`group flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    onContextMenu={(event) => openMessageContextMenu(event, message, mine)}
-                    className={`max-w-[70%] rounded-xl px-3 py-2 text-sm ${mine ? 'bg-primary-600 text-white' : 'border border-gray-200 bg-white text-gray-800'}`}
-                  >
-                    {!mine && groupMessage && (
-                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-primary-700">
-                        {message.sender?.name || 'Teammate'}
-                      </p>
-                    )}
-                    {editingMessageId === message.id ? (
-                      <div className="space-y-2">
-                        <textarea
-                          value={editingMessageText}
-                          onChange={(e) => setEditingMessageText(e.target.value)}
-                          rows={3}
-                          className="w-full resize-y rounded-lg border border-white/50 bg-white px-3 py-2 text-sm text-gray-900 focus:border-white focus:outline-none"
-                        />
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={cancelEditingMessage}
-                            className="rounded-md border border-white/50 px-2 py-1 text-xs text-white hover:bg-white/10"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSaveEditedMessage(message)}
-                            disabled={isSavingEdit || !editingMessageText.trim()}
-                            className="rounded-md bg-white px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-60"
-                          >
-                            {isSavingEdit ? 'Saving...' : 'Save'}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="break-words whitespace-pre-wrap">{message.body}</p>
-                    )}
-                    {message.has_attachment && (
-                      <button
-                        onClick={() => openAttachment(message)}
-                        type="button"
-                        className={`mt-2 inline-flex items-center gap-1 text-xs underline ${mine ? 'text-primary-100' : 'text-primary-700'}`}
+                <div
+                  key={`${groupMessage ? 'group' : 'direct'}-${message.id}`}
+                  className={`group flex ${mine ? 'justify-end' : 'justify-start'} ${hasReactions ? 'pt-6' : 'pt-4'}`}
+                >
+                  <div className="relative max-w-[70%]" onContextMenu={(event) => openMessageContextMenu(event, message, mine)}>
+                    {hasReactions ? (
+                      <div
+                        className={`pointer-events-none absolute z-10 flex max-w-full flex-wrap gap-1 ${
+                          mine ? '-left-3 -top-5 justify-start' : '-right-3 -top-5 justify-end'
+                        }`}
                       >
-                        Open attachment
-                        {message.attachment_name ? ` (${message.attachment_name}${message.attachment_size ? `, ${formatBytes(message.attachment_size)}` : ''})` : ''}
-                      </button>
-                    )}
-                    {renderMessageTimestamp(message, mine, groupMessage)}
-                    {(message.reactions || []).length > 0 ? (
-                      <div className="mt-2 flex flex-wrap gap-1">
                         {(message.reactions || []).map((reaction) => (
                           <span
                             key={`${message.id}-${reaction.emoji}`}
-                            className={`inline-flex min-w-8 items-center justify-center rounded-full px-2 py-0.5 text-xs ${
+                            className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-1.5 text-sm leading-none shadow-[0_12px_24px_-14px_rgba(15,23,42,0.55)] ${
                               reaction.reacted_by_me
                                 ? mine
-                                  ? 'bg-white/25 text-white'
-                                  : 'bg-primary-100 text-primary-800'
+                                  ? 'bg-white text-primary-700'
+                                  : 'bg-primary-50 text-primary-800'
                                 : mine
-                                  ? 'bg-white/20 text-white'
-                                  : 'bg-gray-100 text-gray-700'
+                                  ? 'bg-primary-500 text-white'
+                                  : 'bg-white text-gray-700'
                             }`}
                           >
-                            {reaction.emoji} {reaction.count > 1 ? reaction.count : ''}
+                            {reaction.emoji}
                           </span>
                         ))}
                       </div>
                     ) : null}
+                    <div
+                      className={`rounded-xl px-3 py-2 text-sm ${mine ? 'bg-primary-600 text-white' : 'border border-gray-200 bg-white text-gray-800'}`}
+                    >
+                      {!mine && groupMessage && (
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-primary-700">
+                          {message.sender?.name || 'Teammate'}
+                        </p>
+                      )}
+                      {editingMessageId === message.id ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editingMessageText}
+                            onChange={(e) => setEditingMessageText(e.target.value)}
+                            rows={3}
+                            className="w-full resize-y rounded-lg border border-white/50 bg-white px-3 py-2 text-sm text-gray-900 focus:border-white focus:outline-none"
+                          />
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={cancelEditingMessage}
+                              className="rounded-md border border-white/50 px-2 py-1 text-xs text-white hover:bg-white/10"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditedMessage(message)}
+                              disabled={isSavingEdit || !editingMessageText.trim()}
+                              className="rounded-md bg-white px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-60"
+                            >
+                              {isSavingEdit ? 'Saving...' : 'Save'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="break-words whitespace-pre-wrap">{message.body}</p>
+                      )}
+                      {message.has_attachment && (
+                        <button
+                          onClick={() => openAttachment(message)}
+                          type="button"
+                          className={`mt-2 inline-flex items-center gap-1 text-xs underline ${mine ? 'text-primary-100' : 'text-primary-700'}`}
+                        >
+                          Open attachment
+                          {message.attachment_name ? ` (${message.attachment_name}${message.attachment_size ? `, ${formatBytes(message.attachment_size)}` : ''})` : ''}
+                        </button>
+                      )}
+                      {renderMessageTimestamp(message, mine, groupMessage)}
+                    </div>
                   </div>
                 </div>
               );
@@ -880,48 +1040,85 @@ export default function Chat() {
         {messageContextMenu ? (
           <div
             ref={messageContextMenuRef}
-            className="fixed z-[70] min-w-52 rounded-xl border border-gray-200 bg-white p-2 shadow-[0_18px_40px_-18px_rgba(15,23,42,0.45)]"
+            className="fixed z-[70] flex w-[21rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white p-2 shadow-[0_18px_40px_-18px_rgba(15,23,42,0.45)]"
             style={{
-              left: Math.min(messageContextMenu.x, window.innerWidth - 220),
-              top: Math.min(messageContextMenu.y, window.innerHeight - 220),
+              left: messageContextMenuLayout?.left ?? Math.max(12, Math.min(messageContextMenu.x, window.innerWidth - 360)),
+              top: messageContextMenuLayout?.top ?? Math.max(12, Math.min(messageContextMenu.y, window.innerHeight - 420)),
+              maxHeight: messageContextMenuLayout?.maxHeight ?? Math.max(260, window.innerHeight - 24),
             }}
             onClick={(event) => event.stopPropagation()}
             onContextMenu={(event) => event.preventDefault()}
           >
-            <div className="rounded-lg bg-gray-50 px-3 py-2">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">React</p>
-              <div className="flex flex-wrap gap-2">
-                {persistedQuickReactions.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    onClick={() => void handleReactToMessage(messageContextMenu.message, emoji)}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg shadow-sm transition hover:bg-primary-50"
-                  >
-                    {emoji}
-                  </button>
-                ))}
+            <div className="min-h-0 space-y-2 overflow-y-auto pr-1">
+              <div className="rounded-lg bg-gray-50 px-3 py-2">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">React</p>
+                <div className="flex flex-wrap gap-2">
+                  {persistedQuickReactions.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => void handleReactToMessage(messageContextMenu.message, emoji)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg shadow-sm transition hover:bg-primary-50"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-lg border border-gray-100 px-3 py-2">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Emoji panel</p>
+                <div className="grid gap-3">
+                  {EMOJI_PICKER_GROUPS.map((group) => (
+                    <div key={group.label}>
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{group.label}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {group.emojis.map((emoji) => (
+                          <button
+                            key={`${group.label}-${emoji}`}
+                            type="button"
+                            onClick={() => void handleReactToMessage(messageContextMenu.message, emoji)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-50 text-lg transition hover:bg-primary-50"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => void handleCopyMessage(messageContextMenu.message)}
-              className="mt-2 flex w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50"
-            >
-              Copy message
-            </button>
-            {messageContextMenu.mine ? (
+            <div className="mt-2 border-t border-gray-100 pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  handleEditMessage(messageContextMenu.message);
-                  setMessageContextMenu(null);
-                }}
+                onClick={() => void handleCopyMessage(messageContextMenu.message)}
                 className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50"
               >
-                Edit message
+                Copy message
               </button>
-            ) : null}
+              {messageContextMenu.mine ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleEditMessage(messageContextMenu.message);
+                    setMessageContextMenu(null);
+                  }}
+                  className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50"
+                >
+                  Edit message
+                </button>
+              ) : null}
+              {messageContextMenu.mine ? (
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteMessage(messageContextMenu.message)}
+                  disabled={isDeletingMessage}
+                  className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50 disabled:opacity-60"
+                >
+                  {isDeletingMessage ? 'Deleting...' : 'Delete message'}
+                </button>
+              ) : null}
+            </div>
           </div>
         ) : null}
 
